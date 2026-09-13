@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="ModuleDef" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/module_def.gd" id="1_mod"]
+[ext_resource type="Resource" path="res://data/units/salvage_drone.tres" id="2_unit"]
+
+[resource]
+script = ExtResource("1_mod")
+id = &"RIG"
+display_name = "Salvage Rig"
+glyph = "⛏"
+salvage_cost = 20
+attached_description = "Chassis auto-mines salvage within 7.5 m"
+detached_description = "Salvage Drone — mines nodes and hauls cargo home"
+bonus_hull = 0.0
+damage = 0.0
+range_m = 7.5
+cooldown_s = 0.0
+mine_yield = 4.0
+mine_interval_s = 0.55
+speed_multiplier = 1.0
+unit_stats = ExtResource("2_unit")
+recall_cooldown_s = 12.0
+recall_salvage_cost = 0
+recall_travel_s = 3.0

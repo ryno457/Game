@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UnitStats" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/unit_stats.gd" id="1_stats"]
+
+[resource]
+script = ExtResource("1_stats")
+id = &"RIG"
+display_name = "Salvage Drone"
+max_hp = 70.0
+radius_m = 0.5625
+speed_mps = 4.875
+damage = 0.0
+range_m = 0.0
+cooldown_s = 0.0
+acquire_range_m = 0.0
+standoff_ratio = 0.8
+repair_per_s = 0.0
+mine_yield = 9.0
+mine_interval_s = 0.5
+cargo_capacity = 25.0
+dig_rate_per_s = 0.0
+dig_radius_m = 0.0

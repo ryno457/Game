@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WaveTable" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/wave_table.gd" id="1_waves"]
+
+[resource]
+script = ExtResource("1_waves")
+interval_s = 45.0
+fragments_required = 5
+teleporter_charge_s = 35.0
+count_base = 2.0
+count_per_wave = 1.4
+hp_base = 60.0
+hp_per_wave = 10.0
+speed_base_mps = 2.625
+damage_base = 9.0
+damage_per_wave = 1.6
+attack_cooldown_s = 1.0
+radius_m = 0.625
+target_acquire_m = 16.25
+spawn_scatter_m = 2.1875
+salvage_per_kill = 6
+salvage_per_nest = 45

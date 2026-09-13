@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+; Grey-box placeholder. Biodome 01, mission 1 — the vertical slice.
+; Terrain, chassis and hostiles are assembled here once Heightfield has a
+; renderer and a collision heightmap behind it (risk item 1).
+
+[node name="Mission01" type="Node3D"]

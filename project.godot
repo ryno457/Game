@@ -1,0 +1,34 @@
+; Engine configuration file.
+; Godot 4.6 — SENTINEL
+
+config_version=5
+
+[application]
+
+config/name="SENTINEL"
+config/description="Mobile RTS. Grey-box vertical slice — Biodome 01."
+run/main_scene="res://scenes/mission/mission_01.tscn"
+config/features=PackedStringArray("4.6", "Mobile")
+
+[autoload]
+
+EventBus="*res://autoload/event_bus.gd"
+GameData="*res://autoload/game_data.gd"
+
+[display]
+
+window/size/viewport_width=1080
+window/size/viewport_height=2400
+window/handheld/orientation=1
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+textures/vram_compression/import_etc2_astc=true

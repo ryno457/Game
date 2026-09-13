@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="AdaptationRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/adaptation_rules.gd" id="1_adapt"]
+
+[resource]
+script = ExtResource("1_adapt")
+counters = {
+&"drone": &"sprint_glands",
+&"trench": &"burrowing",
+&"turret": &"chitin_plating"
+}
+min_reliance_s = 6.0
+min_share = 0.4
+chitin_bonus_hp = 30.0
+chitin_resist_per_stack = 0.14
+chitin_resist_floor = 0.45
+sprint_bonus_mps = 0.8125
+burrow_ignores_terrain = true
+display_names = {
+&"burrowing": "Burrowing",
+&"chitin_plating": "Chitin Plating",
+&"sprint_glands": "Sprint Glands"
+}

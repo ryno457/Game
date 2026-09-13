@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UnitStats" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/unit_stats.gd" id="1_stats"]
+
+[resource]
+script = ExtResource("1_stats")
+id = &"GUN"
+display_name = "Combat Drone"
+max_hp = 110.0
+radius_m = 0.625
+speed_mps = 4.125
+damage = 14.0
+range_m = 9.375
+cooldown_s = 0.65
+acquire_range_m = 20.625
+standoff_ratio = 0.8
+repair_per_s = 0.0
+mine_yield = 0.0
+mine_interval_s = 0.0
+cargo_capacity = 0.0
+dig_rate_per_s = 0.0
+dig_radius_m = 0.0

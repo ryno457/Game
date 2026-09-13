@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="ModuleDef" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/module_def.gd" id="1_mod"]
+[ext_resource type="Resource" path="res://data/units/beacon.tres" id="2_unit"]
+
+[resource]
+script = ExtResource("1_mod")
+id = &"REAC"
+display_name = "Reactor"
+glyph = "◈"
+salvage_cost = 40
+attached_description = "+45% mining and fabrication speed"
+detached_description = "Beacon — repairs friendly units nearby"
+bonus_hull = 0.0
+damage = 0.0
+range_m = 0.0
+cooldown_s = 0.0
+mine_yield = 0.0
+mine_interval_s = 0.0
+speed_multiplier = 1.45
+unit_stats = ExtResource("2_unit")
+recall_cooldown_s = 16.0
+recall_salvage_cost = 5
+recall_travel_s = 4.0

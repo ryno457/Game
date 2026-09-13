@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SENTINEL — Biodome 01</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Michroma&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080b11;
+  --panel:rgba(12,18,26,.88);
+  --line:#1d3242;
+  --cy:#4fe3c1;
+  --cy-b:#8ffff0;
+  --ice:#cfe9ff;
+  --gold:#ffd166;
+  --frag:#b487ff;
+  --alien:#ff5d7a;
+  --dim:#5d7386;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg);
+  font-family:'Chakra Petch',ui-monospace,monospace;color:var(--ice);
+  touch-action:none;user-select:none;-webkit-user-select:none;overscroll-behavior:none}
+canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+
+/* ---------- HUD ---------- */
+#hud{position:absolute;inset:0;pointer-events:none;display:flex;flex-direction:column}
+
+#top{
+  pointer-events:none;margin:0;padding:calc(env(safe-area-inset-top) + 8px) 10px 8px;
+  display:flex;gap:8px;align-items:stretch;flex-wrap:wrap;
+  background:linear-gradient(180deg,rgba(6,10,16,.95),rgba(6,10,16,0));
+}
+.stat{
+  background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  padding:4px 9px;font-size:12px;line-height:1.25;letter-spacing:.4px;
+  display:flex;align-items:center;gap:6px;backdrop-filter:blur(6px);
+}
+.stat b{font-weight:700;font-size:14px}
+.k{color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1.4px}
+.gold{color:var(--gold)}.frag{color:var(--frag)}.cy{color:var(--cy)}.al{color:var(--alien)}
+
+#adapt{
+  flex:1 1 100%;background:var(--panel);border:1px solid #3a2030;border-left:3px solid var(--alien);
+  border-radius:3px;padding:4px 9px;font-size:10.5px;color:#ffb9c6;letter-spacing:.5px;
+  backdrop-filter:blur(6px);
+}
+#s-read{display:block;color:var(--dim);font-size:9.5px;letter-spacing:.6px;margin-top:1px}
+
+#center-msg{
+  position:absolute;top:38%;left:0;right:0;text-align:center;pointer-events:none;
+  font-family:'Michroma',sans-serif;font-size:15px;letter-spacing:3px;
+  text-shadow:0 0 22px #000;opacity:0;transition:opacity .45s;
+}
+
+/* ---------- DOCK ---------- */
+#dock{
+  margin-top:auto;pointer-events:auto;
+  background:linear-gradient(0deg,rgba(6,10,16,.97) 55%,rgba(6,10,16,0));
+  padding:14px 8px calc(env(safe-area-inset-bottom) + 10px);
+}
+#dock-label{font-size:9px;letter-spacing:2px;color:var(--dim);text-align:center;margin-bottom:5px}
+#slots{display:flex;gap:5px;justify-content:center}
+.slot{
+  width:56px;height:58px;border:1px solid var(--line);border-radius:4px;
+  background:rgba(16,26,36,.85);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;position:relative;
+  cursor:grab;transition:border-color .15s,transform .1s;
+}
+.slot.empty{border-style:dashed;opacity:.4}
+.slot.filled{border-color:var(--cy);box-shadow:inset 0 0 14px rgba(79,227,193,.14)}
+.slot.filled:active{transform:scale(.93)}
+.slot .ic{font-size:20px;line-height:1}
+.slot .nm{font-size:7.5px;letter-spacing:.4px;color:var(--dim);text-align:center;padding:0 2px}
+.slot.filled .nm{color:var(--cy-b)}
+
+#actions{display:flex;gap:6px;justify-content:center;margin-top:8px}
+button{
+  font-family:inherit;background:rgba(16,26,36,.9);color:var(--cy-b);
+  border:1px solid var(--line);border-radius:3px;padding:8px 13px;
+  font-size:11px;letter-spacing:1.3px;font-weight:600;cursor:pointer;
+}
+button:active{background:var(--cy);color:#04161a}
+button:disabled{opacity:.3}
+button.hot{border-color:var(--frag);color:var(--frag)}
+
+/* ---------- SHOP ---------- */
+#shop{
+  position:absolute;inset:0;background:rgba(4,7,11,.93);pointer-events:auto;
+  display:none;flex-direction:column;justify-content:center;padding:16px;gap:7px;
+  backdrop-filter:blur(3px);z-index:20;
+}
+#shop.on{display:flex}
+#shop h2{font-family:'Michroma',sans-serif;font-size:12px;letter-spacing:3px;
+  color:var(--cy);text-align:center;margin-bottom:6px}
+.item{
+  display:flex;gap:10px;align-items:center;background:rgba(16,26,36,.9);
+  border:1px solid var(--line);border-left:3px solid var(--cy);border-radius:3px;padding:8px 10px;cursor:pointer;
+}
+.item:active{background:rgba(79,227,193,.12)}
+.item.no{opacity:.35;border-left-color:#444}
+.item .ic{font-size:22px;width:26px;text-align:center}
+.item .tx{flex:1;min-width:0}
+.item .t1{font-size:12px;font-weight:700;letter-spacing:.6px}
+.item .t2{font-size:9.5px;color:var(--dim);line-height:1.45}
+.item .t2 em{color:var(--cy);font-style:normal}
+.item .t2 i{color:var(--gold);font-style:normal}
+.item .pr{font-size:12px;color:var(--gold);font-weight:700;white-space:nowrap}
+
+/* ---------- DRAG GHOST ---------- */
+#ghost{
+  position:absolute;pointer-events:none;z-index:30;display:none;
+  width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;
+  border:1px solid var(--cy);background:rgba(79,227,193,.16);
+  display:none;align-items:center;justify-content:center;font-size:22px;
+  box-shadow:0 0 22px rgba(79,227,193,.5);
+}
+#ghost.on{display:flex}
+
+#hint{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 128px);left:0;right:0;
+  text-align:center;font-size:10px;letter-spacing:1px;color:var(--dim);pointer-events:none}
+
+#over{
+  position:absolute;inset:0;background:rgba(4,7,11,.95);z-index:40;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:auto;text-align:center;padding:20px;
+}
+#over.on{display:flex}
+#over h1{font-family:'Michroma',sans-serif;font-size:19px;letter-spacing:5px}
+#over p{font-size:12px;color:var(--dim);max-width:300px;line-height:1.7}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <div id="top">
+    <div class="stat"><span class="k">Salvage</span><b class="gold" id="s-sal">0</b></div>
+    <div class="stat"><span class="k">Fragments</span><b class="frag" id="s-frag">0/5</b></div>
+    <div class="stat"><span class="k">Hull</span><b class="cy" id="s-hp">100%</b></div>
+    <div class="stat"><span class="k">Wave</span><b class="al" id="s-wave">1 · 0:45</b></div>
+    <div id="adapt">ADAPTATION — <span id="s-adapt">none detected</span>
+      <span id="s-read"></span></div>
+  </div>
+
+  <div id="center-msg"></div>
+  <div id="hint">drag map to pan · tap to command · drag a module off the dock to deploy it</div>
+
+  <div id="dock">
+    <div id="dock-label">SENTINEL CHASSIS — 6 MODULE BAYS</div>
+    <div id="slots"></div>
+    <div id="actions">
+      <button id="b-shop">⊕ FABRICATE</button>
+      <button id="b-recall" disabled>⟲ RECALL</button>
+      <button id="b-tele" class="hot" disabled>▲ TELEPORTER</button>
+    </div>
+  </div>
+</div>
+
+<div id="ghost"></div>
+
+<div id="shop">
+  <h2>FABRICATION — MODULE BAY</h2>
+  <div id="shop-list"></div>
+  <button id="b-close" style="margin-top:8px">CLOSE</button>
+</div>
+
+<div id="over">
+  <h1 id="over-t"></h1>
+  <p id="over-p"></p>
+  <button onclick="location.reload()">RESTART</button>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   SENTINEL — vertical-slice prototype
+   Demonstrates: modular mobile base · drag-to-detach · deformable heightfield
+   terrain · salvage economy · teleporter objective · adaptive alien AI.
+   Architecture note: every tunable lives in the DATA block at the top.
+   Nothing below it is hardcoded to a specific balance number — that's the
+   "data-driven / non-destructive" pattern you'd carry into Godot as .tres.
+   ========================================================================== */
+
+/* ------------------------------ DATA ------------------------------------ */
+const GW = 150, GH = 112, CELL = 16;          // heightfield grid
+const WW = GW * CELL, WH = GH * CELL;         // world px
+const DOME_R = Math.min(WW, WH) * 0.47;       // biodome radius
+const DOME_CX = WW / 2, DOME_CY = WH / 2;
+
+const GROUND = 0.50;                          // neutral terrain height
+const PIT    = 0.26;                          // below this = impassable
+const ROUGH  = 0.38;                          // below this = slowed
+
+const MODULES = {
+  RIG:{
+    ic:'⛏', name:'Salvage Rig', cost:20,
+    on:'base auto-mines salvage within 120m',
+    off:'Salvage Drone — mines nodes and hauls cargo home'
+  },
+  GUN:{
+    ic:'✦', name:'Gun Pod', cost:30,
+    on:'chassis gains a turret (18 dmg)',
+    off:'Combat Drone — mobile, engages on sight'
+  },
+  BAST:{
+    ic:'▣', name:'Bastion Plate', cost:35,
+    on:'+250 chassis hull',
+    off:'Turret — static, 34 dmg, long range'
+  },
+  DIG:{
+    ic:'⊻', name:'Excavator', cost:25,
+    on:'chassis flattens terrain as it drives',
+    off:'Digger Drone — carves impassable trenches'
+  },
+  REAC:{
+    ic:'◈', name:'Reactor', cost:40,
+    on:'+45% mining and fabrication speed',
+    off:'Beacon — repairs friendly units nearby'
+  },
+};
+
+const UNIT = {
+  RIG: {hp:70, spd:78, r:9, dmg:0,  rng:0,   name:'Salvage Drone'},
+  GUN: {hp:110,spd:66, r:10,dmg:14, rng:150, name:'Combat Drone'},
+  BAST:{hp:240,spd:0,  r:13,dmg:34, rng:230, name:'Turret'},
+  DIG: {hp:90, spd:70, r:10,dmg:0,  rng:0,   name:'Digger Drone'},
+  REAC:{hp:140,spd:0,  r:12,dmg:0,  rng:170, name:'Beacon'},
+};
+
+const WAVE_TIME = 45;                         // seconds between waves
+const FRAG_GOAL = 5;
+
+/* Adaptation gating. Reliance is measured in UNIT-SECONDS so the three tactics
+   are directly comparable; counts of deployed modules are not. A wave only
+   produces an adaptation if the player leaned hard enough AND leaned mostly
+   one way — mixed or passive play adapts nothing, which is the whole point:
+   punish monotony, reward switching. */
+const ADAPT_MIN_SECONDS = 6.0;                // reliance needed before adapting
+const ADAPT_MIN_SHARE   = 0.40;               // leader's share of the total
+const ADAPT_FOR  = {turret:'chitin', drone:'swift', trench:'burrow'};
+const ADAPT_NAME = {chitin:'CHITIN PLATING', swift:'SPRINT GLANDS', burrow:'BURROWING'};
+
+/* ------------------------------ STATE ----------------------------------- */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let VW = 0, VH = 0, DPR = 1;
+let cam = {x:0, y:0};
+let T = 0, last = 0, running = true;
+
+const height = new Float32Array(GW * GH);
+let terrainDirty = true, terrainCd = 0;
+const tcv = document.createElement('canvas');
+const tctx = tcv.getContext('2d');
+const TS = 8;                                  // terrain cache px per cell
+tcv.width = GW * TS; tcv.height = GH * TS;
+
+let salvage = 60, frags = 0, wave = 1, waveT = WAVE_TIME, teleBuilt = false, teleT = 0;
+let ents = [], bullets = [], fx = [], nextId = 1;
+let base = null, selected = null;
+
+// adaptive-AI telemetry: unit-seconds of reliance accumulated this wave
+const tele_use = {turret:0, drone:0, trench:0};
+const adapt = {chitin:0, burrow:0, swift:0};
+
+/* ------------------------------ UTIL ------------------------------------ */
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const hidx=(gx,gy)=>gy*GW+gx;
+function hAt(wx,wy){
+  const gx=clamp(wx/CELL|0,0,GW-1), gy=clamp(wy/CELL|0,0,GH-1);
+  return height[hidx(gx,gy)];
+}
+function inDome(x,y){return Math.hypot(x-DOME_CX,y-DOME_CY) < DOME_R-18;}
+function passable(x,y){return inDome(x,y) && hAt(x,y) > PIT;}
+
+let seed = 20260913;
+function rnd(){seed=(seed*1664525+1013904223)&0x7fffffff;return seed/0x7fffffff;}
+function vnoise(x,y){
+  const xi=Math.floor(x), yi=Math.floor(y), xf=x-xi, yf=y-yi;
+  const h=(a,b)=>{let n=Math.sin(a*127.1+b*311.7)*43758.5453;return n-Math.floor(n);};
+  const s=t=>t*t*(3-2*t);
+  const u=s(xf),v=s(yf);
+  return lerp(lerp(h(xi,yi),h(xi+1,yi),u), lerp(h(xi,yi+1),h(xi+1,yi+1),u), v);
+}
+
+/* --------------------------- TERRAIN ------------------------------------ */
+function genTerrain(){
+  for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){
+    let n = vnoise(x*.055,y*.055)*.6 + vnoise(x*.14,y*.14)*.28 + vnoise(x*.31,y*.31)*.12;
+    height[hidx(x,y)] = clamp(GROUND + (n-.5)*0.30, 0, 1);
+  }
+  // pre-existing impact scars from the crash
+  for(let i=0;i<14;i++)
+    deform(rnd()*WW, rnd()*WH, 40+rnd()*70, -(0.20+rnd()*0.26));
+}
+
+/** The whole deformable-terrain system is this one function. */
+function deform(wx, wy, radius, amount){
+  const gx=wx/CELL, gy=wy/CELL, gr=radius/CELL;
+  const x0=clamp(Math.floor(gx-gr),0,GW-1), x1=clamp(Math.ceil(gx+gr),0,GW-1);
+  const y0=clamp(Math.floor(gy-gr),0,GH-1), y1=clamp(Math.ceil(gy+gr),0,GH-1);
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    const d=Math.hypot(x-gx,y-gy); if(d>gr)continue;
+    const f=Math.cos(d/gr*Math.PI*0.5);          // smooth cosine falloff
+    const i=hidx(x,y);
+    height[i]=clamp(height[i]+amount*f*f,0.02,0.98);
+  }
+  terrainDirty=true;
+}
+/** Excavator-attached: smooth terrain back toward neutral. */
+function flatten(wx,wy,radius){
+  const gx=wx/CELL, gy=wy/CELL, gr=radius/CELL;
+  const x0=clamp(Math.floor(gx-gr),0,GW-1), x1=clamp(Math.ceil(gx+gr),0,GW-1);
+  const y0=clamp(Math.floor(gy-gr),0,GH-1), y1=clamp(Math.ceil(gy+gr),0,GH-1);
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    const d=Math.hypot(x-gx,y-gy); if(d>gr)continue;
+    const i=hidx(x,y);
+    height[i]=lerp(height[i],GROUND,0.10*(1-d/gr));
+  }
+  terrainDirty=true;
+}
+
+function bakeTerrain(){
+  const im = tctx.createImageData(GW*TS, GH*TS);
+  const D = im.data, RW = GW*TS;
+  for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){
+    const h = height[hidx(x,y)];
+    const hl = height[hidx(Math.max(0,x-1),y)];
+    const hu = height[hidx(x,Math.max(0,y-1))];
+    const slope = ((h-hl)+(h-hu))*7;
+    const lit = clamp(0.62 + slope, 0.1, 1.5);
+
+    let r,g,b;
+    if(h < PIT){                                 // chasm
+      const t = clamp(h/PIT,0,1);
+      r = 10+t*16; g = 12+t*20; b = 26+t*30;
+    }else{
+      const t = clamp((h-PIT)/(0.85-PIT),0,1);   // regolith ramp
+      r = lerp(42, 128, t); g = lerp(38, 116, t); b = lerp(58, 140, t);
+    }
+    // grain
+    const n = (((x*73+y*151)%11)-5)*1.6;
+    r=clamp(r*lit+n,0,255); g=clamp(g*lit+n,0,255); b=clamp(b*lit+n*1.15,0,255);
+    // rim light on pit edges
+    if(h>PIT && h<PIT+0.045){ r+=0; g+=52; b+=62; }
+
+    for(let sy=0;sy<TS;sy++){
+      let o=((y*TS+sy)*RW + x*TS)*4;
+      for(let sx=0;sx<TS;sx++){
+        D[o]=r; D[o+1]=g; D[o+2]=b; D[o+3]=255; o+=4;
+      }
+    }
+  }
+  tctx.putImageData(im,0,0);
+  terrainDirty=false;
+}
+
+/* --------------------------- ENTITIES ----------------------------------- */
+function mk(o){o.id=nextId++; o.hp=o.hp??100; o.maxHp=o.hp; ents.push(o); return o;}
+
+function makeBase(){
+  base = mk({kind:'base', x:DOME_CX, y:DOME_CY+DOME_R*0.55, r:26,
+    hp:600, spd:46, slots:[null,null,null,null,null,null],
+    ox:DOME_CX, oy:DOME_CY+DOME_R*0.55, cd:0, mineCd:0});
+  base.slots[0]='RIG'; base.slots[1]='GUN';
+  return base;
+}
+function baseMaxHp(){return 600 + base.slots.filter(s=>s==='BAST').length*250;}
+function has(m){return base.slots.includes(m);}
+function reactorMul(){return 1 + base.slots.filter(s=>s==='REAC').length*0.45;}
+
+function scatterWorld(){
+  for(let i=0;i<34;i++){
+    let a=rnd()*6.283, d=rnd()*(DOME_R-70);
+    mk({kind:'node', type:'sal', x:DOME_CX+Math.cos(a)*d, y:DOME_CY+Math.sin(a)*d,
+        r:11, amt:60+((rnd()*50)|0), hp:1e9, spin:rnd()*6.28});
+  }
+  for(let i=0;i<FRAG_GOAL+2;i++){
+    let a=rnd()*6.283, d=DOME_R*(0.45+rnd()*0.5);
+    mk({kind:'node', type:'frag', x:DOME_CX+Math.cos(a)*d, y:DOME_CY+Math.sin(a)*d,
+        r:13, amt:1, hp:1e9, spin:rnd()*6.28});
+  }
+  for(let i=0;i<4;i++){
+    let a=(i/4)*6.283+0.7, d=DOME_R*0.86;
+    mk({kind:'nest', x:DOME_CX+Math.cos(a)*d, y:DOME_CY+Math.sin(a)*d, r:22, hp:420});
+  }
+}
+
+function deployModule(type, wx, wy){
+  const u = UNIT[type];
+  const e = mk({kind:'unit', type, x:wx, y:wy, r:u.r, hp:u.hp, spd:u.spd,
+    dmg:u.dmg, rng:u.rng, name:u.name, cd:0, cargo:0, order:null, digCd:0});
+  return e;
+}
+function attachModule(type, slot){ base.slots[slot]=type; syncDock(); }
+
+/** Decide this wave's adaptation, or null for none.
+    Returns a key of `adapt`. Three guards, in order:
+      · not enough reliance to read           -> no adaptation
+      · no tactic holds a clear majority      -> no adaptation (mixed play)
+      · exact tie at the top                  -> no adaptation
+    The old rule had none of these: with zero activity `turret >= drone` held
+    (0 >= 0), so an idle player was handed Chitin Plating every single wave. */
+function resolveAdaptation(){
+  const ranked = Object.keys(ADAPT_FOR)
+    .map(k => [k, tele_use[k]])
+    .sort((a,b) => b[1] - a[1]);
+  const total = ranked.reduce((n,[,v]) => n+v, 0);
+  if(total < ADAPT_MIN_SECONDS)            return null;   // nothing to read
+  if(ranked[0][1] / total < ADAPT_MIN_SHARE) return null; // genuinely mixed
+  if(ranked[0][1] - ranked[1][1] < 1e-6)   return null;   // dead tie
+  return ADAPT_FOR[ranked[0][0]];
+}
+
+function spawnWave(){
+  const nests = ents.filter(e=>e.kind==='nest');
+  if(!nests.length) return;
+  const count = 2 + Math.floor(wave*1.4);
+  for(let i=0;i<count;i++){
+    const n = nests[(rnd()*nests.length)|0];
+    const hp   = 60 + wave*10 + adapt.chitin*30;
+    const spd  = 42 + adapt.swift*13;
+    mk({kind:'alien', x:n.x+(rnd()-.5)*70, y:n.y+(rnd()-.5)*70, r:10,
+        hp, spd, dmg:9+wave*1.6, cd:0, wob:rnd()*6.28});
+  }
+  // --- ADAPTATION: aliens counter whatever the player actually relied on ---
+  const gained = resolveAdaptation();
+  if(gained) adapt[gained]++;
+  tele_use.turret=tele_use.drone=tele_use.trench=0;
+
+  wave++; waveT = WAVE_TIME;
+  msg(gained ? 'WAVE '+(wave-1)+' — ALIENS ADAPTED: '+ADAPT_NAME[gained]
+             : 'HOSTILE WAVE ' + (wave-1));
+  syncHud();
+}
+
+/* ------------------------------ SIM ------------------------------------- */
+function step(dt){
+  T += dt;
+  waveT -= dt;
+  if(waveT <= 0) spawnWave();
+
+  // --- BASE -------------------------------------------------------------
+  base.maxHp = baseMaxHp();
+  if(base.order){
+    const d = Math.hypot(base.order.x-base.x, base.order.y-base.y);
+    if(d < 8) base.order = null;
+    else moveTo(base, base.order.x, base.order.y, base.spd, dt);
+  }
+  if(has('DIG') && base.order) flatten(base.x, base.y, 34);          // excavator attached
+  if(has('GUN')){
+    base.cd -= dt;
+    const t = nearest(base, e=>e.kind==='alien', 210);
+    if(t){
+      // a parked gun chassis is turret defence; one on the move is mobile play
+      tele_use[base.order ? 'drone' : 'turret'] += dt;
+      if(base.cd<=0){ shoot(base, t, 18); base.cd = 0.6; }
+    }
+  }
+  if(has('RIG')){
+    base.mineCd -= dt*reactorMul();
+    if(base.mineCd<=0){
+      const n = nearest(base, e=>e.kind==='node'&&e.type==='sal', 120);
+      if(n){ n.amt-=4; salvage+=4; base.mineCd=0.55; deform(n.x,n.y,16,-0.012);
+             if(n.amt<=0) kill(n); }
+    }
+  }
+
+  // --- UNITS ------------------------------------------------------------
+  for(const e of ents){
+    if(e.kind!=='unit') continue;
+    e.cd -= dt;
+
+    if(e.type==='REAC'){                              // beacon repairs
+      for(const f of ents)
+        if((f.kind==='unit'||f.kind==='base') && dist(e,f)<e.rng)
+          f.hp = Math.min(f.maxHp, f.hp + 11*dt);
+    }
+    if(e.dmg>0){                                      // combat
+      const t = nearest(e, a=>a.kind==='alien'||a.kind==='nest', e.rng);
+      if(t){
+        tele_use[e.spd ? 'drone' : 'turret'] += dt;   // engaged this frame
+        if(e.cd<=0){ shoot(e, t, e.dmg); e.cd = e.spd? 0.65 : 0.9; }
+      }
+    }
+    if(e.type==='RIG'){                                // autonomous mining
+      if(e.cargo>=25){
+        if(dist(e,base)<46){ salvage+=e.cargo; e.cargo=0; pop(e.x,e.y,'var(--gold)'); }
+        else moveTo(e, base.x, base.y, e.spd, dt);
+      }else{
+        const n = e.order?.node && e.order.node.hp>0 ? e.order.node
+                : nearest(e, a=>a.kind==='node', 9999);
+        if(n){
+          if(dist(e,n) < 26){
+            if(e.cd<=0){
+              e.cd = 0.5/reactorMul();
+              if(n.type==='frag'){ frags++; kill(n); pop(n.x,n.y,'var(--frag)');
+                                   msg('TELEPORT FRAGMENT '+frags+'/'+FRAG_GOAL); syncHud(); }
+              else { n.amt-=9; e.cargo+=9; deform(n.x,n.y,20,-0.016);
+                     if(n.amt<=0) kill(n); }
+            }
+          } else moveTo(e, n.x, n.y, e.spd, dt);
+        }
+      }
+      continue;
+    }
+    if(e.type==='DIG' && e.order){                     // trench carving
+      const d = Math.hypot(e.order.x-e.x, e.order.y-e.y);
+      deform(e.x, e.y, 26, -1.5*dt);
+      tele_use.trench += dt;
+      if(d<10) e.order=null; else moveTo(e, e.order.x, e.order.y, e.spd, dt);
+      continue;
+    }
+    if(e.order && e.spd>0){
+      const d = Math.hypot(e.order.x-e.x, e.order.y-e.y);
+      if(d<10) e.order=null; else moveTo(e, e.order.x, e.order.y, e.spd, dt);
+    } else if(e.spd>0 && e.dmg>0){
+      const t = nearest(e, a=>a.kind==='alien', 330);
+      if(t && dist(e,t)>e.rng*0.8) moveTo(e, t.x, t.y, e.spd, dt);
+    }
+  }
+
+  // --- ALIENS -----------------------------------------------------------
+  for(const e of ents){
+    if(e.kind!=='alien') continue;
+    e.cd -= dt; e.wob += dt*6;
+    let t = nearest(e, a=>a.kind==='unit', 260) || base;
+    const d = dist(e,t);
+    if(d < e.r + (t.r||20) + 4){
+      if(e.cd<=0){
+        t.hp -= e.dmg; e.cd = 1.0;
+        pop(t.x,t.y,'var(--alien)');
+        if(t.hp<=0){ if(t===base) lose(); else kill(t); }
+      }
+    } else {
+      // burrow adaptation lets them cross trenches
+      moveTo(e, t.x, t.y, e.spd, dt, adapt.burrow>0);
+    }
+  }
+
+  // --- BULLETS ----------------------------------------------------------
+  for(const b of bullets){
+    b.t += dt;
+    b.x += b.vx*dt; b.y += b.vy*dt;
+    if(b.tg && b.tg.hp>0 && Math.hypot(b.tg.x-b.x, b.tg.y-b.y) < b.tg.r+5){
+      let dmg = b.dmg;
+      if(b.tg.kind==='alien' && adapt.chitin) dmg *= Math.max(0.45, 1-adapt.chitin*0.14);
+      b.tg.hp -= dmg;
+      deform(b.x, b.y, 16, -0.011);                   // shots scar the ground
+      pop(b.x,b.y,'var(--cy-b)');
+      if(b.tg.hp<=0){ salvage += b.tg.kind==='nest'?45:6; kill(b.tg); }
+      b.t = 99;
+    }
+  }
+  bullets = bullets.filter(b=>b.t<2.2);
+  for(const f of fx) f.t += dt;
+  fx = fx.filter(f=>f.t<0.55);
+  ents = ents.filter(e=>e.hp>0);
+
+  if(teleBuilt){
+    teleT -= dt;
+    if(teleT<=0) win();
+  }
+  if(terrainDirty && (terrainCd-=dt)<=0){ bakeTerrain(); terrainCd=0.12; }
+}
+
+function moveTo(e, tx, ty, spd, dt, ignoreTerrain){
+  const dx=tx-e.x, dy=ty-e.y, d=Math.hypot(dx,dy)||1;
+  let mul = 1;
+  const h = hAt(e.x,e.y);
+  if(h < ROUGH) mul = 0.55;                            // rough ground slows
+  let nx = e.x + dx/d*spd*mul*dt, ny = e.y + dy/d*spd*mul*dt;
+  const ok = ignoreTerrain ? inDome(nx,ny) : passable(nx,ny);
+  if(ok){ e.x=nx; e.y=ny; return; }
+  // slide along the obstacle instead of sticking
+  const px = e.x + (-dy/d)*spd*mul*dt, py = e.y + (dx/d)*spd*mul*dt;
+  const qx = e.x + ( dy/d)*spd*mul*dt, qy = e.y + (-dx/d)*spd*mul*dt;
+  if(passable(px,py)){e.x=px;e.y=py;} else if(passable(qx,qy)){e.x=qx;e.y=qy;}
+}
+function nearest(from, pred, max){
+  let best=null, bd=max??1e9;
+  for(const e of ents){ if(e===from||!pred(e))continue;
+    const d=dist(from,e); if(d<bd){bd=d;best=e;} }
+  return best;
+}
+function shoot(from, to, dmg){
+  const d=dist(from,to)||1, sp=430;
+  bullets.push({x:from.x,y:from.y,vx:(to.x-from.x)/d*sp,vy:(to.y-from.y)/d*sp,tg:to,dmg,t:0});
+}
+function kill(e){ e.hp=0; if(selected===e) select(null); }
+function pop(x,y,c){ fx.push({x,y,c,t:0}); }
+
+/* ------------------------------ RENDER ---------------------------------- */
+function draw(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#05070b'; ctx.fillRect(0,0,VW,VH);
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
+
+  // terrain
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(tcv, 0, 0, WW, WH);
+
+  // dome barrier
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const g=ctx.createRadialGradient(DOME_CX,DOME_CY,DOME_R-46,DOME_CX,DOME_CY,DOME_R+12);
+  g.addColorStop(0,'rgba(47,212,255,0)'); g.addColorStop(.82,'rgba(47,212,255,.13)');
+  g.addColorStop(1,'rgba(47,212,255,.42)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(DOME_CX,DOME_CY,DOME_R+12,0,6.284); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle='rgba(47,212,255,.55)'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.arc(DOME_CX,DOME_CY,DOME_R,0,6.284); ctx.stroke();
+
+  // nodes
+  for(const e of ents){
+    if(e.kind!=='node') continue;
+    const s=Math.sin(T*2+e.spin)*1.6;
+    ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(T*0.35+e.spin);
+    if(e.type==='frag'){
+      ctx.shadowColor='#b487ff'; ctx.shadowBlur=18; ctx.fillStyle='#b487ff';
+      ctx.beginPath();
+      for(let i=0;i<6;i++){const a=i/6*6.283, r=i%2?5:14+s;
+        i?ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r):ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);}
+      ctx.closePath(); ctx.fill();
+    }else{
+      ctx.shadowColor='#ffd166'; ctx.shadowBlur=10; ctx.fillStyle='#c9a24a';
+      ctx.fillRect(-9,-6,18,12);
+      ctx.fillStyle='#ffd166'; ctx.fillRect(-9,-6,18,4);
+      ctx.shadowBlur=0; ctx.fillStyle='rgba(0,0,0,.35)';
+      ctx.fillRect(-9, 4, 18*(1-e.amt/110), 2);
+    }
+    ctx.restore();
+  }
+
+  // nests
+  for(const e of ents){
+    if(e.kind!=='nest') continue;
+    ctx.save(); ctx.translate(e.x,e.y);
+    ctx.shadowColor='#ff5d7a'; ctx.shadowBlur=20;
+    ctx.fillStyle='#3a1020'; ctx.beginPath();
+    for(let i=0;i<9;i++){const a=i/9*6.283+T*0.1, r=e.r+Math.sin(T*1.4+i)*3;
+      i?ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r):ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);}
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#ff5d7a'; ctx.lineWidth=2; ctx.stroke();
+    ctx.shadowBlur=0; ctx.fillStyle='#ff5d7a';
+    ctx.beginPath(); ctx.arc(0,0,5+Math.sin(T*3)*1.5,0,6.283); ctx.fill();
+    ctx.restore();
+    bar(e, '#ff5d7a');
+  }
+
+  // base
+  drawBase();
+
+  // units
+  for(const e of ents){
+    if(e.kind!=='unit') continue;
+    ctx.save(); ctx.translate(e.x,e.y);
+    ctx.fillStyle='rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(2,4,e.r,e.r*.6,0,0,6.283); ctx.fill();
+    ctx.rotate(e.spd? T*1.6 : T*0.5);
+    ctx.shadowColor='#4fe3c1'; ctx.shadowBlur=12;
+    ctx.strokeStyle= e===selected?'#8ffff0':'#4fe3c1'; ctx.lineWidth=2;
+    ctx.fillStyle='rgba(12,40,44,.92)';
+    ctx.beginPath();
+    const sides = e.spd? 3 : 6;
+    for(let i=0;i<sides;i++){const a=i/sides*6.283;
+      i?ctx.lineTo(Math.cos(a)*e.r,Math.sin(a)*e.r):ctx.moveTo(Math.cos(a)*e.r,Math.sin(a)*e.r);}
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    ctx.save(); ctx.translate(e.x,e.y);
+    ctx.shadowBlur=0; ctx.fillStyle='#cfe9ff'; ctx.font='11px Chakra Petch,monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(MODULES[e.type].ic, 0, 0);
+    ctx.restore();
+    if(e===selected){
+      ctx.strokeStyle='rgba(143,255,240,.7)'; ctx.lineWidth=1.5;
+      ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.arc(e.x,e.y,e.r+8,0,6.283); ctx.stroke();
+      ctx.setLineDash([]);
+      if(e.rng){ ctx.strokeStyle='rgba(79,227,193,.18)';
+        ctx.beginPath(); ctx.arc(e.x,e.y,e.rng,0,6.283); ctx.stroke(); }
+    }
+    bar(e, '#4fe3c1');
+    if(e.cargo>0){ ctx.fillStyle='#ffd166';
+      ctx.fillRect(e.x-8, e.y-e.r-13, 16*(e.cargo/25), 2); }
+  }
+
+  // aliens
+  for(const e of ents){
+    if(e.kind!=='alien') continue;
+    ctx.save(); ctx.translate(e.x,e.y);
+    ctx.fillStyle='rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(2,4,e.r,e.r*.6,0,0,6.283); ctx.fill();
+    ctx.shadowColor='#ff5d7a'; ctx.shadowBlur=10;
+    ctx.fillStyle= adapt.chitin? '#8a3a52' : '#c2415e';
+    ctx.beginPath();
+    for(let i=0;i<7;i++){const a=i/7*6.283, r=e.r+Math.sin(e.wob+i*1.7)*2.4;
+      i?ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r):ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);}
+    ctx.closePath(); ctx.fill();
+    if(adapt.chitin){ ctx.strokeStyle='#ffb0c0'; ctx.lineWidth=1.5; ctx.stroke(); }
+    ctx.shadowBlur=0; ctx.fillStyle='#ffe2a8';
+    ctx.beginPath(); ctx.arc(0,-2,2.2,0,6.283); ctx.fill();
+    ctx.restore();
+    bar(e, '#ff5d7a');
+  }
+
+  // bullets + fx
+  ctx.lineCap='round';
+  for(const b of bullets){
+    ctx.strokeStyle='#8ffff0'; ctx.lineWidth=2.4;
+    ctx.shadowColor='#4fe3c1'; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.moveTo(b.x,b.y);
+    ctx.lineTo(b.x-b.vx*0.026, b.y-b.vy*0.026); ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+  for(const f of fx){
+    const p=f.t/0.55;
+    ctx.strokeStyle=f.c; ctx.globalAlpha=1-p; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(f.x,f.y,4+p*22,0,6.283); ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+  drawMini();
+}
+
+function drawBase(){
+  const e=base;
+  ctx.save(); ctx.translate(e.x,e.y);
+  ctx.fillStyle='rgba(0,0,0,.45)'; ctx.beginPath(); ctx.ellipse(3,6,30,19,0,0,6.283); ctx.fill();
+  // treads
+  ctx.rotate(0);
+  ctx.fillStyle='#16222c'; ctx.fillRect(-30,-20,10,40); ctx.fillRect(20,-20,10,40);
+  ctx.fillStyle='#0d161d';
+  for(let i=0;i<6;i++){const o=((T*26+i*7)%40)-20;
+    ctx.fillRect(-30,o,10,3); ctx.fillRect(20,o,10,3);}
+  // hull
+  ctx.shadowColor='#4fe3c1'; ctx.shadowBlur=16;
+  ctx.fillStyle='#12303a'; ctx.strokeStyle='#4fe3c1'; ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(-20,-16); ctx.lineTo(20,-16); ctx.lineTo(26,0);
+  ctx.lineTo(20,16); ctx.lineTo(-20,16); ctx.lineTo(-26,0); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // core
+  ctx.shadowBlur=22; ctx.fillStyle='#8ffff0';
+  ctx.beginPath(); ctx.arc(0,0,6+Math.sin(T*2.4)*1.2,0,6.283); ctx.fill();
+  // module pods around the hull
+  ctx.shadowBlur=8;
+  for(let i=0;i<6;i++){
+    const a=i/6*6.283 - 1.57, px=Math.cos(a)*30, py=Math.sin(a)*23;
+    const m=e.slots[i];
+    ctx.strokeStyle = m? '#4fe3c1':'rgba(93,115,134,.45)';
+    ctx.fillStyle   = m? 'rgba(12,48,52,.95)':'rgba(12,20,26,.6)';
+    ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(px,py,8,0,6.283); ctx.fill(); ctx.stroke();
+    if(m){ ctx.shadowBlur=0; ctx.fillStyle='#cfe9ff';
+      ctx.font='9px Chakra Petch,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(MODULES[m].ic, px, py); ctx.shadowBlur=8; }
+  }
+  ctx.restore();
+  bar(e,'#4fe3c1', 34);
+
+  if(teleBuilt){
+    ctx.save(); ctx.translate(e.x, e.y-70);
+    ctx.strokeStyle='#b487ff'; ctx.lineWidth=3; ctx.shadowColor='#b487ff'; ctx.shadowBlur=26;
+    for(let i=0;i<3;i++){
+      const r=18+i*11+Math.sin(T*3-i)*4;
+      ctx.globalAlpha=0.85-i*0.22;
+      ctx.beginPath(); ctx.arc(0,0,r,T*(1+i*0.4),T*(1+i*0.4)+4.4); ctx.stroke();
+    }
+    ctx.globalAlpha=1; ctx.restore();
+  }
+}
+
+function bar(e,c,w){
+  if(e.hp>=e.maxHp) return;
+  const W = w ?? e.r*2.2;
+  ctx.fillStyle='rgba(0,0,0,.65)'; ctx.fillRect(e.x-W/2, e.y-e.r-9, W, 3.5);
+  ctx.fillStyle=c; ctx.fillRect(e.x-W/2, e.y-e.r-9, W*clamp(e.hp/e.maxHp,0,1), 3.5);
+}
+
+function drawMini(){
+  const S=86, PX=VW-S-10, PY=VH-S-158;
+  ctx.fillStyle='rgba(8,12,18,.88)'; ctx.fillRect(PX,PY,S,S);
+  ctx.strokeStyle='#1d3242'; ctx.lineWidth=1; ctx.strokeRect(PX,PY,S,S);
+  const k=S/WW, ky=S/WH;
+  ctx.strokeStyle='rgba(47,212,255,.35)';
+  ctx.beginPath(); ctx.arc(PX+DOME_CX*k, PY+DOME_CY*ky, DOME_R*k, 0, 6.283); ctx.stroke();
+  for(const e of ents){
+    const c = e.kind==='alien'?'#ff5d7a' : e.kind==='nest'?'#ff9b3d'
+            : e.kind==='node'?(e.type==='frag'?'#b487ff':'#ffd166') : '#4fe3c1';
+    ctx.fillStyle=c;
+    const s = e.kind==='nest'?3:2;
+    ctx.fillRect(PX+e.x*k-s/2, PY+e.y*ky-s/2, s, s);
+  }
+  ctx.fillStyle='#8ffff0'; ctx.fillRect(PX+base.x*k-2, PY+base.y*ky-2, 4, 4);
+  ctx.strokeStyle='rgba(255,255,255,.4)';
+  ctx.strokeRect(PX+cam.x*k, PY+cam.y*ky, VW*k, VH*ky);
+}
+
+/* ------------------------------ INPUT ----------------------------------- */
+let ptr=null, panned=false, dragMod=null;
+const ghost=document.getElementById('ghost');
+
+function toWorld(cx,cy){ return {x:cx+cam.x, y:cy+cam.y}; }
+
+cv.addEventListener('pointerdown', ev=>{
+  ptr = {x:ev.clientX, y:ev.clientY, sx:ev.clientX, sy:ev.clientY};
+  panned=false; cv.setPointerCapture(ev.pointerId);
+});
+cv.addEventListener('pointermove', ev=>{
+  if(!ptr) return;
+  const dx=ev.clientX-ptr.x, dy=ev.clientY-ptr.y;
+  if(Math.hypot(ev.clientX-ptr.sx, ev.clientY-ptr.sy) > 9) panned=true;
+  if(panned){
+    cam.x = clamp(cam.x-dx, 0, Math.max(0,WW-VW));
+    cam.y = clamp(cam.y-dy, 0, Math.max(0,WH-VH));
+  }
+  ptr.x=ev.clientX; ptr.y=ev.clientY;
+});
+cv.addEventListener('pointerup', ev=>{
+  if(ptr && !panned) tap(toWorld(ev.clientX, ev.clientY));
+  ptr=null;
+});
+cv.addEventListener('pointercancel', ()=>{ptr=null;});
+
+function tap(w){
+  // pick an entity first
+  let hit=null, hd=34;
+  for(const e of ents){
+    if(e.kind!=='unit') continue;
+    const d=Math.hypot(e.x-w.x,e.y-w.y); if(d<Math.max(hd,e.r+14)&&d<hd){hd=d;hit=e;}
+  }
+  if(Math.hypot(base.x-w.x, base.y-w.y) < 34) hit = base;
+  if(hit){ select(hit===base?null:hit); if(hit===base) select(base); return; }
+
+  if(selected){
+    const node = ents.find(e=>e.kind==='node' && Math.hypot(e.x-w.x,e.y-w.y)<24);
+    selected.order = {x:w.x, y:w.y, node};
+    pop(w.x, w.y, 'var(--cy)');
+  } else {
+    base.order = {x:w.x, y:w.y};
+    pop(w.x, w.y, 'var(--cy)');
+  }
+}
+function select(e){
+  selected=e;
+  document.getElementById('b-recall').disabled = !(e && e.kind==='unit');
+  document.getElementById('hint').textContent = e
+    ? (e===base? 'SENTINEL CHASSIS selected — tap ground to drive'
+               : (e.name||'unit')+' selected — tap ground to command')
+    : 'drag map to pan · tap to command · drag a module off the dock to deploy it';
+}
+
+/* ---- drag a module out of a dock slot and drop it on the map ---- */
+function bindSlot(el, i){
+  el.addEventListener('pointerdown', ev=>{
+    const m = base.slots[i]; if(!m) return;
+    ev.preventDefault();
+    dragMod = {slot:i, type:m};
+    ghost.textContent = MODULES[m].ic;
+    ghost.classList.add('on');
+    ghost.style.left=ev.clientX+'px'; ghost.style.top=ev.clientY+'px';
+    el.setPointerCapture(ev.pointerId);
+  });
+  el.addEventListener('pointermove', ev=>{
+    if(!dragMod) return;
+    ghost.style.left=ev.clientX+'px'; ghost.style.top=ev.clientY+'px';
+  });
+  el.addEventListener('pointerup', ev=>{
+    if(!dragMod) return;
+    ghost.classList.remove('on');
+    const dockTop = document.getElementById('dock').getBoundingClientRect().top;
+    if(ev.clientY < dockTop-6){
+      const w = toWorld(ev.clientX, ev.clientY);
+      if(passable(w.x,w.y)){
+        base.slots[dragMod.slot]=null;
+        const u = deployModule(dragMod.type, w.x, w.y);
+        deform(w.x,w.y,30,-0.03);
+        pop(w.x,w.y,'var(--cy-b)');
+        select(u); syncDock(); syncHud();
+        msg(UNIT[dragMod.type].name.toUpperCase()+' DEPLOYED');
+      } else msg('CANNOT DEPLOY THERE');
+    }
+    dragMod=null;
+  });
+}
+
+function syncDock(){
+  const c=document.getElementById('slots');
+  c.innerHTML='';
+  base.slots.forEach((m,i)=>{
+    const d=document.createElement('div');
+    d.className='slot '+(m?'filled':'empty');
+    d.innerHTML = m
+      ? `<div class="ic">${MODULES[m].ic}</div><div class="nm">${MODULES[m].name}</div>`
+      : `<div class="ic" style="opacity:.5">＋</div><div class="nm">EMPTY</div>`;
+    if(m) bindSlot(d,i); else d.onclick=()=>openShop(i);
+    c.appendChild(d);
+  });
+}
+
+/* ------------------------------ UI -------------------------------------- */
+let shopSlot=0;
+function openShop(slot){
+  shopSlot = slot ?? base.slots.indexOf(null);
+  if(shopSlot<0){ msg('ALL BAYS OCCUPIED'); return; }
+  const L=document.getElementById('shop-list'); L.innerHTML='';
+  for(const k in MODULES){
+    const m=MODULES[k], can = salvage>=m.cost;
+    const d=document.createElement('div');
+    d.className='item'+(can?'':' no');
+    d.innerHTML=`<div class="ic">${m.ic}</div><div class="tx">
+      <div class="t1">${m.name}</div>
+      <div class="t2">ATTACHED <em>${m.on}</em><br>DEPLOYED <i>${m.off}</i></div>
+      </div><div class="pr">${m.cost}</div>`;
+    if(can) d.onclick=()=>{
+      salvage-=m.cost; attachModule(k, shopSlot);
+      closeShop(); syncHud(); msg(m.name.toUpperCase()+' INSTALLED');
+    };
+    L.appendChild(d);
+  }
+  document.getElementById('shop').classList.add('on');
+}
+function closeShop(){document.getElementById('shop').classList.remove('on');}
+
+document.getElementById('b-shop').onclick=()=>openShop(null);
+document.getElementById('b-close').onclick=closeShop;
+document.getElementById('b-recall').onclick=()=>{
+  if(!selected || selected.kind!=='unit') return;
+  const i = base.slots.indexOf(null);
+  if(i<0){ msg('NO FREE BAY'); return; }
+  base.slots[i]=selected.type;
+  pop(selected.x, selected.y, 'var(--cy)');
+  kill(selected); select(null); syncDock();
+  msg('MODULE RECALLED');
+};
+document.getElementById('b-tele').onclick=()=>{
+  if(frags<FRAG_GOAL || teleBuilt) return;
+  teleBuilt=true; teleT=35; msg('TELEPORTER CHARGING — HOLD THE LINE');
+  syncHud();
+};
+
+function syncHud(){
+  document.getElementById('s-sal').textContent = salvage|0;
+  document.getElementById('s-frag').textContent = frags+'/'+FRAG_GOAL;
+  document.getElementById('s-hp').textContent = Math.max(0,(base.hp/base.maxHp*100))|0;
+  document.getElementById('s-wave').textContent =
+    teleBuilt ? 'EVAC '+Math.max(0,teleT|0)+'s'
+              : wave+' · '+Math.max(0,waveT|0)+'s';
+  const a=[];
+  if(adapt.chitin) a.push('Chitin Plating '+'I'.repeat(Math.min(4,adapt.chitin)));
+  if(adapt.swift)  a.push('Sprint Glands '+'I'.repeat(Math.min(4,adapt.swift)));
+  if(adapt.burrow) a.push('Burrowing '+'I'.repeat(Math.min(4,adapt.burrow)));
+  document.getElementById('s-adapt').textContent = a.length? a.join(' · ') : 'none detected';
+  // show the player what the hive is currently reading them as
+  const tot = tele_use.turret + tele_use.drone + tele_use.trench;
+  document.getElementById('s-read').textContent =
+    tot < ADAPT_MIN_SECONDS
+      ? 'reading — inconclusive (' + tot.toFixed(0) + '/' + ADAPT_MIN_SECONDS + 's)'
+      : 'reading — ' + [['turrets',tele_use.turret],['drones',tele_use.drone],
+                        ['trenches',tele_use.trench]]
+          .sort((x,y)=>y[1]-x[1])
+          .map(([k,v])=>k+' '+Math.round(v/tot*100)+'%').join(' · ');
+  document.getElementById('b-tele').disabled = frags<FRAG_GOAL || teleBuilt;
+}
+
+let msgT=0;
+function msg(t){
+  const el=document.getElementById('center-msg');
+  el.textContent=t; el.style.opacity=1; msgT=2.0;
+}
+function win(){ running=false; over('EXTRACTED','Teleport lock achieved. Biodome 02 awaits — '+
+  'this is where mission 4 would load, carrying your chassis loadout forward.'); }
+function lose(){ running=false; over('CHASSIS LOST','The Sentinel core was destroyed. '+
+  'In the full build this would trigger a salvage-recovery mission instead of a hard fail.'); }
+function over(t,p){
+  document.getElementById('over-t').textContent=t;
+  document.getElementById('over-p').textContent=p;
+  document.getElementById('over').classList.add('on');
+}
+
+/* ------------------------------ BOOT ------------------------------------ */
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  VW = window.innerWidth; VH = window.innerHeight;
+  cv.width = VW*DPR; cv.height = VH*DPR;
+  cam.x = clamp(cam.x, 0, Math.max(0,WW-VW));
+  cam.y = clamp(cam.y, 0, Math.max(0,WH-VH));
+}
+window.addEventListener('resize', resize);
+
+function loop(ts){
+  const dt = Math.min(0.05, (ts-last)/1000 || 0); last=ts;
+  if(running) step(dt);
+  if(msgT>0){ msgT-=dt; if(msgT<=0) document.getElementById('center-msg').style.opacity=0; }
+  draw();
+  syncHud();
+  requestAnimationFrame(loop);
+}
+
+resize();
+genTerrain();
+bakeTerrain();
+makeBase();
+scatterWorld();
+syncDock();
+syncHud();
+cam.x = clamp(base.x-VW/2, 0, Math.max(0,WW-VW));
+cam.y = clamp(base.y-VH/2, 0, Math.max(0,WH-VH));
+msg('BIODOME 01 — RECOVER 5 TELEPORT FRAGMENTS');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

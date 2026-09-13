@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="TerrainConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/terrain_config.gd" id="1_terrain"]
+
+[resource]
+script = ExtResource("1_terrain")
+cells_x = 150
+cells_z = 112
+cell_size_m = 1.0
+height_scale_m = 12.0
+worldgen_seed = 20260913
+neutral_height = 0.5
+impassable_below = 0.26
+rough_below = 0.38
+rough_speed_multiplier = 0.55
+clamp_min = 0.02
+clamp_max = 0.98
+excavator_rate_per_s = -1.5
+excavator_radius_m = 1.625
+flatten_rate_per_s = 6.0
+flatten_radius_m = 2.125
+weapon_scar_delta = -0.011
+weapon_scar_radius_m = 1.0
+scar_floor = 0.38
+mining_scar_delta = -0.016
+mining_scar_radius_m = 1.25
+deploy_impact_delta = -0.03
+deploy_impact_radius_m = 1.875

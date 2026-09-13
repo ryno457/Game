@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ChassisConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/chassis_config.gd" id="1_chassis"]
+
+[resource]
+script = ExtResource("1_chassis")
+max_hp = 600.0
+speed_mps = 2.875
+radius_m = 1.625
+arrive_threshold_m = 0.5
+module_bays = 6
+default_loadout = Array[StringName]([&"RIG", &"GUN"])
+starting_salvage = 60
