@@ -1,0 +1,92 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/spike_main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/terrain.gd" id="2_terrain"]
+[ext_resource type="Script" path="res://scripts/unit_swarm.gd" id="3_swarm"]
+
+[sub_resource type="Environment" id="Env_1"]
+background_mode = 1
+background_color = Color(0.031, 0.043, 0.066, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.44, 0.55, 0.68, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+
+[node name="Spike" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-52, -36, 0)
+light_energy = 1.1
+shadow_enabled = false
+
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("2_terrain")
+
+[node name="Swarm" type="MultiMeshInstance3D" parent="."]
+script = ExtResource("3_swarm")
+
+[node name="CameraRig" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+far = 600.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="VBoxContainer" parent="HUD"]
+offset_left = 14.0
+offset_top = 14.0
+offset_right = 660.0
+offset_bottom = 620.0
+theme_override_constants/separation = 14
+
+[node name="Readout" type="Label" parent="HUD/Panel"]
+layout_mode = 2
+text = "press SOAK to begin"
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.81, 0.91, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+
+[node name="Verdict" type="Label" parent="HUD/Panel"]
+layout_mode = 2
+text = ""
+autowrap_mode = 2
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(1, 0.85, 0.45, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+
+[node name="Controls" type="HBoxContainer" parent="HUD"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 14.0
+offset_top = -104.0
+offset_right = -14.0
+offset_bottom = -22.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 12
+
+[node name="Soak" type="Button" parent="HUD/Controls"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "▶ SOAK 10 MIN"
+theme_override_font_sizes/font_size = 26
+
+[node name="Units" type="Button" parent="HUD/Controls"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "UNITS 150"
+theme_override_font_sizes/font_size = 26
+
+[node name="Mode" type="Button" parent="HUD/Controls"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "DIG"
+theme_override_font_sizes/font_size = 26
