@@ -1,11 +1,18 @@
 class_name Heightfield
 extends RefCounted
+##
+## Emits `deformed` rather than touching the event bus directly: an autoload
+## does not exist under `godot --headless --script`, and a system that cannot
+## run headlessly cannot be tested headlessly. The node that owns a Heightfield
+## forwards this to EventBus.terrain_deformed.
 ## The deformable terrain, as pure data. No rendering, no collision — those
 ## consume this. Keeping it a plain RefCounted is what makes the numeric
 ## thresholds testable headlessly, which CLAUDE.md requires and the prototype
 ## learned the hard way.
 ##
 ## Heights are normalized 0-1. `cfg.neutral_height` is flat ground.
+
+signal deformed(world_aabb: AABB)
 
 var cfg: TerrainConfig
 var heights: PackedFloat32Array
@@ -104,5 +111,5 @@ func _region(x0: int, z0: int, x1: int, z1: int) -> AABB:
 		Vector3(x0 * s, 0.0, z0 * s),
 		Vector3((x1 - x0 + 1) * s, cfg.height_scale_m, (z1 - z0 + 1) * s)
 	)
-	EventBus.terrain_deformed.emit(aabb)
+	deformed.emit(aabb)
 	return aabb

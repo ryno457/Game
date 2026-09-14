@@ -4,6 +4,11 @@ extends RefCounted
 ##
 ## Stacks persist across missions within a biodome.
 
+## Emitted with an empty id when the hive could not read the player this wave.
+## The owning node forwards this to EventBus.hive_adapted; see Heightfield for
+## why this is not emitted on the bus directly.
+signal adapted(adaptation_id: StringName, stacks: int)
+
 var rules: AdaptationRules
 var stacks: Dictionary = {}   # adaptation_id -> int
 
@@ -47,10 +52,10 @@ func resolve(reliance: Dictionary) -> StringName:
 func apply(reliance: Dictionary) -> StringName:
 	var gained := resolve(reliance)
 	if gained == &"":
-		EventBus.hive_adapted.emit(&"", 0)
+		adapted.emit(&"", 0)
 		return &""
 	stacks[gained] = stacks.get(gained, 0) + 1
-	EventBus.hive_adapted.emit(gained, stacks[gained])
+	adapted.emit(gained, stacks[gained])
 	return gained
 
 
