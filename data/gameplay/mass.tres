@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MassConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/mass_config.gd" id="1_mass"]
+
+[resource]
+script = ExtResource("1_mass")
+starting_mass = 30.0
+reserve_mass = 8.0
+max_mass = 400.0
+scale_at_min = 0.55
+scale_at_max = 2.2
+scale_tween_s = 0.45
+recovery_loss = 0.25
+scrap_loss = 0.15

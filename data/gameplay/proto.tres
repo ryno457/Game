@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="ProtoConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/proto_config.gd" id="1_proto"]
+
+[resource]
+script = ExtResource("1_proto")
+drone_speed_mps = 11.0
+drone_reveal_m = 9.0
+small_free_s = 1.2
+large_free_s = 26.0
+small_mass = 9.0
+large_mass = 55.0
+small_count = 9
+large_count = 3
+small_spread_m = Vector2(8, 34)
+large_spread_m = Vector2(44, 70)
+module_reveal_m = 22.0
+module_drain_per_s = 0.4
+alien_speed_mps = 4.6
+alien_damage = 7.0
+alien_attack_cd_s = 1.0
+alien_radius_m = 0.55
+spawn_ring_m = Vector2(46, 60)
+escort_radius_m = 6.0
+escort_lerp = 0.8

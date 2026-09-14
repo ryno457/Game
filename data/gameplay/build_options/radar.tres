@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BuildOption" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="1_opt"]
+
+[resource]
+script = ExtResource("1_opt")
+id = &"RADAR"
+display_name = "Radar"
+mass_cost = 15.0
+description = "Roots in place. Wide reveal through the fog."
+is_structure = true
+max_hp = 70.0
+radius_m = 0.6
+speed_mps = 0.0
+colour = Color(0.71, 0.53, 1.0, 1)
+damage = 0.0
+range_m = 0.0
+cooldown_s = 1.0
+reveal_m = 34.0

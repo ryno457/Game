@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BuildOption" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="1_opt"]
+
+[resource]
+script = ExtResource("1_opt")
+id = &"GUARD"
+display_name = "Guard"
+mass_cost = 12.0
+description = "Mobile fighter. Follows the module."
+is_structure = false
+max_hp = 90.0
+radius_m = 0.55
+speed_mps = 4.2
+colour = Color(0.31, 0.89, 0.76, 1)
+damage = 14.0
+range_m = 9.0
+cooldown_s = 0.65
+reveal_m = 6.0

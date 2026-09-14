@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BuildOption" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="1_opt"]
+
+[resource]
+script = ExtResource("1_opt")
+id = &"TURRET"
+display_name = "Turret"
+mass_cost = 18.0
+description = "Roots in place. Longer reach, more damage."
+is_structure = true
+max_hp = 180.0
+radius_m = 0.7
+speed_mps = 0.0
+colour = Color(0.55, 0.93, 0.82, 1)
+damage = 30.0
+range_m = 14.0
+cooldown_s = 0.9
+reveal_m = 8.0

@@ -1,0 +1,98 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scenes/proto/proto_main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/systems/terrain_view.gd" id="2_terrain"]
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_1"]
+sky_top_color = Color(0.10, 0.13, 0.22, 1)
+sky_horizon_color = Color(0.30, 0.25, 0.26, 1)
+ground_bottom_color = Color(0.05, 0.05, 0.07, 1)
+ground_horizon_color = Color(0.22, 0.19, 0.20, 1)
+sun_angle_max = 24.0
+sun_curve = 0.18
+
+[sub_resource type="Sky" id="Sky_2"]
+sky_material = SubResource("Sky_1")
+
+[sub_resource type="Environment" id="Env_1"]
+background_mode = 2
+sky = SubResource("Sky_2")
+ambient_light_source = 3
+ambient_light_color = Color(0.42, 0.48, 0.62, 1)
+ambient_light_sky_contribution = 0.65
+ambient_light_energy = 0.9
+tonemap_mode = 3
+tonemap_white = 4.0
+ssao_enabled = false
+fog_enabled = true
+fog_light_color = Color(0.10, 0.12, 0.18, 1)
+fog_density = 0.0035
+fog_sky_affect = 0.4
+
+[node name="Proto" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-42, -128, 0)
+light_color = Color(1, 0.93, 0.82, 1)
+light_energy = 1.35
+shadow_enabled = true
+directional_shadow_mode = 1
+directional_shadow_max_distance = 90.0
+
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("2_terrain")
+
+[node name="Module" type="Node3D" parent="."]
+
+[node name="Hull" type="MeshInstance3D" parent="Module"]
+
+[node name="Drone" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="Drone"]
+
+[node name="CameraRig" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+far = 400.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="VBoxContainer" parent="HUD"]
+offset_left = 14.0
+offset_top = 14.0
+offset_right = 700.0
+offset_bottom = 420.0
+theme_override_constants/separation = 10
+
+[node name="Readout" type="Label" parent="HUD/Panel"]
+layout_mode = 2
+text = "…"
+theme_override_font_sizes/font_size = 23
+theme_override_colors/font_color = Color(0.81, 0.91, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+
+[node name="Toast" type="Label" parent="HUD/Panel"]
+layout_mode = 2
+autowrap_mode = 2
+theme_override_font_sizes/font_size = 21
+theme_override_colors/font_color = Color(1, 0.85, 0.45, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+
+[node name="Build" type="HBoxContainer" parent="HUD"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 14.0
+offset_top = -112.0
+offset_right = -14.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 10
