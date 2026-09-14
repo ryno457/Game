@@ -187,7 +187,7 @@ func verdict() -> Dictionary:
 	return {"passed": ok, "lines": lines, "p95": p95}
 
 
-func write_log(verdict_data: Dictionary, device: String) -> String:
+func write_log(verdict_data: Dictionary, device: String, lighting := "") -> String:
 	var stamp := Time.get_datetime_string_from_system().replace(":", "-")
 	var path := "user://spike_a_%s.csv" % stamp
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -195,6 +195,7 @@ func write_log(verdict_data: Dictionary, device: String) -> String:
 		return "<could not open %s>" % path
 	f.store_line("# SENTINEL Spike A — deformable terrain performance")
 	f.store_line("# device: %s" % device)
+	f.store_line("# lighting: %s" % lighting)
 	f.store_line("# verdict: %s" % ("PASS" if verdict_data.passed else "FAIL"))
 	for l in verdict_data.lines:
 		f.store_line("# %s" % l)

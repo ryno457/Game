@@ -8,8 +8,15 @@ extends Resource
 @export_multiline var description: String = ""
 
 @export_group("Form")
-## Structures root where they are placed; units follow the module.
+## Cosmetic/behavioural grouping only. EVERYTHING the module builds travels
+## with it — the caravan is total. The only permanent mark the player leaves on
+## the world is dug terrain, which is what makes a trench a real commitment
+## rather than another thing that follows you around.
 @export var is_structure: bool = false
+## Where this keeps station in the convoy, in metres from the module. Heavier
+## things sit further out so they meet trouble first.
+@export var escort_radius_m: float = 6.0
+@export var escort_speed_mps: float = 7.0
 @export var max_hp: float = 100.0
 @export var radius_m: float = 0.8
 @export var speed_mps: float = 0.0

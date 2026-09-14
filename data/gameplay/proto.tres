@@ -23,3 +23,7 @@ alien_radius_m = 0.55
 spawn_ring_m = Vector2(46, 60)
 escort_radius_m = 6.0
 escort_lerp = 0.8
+escort_catchup = 2.4
+trench_rate_per_s = -1.5
+trench_radius_m = 1.6
+trench_mass_per_s = 0.6

@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="LightingConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/lighting_config.gd" id="1_light"]
+
+[resource]
+script = ExtResource("1_light")
+sun_rotation_deg = Vector3(-38, -132, 0)
+sun_colour = Color(1, 0.91, 0.78, 1)
+sun_energy = 1.45
+sun_specular = 0.35
+shadows_enabled = true
+shadow_mode = 1
+shadow_max_distance = 85.0
+shadow_split_1 = 0.12
+shadow_fade_start = 0.85
+shadow_normal_bias = 1.4
+shadow_bias = 0.04
+shadow_blur = 1.0
+shadow_atlas_size = 2048
+soft_shadow_quality = 2
+sky_top = Color(0.085, 0.115, 0.2, 1)
+sky_horizon = Color(0.34, 0.27, 0.27, 1)
+ground_horizon = Color(0.2, 0.17, 0.18, 1)
+ground_bottom = Color(0.045, 0.045, 0.06, 1)
+sky_energy = 1.0
+ambient_sky_contribution = 0.7
+ambient_colour = Color(0.4, 0.47, 0.62, 1)
+ambient_energy = 0.85
+fog_enabled = true
+fog_colour = Color(0.09, 0.11, 0.17, 1)
+fog_density = 0.0032
+fog_sky_affect = 0.35
+fog_height_falloff = 0.22
+tonemap = 3
+tonemap_exposure = 1.0
+tonemap_white = 5.0
+glow_enabled = true
+glow_hdr_threshold = 1.1
+glow_strength = 0.9
+glow_bloom = 0.12

@@ -17,3 +17,5 @@ damage = 30.0
 range_m = 14.0
 cooldown_s = 0.9
 reveal_m = 8.0
+escort_radius_m = 8.0
+escort_speed_mps = 6.0

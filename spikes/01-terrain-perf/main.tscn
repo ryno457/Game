@@ -1,27 +1,16 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/spike_main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/terrain.gd" id="2_terrain"]
 [ext_resource type="Script" path="res://scripts/unit_swarm.gd" id="3_swarm"]
 
-[sub_resource type="Environment" id="Env_1"]
-background_mode = 1
-background_color = Color(0.031, 0.043, 0.066, 1)
-ambient_light_source = 2
-ambient_light_color = Color(0.44, 0.55, 0.68, 1)
-ambient_light_energy = 0.55
-tonemap_mode = 2
-
 [node name="Spike" type="Node3D"]
 script = ExtResource("1_main")
 
+; Lighting is applied at runtime by LightingRig from data/lighting.tres.
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Env_1")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-52, -36, 0)
-light_energy = 1.1
-shadow_enabled = false
 
 [node name="Terrain" type="Node3D" parent="."]
 script = ExtResource("2_terrain")

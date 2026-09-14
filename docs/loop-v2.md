@@ -93,12 +93,36 @@ a reward.
 - **Simulation had to be split from presentation** before the loop could be
   tested at all. `step()` runs the game; `_present()` only reads it.
 
+## Resolved: the caravan is total
+
+Everything the module builds travels with it — turrets, radar, bulwarks, units.
+Nothing roots down. Convoy members hold evenly spaced stations in a ring, at a
+per-option radius so heavy things sit further out and meet trouble first, and
+close the gap faster the further behind they fall.
+
+**The only permanent mark the player leaves on the world is dug terrain.** That
+is what gives the deformable heightfield a job no building can take, and it
+makes a trench a genuine commitment: you cannot take it with you. Digging costs
+mass per second, so even the permanent option is paid for in body.
+
+## Lighting is part of the measurement
+
+`data/gameplay/lighting.tres` plus `LightingRig` are the shipped lighting, and
+both the prototype and Spike A apply them from that one source
+(`tools/export_spike_map.gd` syncs the copy into the standalone spike). A
+frame-rate soak run without shadows and a lit sky measures a configuration
+nobody plays, so the soak CSV now records the lighting settings in its header
+and terrain and units both cast.
+
+Mobile-renderer reality shaped the values: no SDFGI, no volumetric fog, no
+SSAO/SSIL, one directional shadow. Ambient comes from the sky rather than a
+bake, because the terrain deforms at runtime and cannot be baked.
+
 ## Open design questions — not mine to answer
 
-1. **Caravan versus emplacement.** "Units move automatically with the module"
-   and "the player sets up defence and trenches" pull opposite ways: a trench
-   cannot follow you. Does a structure root in place while units follow?
-2. **How much recovery loss?** Enough that churn hurts, little enough that
+1. **How much recovery loss?** Enough that churn hurts, little enough that
    experimenting is not punished.
-3. **Can the module starve?** If building drops it below a floor, is that a
+2. **Can the module starve?** If building drops it below a floor, is that a
    loss state, a vulnerability, or simply impossible?
+3. **Does trenching cost the right thing?** Mass-per-second makes digging
+   compete with building. Time might be the better currency.

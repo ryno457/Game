@@ -16,6 +16,7 @@ const MASS_CFG := "res://data/gameplay/mass.tres"
 const WAVES := "res://data/waves/biodome_01.tres"
 const OPTIONS_DIR := "res://data/gameplay/build_options/"
 const TERRAIN_SHADER := "res://shaders/terrain_lit.gdshader"
+const LIGHT_CFG := "res://data/gameplay/lighting.tres"
 
 const PROTO_CFG := "res://data/gameplay/proto.tres"
 const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
@@ -24,6 +25,8 @@ const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
 @onready var module: Node3D = $Module
 @onready var drone: Node3D = $Drone
 @onready var rig: Node3D = $CameraRig
+@onready var sun: DirectionalLight3D = $Sun
+@onready var world_env: WorldEnvironment = $WorldEnvironment
 @onready var camera: Camera3D = $CameraRig/Camera3D
 @onready var readout: Label = $HUD/Panel/Readout
 @onready var toast: Label = $HUD/Panel/Toast
@@ -55,12 +58,16 @@ var _mm_aliens: MultiMeshInstance3D
 var _module_scale := 1.0
 var _toast_t := 0.0
 var _fog_cd := 0.0
+var trenching := false
 var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
 	_rng.seed = 20260913
 	tune = load(PROTO_CFG)
+	# Final-quality lighting, applied from data. Frame-rate work measured
+	# without shadows and a lit sky measures a game nobody ships.
+	LightingRig.apply(load(LIGHT_CFG), sun, world_env)
 	var map: TerrainMap = load(MAP)
 	field = TerrainBuilder.build(map)
 	var cfg := field.cfg
@@ -165,12 +172,19 @@ func _instancer(mesh: Mesh, cap: int) -> MultiMeshInstance3D:
 	mmi.multimesh.mesh = mesh
 	mmi.multimesh.instance_count = cap
 	mmi.multimesh.visible_instance_count = 0
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(mmi)
 	return mmi
 
 
 func _build_menu() -> void:
+	var dig := Button.new()
+	dig.text = "TRENCH"
+	dig.toggle_mode = true
+	dig.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dig.add_theme_font_size_override("font_size", 19)
+	dig.toggled.connect(func(on): trenching = on)
+	build_bar.add_child(dig)
 	for opt in options:
 		var b := Button.new()
 		b.text = "%s\n%d" % [opt.display_name, int(opt.mass_cost)]
@@ -320,6 +334,20 @@ func _abort_job() -> void:
 	waves.end()
 
 
+## Dig where the player drags. The only thing in the game that stays where it
+## was put — and it still costs body, because nothing here is free.
+func _dig(at: Vector2, delta: float) -> void:
+	var cost: float = tune.trench_mass_per_s * delta
+	if not mass.can_afford(cost):
+		_say("not enough mass to keep digging")
+		trenching = false
+		return
+	mass.mass -= cost
+	mass.changed.emit(mass.mass, -cost)
+	field.deform(at, tune.trench_radius_m, tune.trench_rate_per_s * delta)
+	terrain.mark_dirty()
+
+
 func _try_build(opt: BuildOption) -> void:
 	if not mass.spend(opt.mass_cost):
 		return
@@ -327,21 +355,35 @@ func _try_build(opt: BuildOption) -> void:
 	var p := module_pos + Vector2(cos(a), sin(a)) * (3.0 + _module_scale)
 	built.append({
 		"opt": opt, "pos": p, "hp": opt.max_hp, "cd": 0.0,
-		"home": p, "anchored": opt.is_structure,
+		"slot": built.size(),
 	})
 	_say("%s built — %d mass spent" % [opt.display_name, int(opt.mass_cost)])
 
 
-## Structures hold their ground; units keep station on the module. This is the
-## open caravan-versus-emplacement question in docs/loop-v2.md made concrete.
+## EVERYTHING the module builds travels with it. Nothing roots down.
+##
+## That resolves the caravan-versus-emplacement tension in docs/loop-v2.md in
+## favour of the caravan: the only permanent thing the player can place is a
+## dug trench, which makes terrain the whole of their static defence and gives
+## deformable ground a job no building can take.
+##
+## Stations are a ring around the module, evenly spaced by slot so the convoy
+## reads as a formation rather than a clump, at a per-option radius so heavy
+## things meet trouble first.
 func _units(delta: float) -> void:
 	for i in range(built.size() - 1, -1, -1):
 		var u := built[i]
 		u.cd -= delta
-		if not u.anchored:
-			var upos: Vector2 = u.pos
-			var want := module_pos + (upos - module_pos).normalized() * tune.escort_radius_m
-			u.pos = upos.lerp(want, clampf(delta * tune.escort_lerp, 0.0, 1.0))
+		var upos: Vector2 = u.pos
+		var station := _station(i, built.size(), u.opt)
+		var gap := station - upos
+		var dist := gap.length()
+		if dist > 0.05:
+			# A spring, not a leash: something left behind closes faster, so
+			# the convoy regroups instead of stringing out across the map.
+			var urgency := 1.0 + (dist / maxf(1.0, tune.escort_radius_m)) * tune.escort_catchup
+			var speed: float = u.opt.escort_speed_mps * urgency
+			u.pos = upos + gap / dist * minf(speed * delta, dist)
 		if u.opt.damage > 0.0 and u.cd <= 0.0:
 			var upos3: Vector2 = u.pos
 			var t := _nearest_alien(upos3, u.opt.range_m)
@@ -353,6 +395,13 @@ func _units(delta: float) -> void:
 			wrecks.append({"pos": u.pos, "mass": u.opt.mass_cost, "wreck": true})
 			built.remove_at(i)
 			_say("%s lost — wreck marked for recovery" % u.opt.display_name)
+
+
+## Evenly spaced ring position for one convoy member.
+func _station(slot: int, total: int, opt: BuildOption) -> Vector2:
+	var r: float = opt.escort_radius_m if opt.escort_radius_m > 0.0 else tune.escort_radius_m
+	var a := TAU * (float(slot) / maxf(1.0, float(total)))
+	return module_pos + Vector2(cos(a), sin(a)) * (r + _module_scale)
 
 
 func _nearest_alien(from: Vector2, rng: float) -> int:
@@ -486,6 +535,7 @@ func _hud(delta: float) -> void:
 		"BUILT  %d   HOSTILES %d   WRECKS %d" % [built.size(), aliens.size(), wrecks.size()],
 		"SEEN   %.0f%%" % (fog.explored_fraction() * 100.0),
 		"ATTACK %s" % ("INCOMING" if waves.is_active() else "quiet"),
+		"MODE   %s" % ("TRENCH — drag to dig" if trenching else "move"),
 	])
 	if _toast_t > 0.0:
 		_toast_t -= delta
@@ -523,7 +573,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag and _drag:
 		if _press.distance_to(event.position) > 14.0:
 			_panned = true
-		if _panned:
+		if trenching:
+			var hit: Variant = terrain.raycast(
+				camera.project_ray_origin(event.position),
+				camera.project_ray_normal(event.position))
+			if hit != null:
+				var h: Vector3 = hit
+				_dig(Vector2(h.x, h.z), get_process_delta_time())
+		elif _panned:
 			rig.position += Vector3(-event.relative.x, 0.0, -event.relative.y) * 0.09
 			_frame_camera()
 
@@ -544,6 +601,9 @@ func _tap(screen: Vector2) -> void:
 			drone_state = "outbound"
 			_say("Freeing that piece will wake them. Build first if you need to.")
 			return
+	if trenching:
+		_dig(p, 0.35)          # a tap is a short bite; drag digs continuously
+		return
 	if field.is_passable(p):
 		module_pos = p
 		rig.position = Vector3(p.x, 0.0, p.y)

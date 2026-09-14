@@ -16,6 +16,31 @@ const SPIKE_CELLS := Vector2i(160, 128)
 const OUT := "res://spikes/01-terrain-perf/data/test_map_01.bin"
 
 
+## The spike is a standalone project, so it cannot reference the game's
+## scripts — it gets copies. Syncing them here means there is one command to
+## run after changing lighting, rather than a copy that silently rots and a
+## frame-rate soak lit differently from the game.
+func _sync_lighting() -> void:
+	var pairs := {
+		"res://scripts/resources/lighting_config.gd":
+			"res://spikes/01-terrain-perf/scripts/lighting_config.gd",
+		"res://scripts/systems/lighting_rig.gd":
+			"res://spikes/01-terrain-perf/scripts/lighting_rig.gd",
+	}
+	for src in pairs:
+		var text := FileAccess.get_file_as_string(src)
+		var f := FileAccess.open(pairs[src], FileAccess.WRITE)
+		f.store_string(text)
+		f.close()
+	var tres := FileAccess.get_file_as_string("res://data/gameplay/lighting.tres")
+	tres = tres.replace("res://scripts/resources/lighting_config.gd",
+		"res://scripts/lighting_config.gd")
+	var lf := FileAccess.open("res://spikes/01-terrain-perf/data/lighting.tres", FileAccess.WRITE)
+	lf.store_string(tres)
+	lf.close()
+	print("lighting synced into the spike (3 files)")
+
+
 func _initialize() -> void:
 	var map: TerrainMap = load("res://data/terrain/test_map_01.tres")
 	var cfg: TerrainConfig = map.terrain
@@ -50,6 +75,8 @@ func _initialize() -> void:
 		for x in cfg.cells_x:
 			worst = maxf(worst, absf(
 				reread[(oz + z) * sx + (ox + x)] - hf.heights[z * cfg.cells_x + x]))
+
+	_sync_lighting()
 
 	print("spike map: %dx%d samples, offset (%d,%d), %d bytes" % [sx, sz, ox, oz, raw.size()])
 	print("round trip: size %s, max divergence %.8f" % ["OK" if ok else "WRONG", worst])

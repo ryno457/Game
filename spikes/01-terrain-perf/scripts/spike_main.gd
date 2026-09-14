@@ -33,6 +33,8 @@ const FRAMINGS := [
 @onready var swarm: UnitSwarm = $Swarm
 @onready var camera: Camera3D = $CameraRig/Camera3D
 @onready var rig: Node3D = $CameraRig
+@onready var sun: DirectionalLight3D = $Sun
+@onready var world_env: WorldEnvironment = $WorldEnvironment
 @onready var readout: Label = $HUD/Panel/Readout
 @onready var verdict_label: Label = $HUD/Panel/Verdict
 @onready var soak_button: Button = $HUD/Controls/Soak
@@ -62,6 +64,10 @@ func _ready() -> void:
 	_device = "%s / %s / %s" % [
 		OS.get_name(), OS.get_model_name(),
 		RenderingServer.get_video_adapter_name()]
+
+	# The same lighting the game ships with. Measuring frame rate without
+	# shadows and a lit sky measures a configuration nobody plays.
+	LightingRig.apply(load("res://data/lighting.tres"), sun, world_env)
 
 	field = DeformField.new(CELLS, CHUNK_CELLS, CELL_SIZE, HEIGHT_SCALE, NEUTRAL, SEED)
 	if _use_map and not field.load_heights(MAP_PATH):
@@ -278,7 +284,11 @@ func _publish_verdict() -> void:
 	_auto = false
 	var v := probe.verdict()
 	if _log_path == "":
-		_log_path = probe.write_log(v, _device)
+		var lc: LightingConfig = load("res://data/lighting.tres")
+		_log_path = probe.write_log(v, _device,
+			"shadows=%s atlas=%d quality=%d max_dist=%.0f glow=%s fog=%s" % [
+				lc.shadows_enabled, lc.shadow_atlas_size, lc.soft_shadow_quality,
+				lc.shadow_max_distance, lc.glow_enabled, lc.fog_enabled])
 	var head := "VERDICT: %s" % ("PASS — build on it" if v.passed else "FAIL — see CLAUDE.md fallback")
 	verdict_label.text = "\n".join(
 		([head, _device] as Array[String]) + v.lines + ["log: %s" % _log_path])

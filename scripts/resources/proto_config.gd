@@ -35,7 +35,20 @@ extends Resource
 @export var alien_radius_m: float = 0.55
 @export var spawn_ring_m: Vector2 = Vector2(46.0, 60.0)
 
-@export_group("Units")
-## How far a non-anchored unit keeps station from the module.
+@export_group("Convoy")
+## Fallback station-keeping when a BuildOption does not override it.
 @export var escort_radius_m: float = 6.0
 @export var escort_lerp: float = 0.8
+## Station-keeping is a spring, not a leash: a unit that falls behind closes
+## faster. Without this the convoy strings out and stops reading as one force.
+@export var escort_catchup: float = 2.4
+
+@export_group("Trenching")
+## Trenches are the one thing that stays where it was built. Rate is per second
+## and must comfortably breach impassable_below, or a trench is a cosmetic dent
+## — the mistake CLAUDE.md records from the first prototype.
+@export var trench_rate_per_s: float = -1.5
+@export var trench_radius_m: float = 1.6
+## Mass spent per second of digging. Digging is not free; it is the cheapest
+## permanent defence in the game and should still cost body.
+@export var trench_mass_per_s: float = 0.6

@@ -62,7 +62,9 @@ func _build_chunks() -> void:
 			mi.position = Vector3(
 				(cx * CHUNK.x + CHUNK.x * 0.5) * cs, 0.0,
 				(cz * CHUNK.y + CHUNK.y * 0.5) * cs)
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# Terrain both casts and receives: a trench with no shadow in it
+			# does not read as a trench, and that legibility is the point.
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 			add_child(mi)
 
 

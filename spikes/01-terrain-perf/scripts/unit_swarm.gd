@@ -41,7 +41,8 @@ func setup(p_field: DeformField, count: int, p_seed: int) -> void:
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.mesh = mesh
 	multimesh.instance_count = MAX_UNITS
-	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Units cast: 600 shadow casters is part of what the soak must measure.
+	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 	_pos.resize(MAX_UNITS)
 	_goal.resize(MAX_UNITS)
