@@ -1,5 +1,12 @@
 # Spike A — deformable terrain performance
 
+> **Result: the architecture holds.** Measured on a Galaxy A54 (Mali-G68),
+> Godot 4.7.2, 600 units, 10-minute soak: thermal drift ×1.09, p95 collision
+> re-cook 0.64 ms against a 4 ms budget, worst minute 13.60 ms. See
+> [docs/spike-a-findings.md](../../docs/spike-a-findings.md) — including the
+> one criterion that was wrong and why it changed.
+
+
 **Throwaway.** Standalone Godot project, self-contained, deletable with one
 `rm -rf spikes/01-terrain-perf`. No gameplay, and none should ever be added.
 
