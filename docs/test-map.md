@@ -52,7 +52,7 @@ source of truth.
 `tools/build_test_map.gd` asserts the map has the properties the spikes need:
 
 ```
-PASS  rebuild is bit-identical          seed + 13 ops, 86.6 ms
+PASS  rebuild is bit-identical          seed + 13 ops, 61.7 ms
 PASS  has meaningful rough ground       7.0% rough
 PASS  has meaningful impassable ground  3.7% chasm, 96.3% passable
 PASS  goal is reachable from spawn      cost-to-goal 148.4, 16693 cells

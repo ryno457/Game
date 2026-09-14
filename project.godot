@@ -1,5 +1,5 @@
 ; Engine configuration file.
-; Godot 4.6 — SENTINEL
+; Godot 4.7 — SENTINEL
 
 config_version=5
 
@@ -8,7 +8,7 @@ config_version=5
 config/name="SENTINEL"
 config/description="Mobile RTS. Grey-box vertical slice — Biodome 01."
 run/main_scene="res://scenes/mission/mission_01.tscn"
-config/features=PackedStringArray("4.6", "Mobile")
+config/features=PackedStringArray("4.7", "Mobile")
 
 [autoload]
 

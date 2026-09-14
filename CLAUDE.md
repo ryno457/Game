@@ -11,7 +11,7 @@ JS prototype, carry these over rather than re-deriving them.
 
 ## Stack — decided, do not relitigate
 
-- **Godot 4.6**, GDScript. Not C#, not Python, not another engine.
+- **Godot 4.7**, GDScript. Not C#, not Python, not another engine.
 - **Heightmap terrain deformation, NOT voxel.** Voxel gives overhangs and caves
   but will not hold framerate on a mid-range phone under thermal throttle.
   Craters and trenches come from a displacement heightfield plus a collision

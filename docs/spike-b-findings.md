@@ -27,7 +27,7 @@ nothing else can explain a result.
 | No wall-grinding | 0.00% of unit-seconds | ✅ |
 | No diagonal corner-cutting | 0 | ✅ |
 | Burrowers ignore the trench | 126.9 m vs 140.4 m detour | ✅ |
-| Full rebuild fits one frame | **111 ms vs 16.67 ms budget** | ❌ |
+| Full rebuild fits one frame | **102 ms vs 16.67 ms budget** | ❌ |
 
 ## Why the pocket never traps anyone
 
@@ -53,13 +53,13 @@ Full rebuild over 16,756 reachable cells:
 | Version | Cost |
 |---|---|
 | First implementation | 309 ms |
-| Precomputed passability/cost arrays | **111 ms** |
+| Precomputed passability/cost arrays | **102 ms** |
 
 The first version called `is_passable_cell()` and `cell_cost()` per neighbour
 visit — roughly 270k GDScript function calls per build, which dominated
 everything else. Flattening them into two arrays in one linear pass gave 2.8×.
 
-111 ms is still **6.7× over a one-frame budget**. But the next result says that
+102 ms is still **6× over a one-frame budget**. But the next result says that
 does not matter.
 
 ## Latency is cheap — which decides the fix
@@ -70,7 +70,7 @@ needs to be **off the critical path**:
 | Rebuild lands | Arrival | Trapped | Grinding | Mean path |
 |---|---|---|---|---|
 | Same frame | 100% | 0 | 0.00% | 140.4 m |
-| 7 frames late (~110 ms) | 100% | 0 | 0.00% | 140.8 m |
+| 7 frames late (~100 ms) | 100% | 0 | 0.00% | 140.8 m |
 | 30 frames late (~500 ms) | 100% | 0 | 0.00% | 142.3 m |
 
 Half a second of staleness costs **1.9 m of path, about 1.4%**, and traps
@@ -97,7 +97,9 @@ the tactic matter; 10% is what a small trench buys.
 - **Weighted vs uniform cost is untested here.** Both produce identical
   140.4 m paths because the ground is flat, so no cell is ever rough. The
   comparison needs real terrain to mean anything.
-- Rebuild cost is measured on a desktop CPU. A phone will be slower; the
-  threaded-rebuild recommendation gets more important, not less.
+- Rebuild cost is measured on a desktop CPU, Godot 4.7.2. A phone will be
+  slower; the threaded-rebuild recommendation gets more important, not less.
+  (Godot 4.6 measured 111 ms for the same work — 4.7.2 is a little quicker,
+  nowhere near enough to change the conclusion.)
 - Nothing about multiple simultaneous order groups, which is where "one shared
   field per group" starts to cost real memory.

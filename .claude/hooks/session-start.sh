@@ -15,7 +15,7 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
 
-GODOT_VERSION="4.6-stable"           # must match the version pinned in CLAUDE.md
+GODOT_VERSION="4.7.2-stable"         # must match the version pinned in CLAUDE.md
 GODOT_DIR="$HOME/.cache/sentinel-godot/$GODOT_VERSION"
 GODOT_BIN="$GODOT_DIR/Godot_v${GODOT_VERSION}_linux.x86_64"
 

@@ -40,7 +40,7 @@ deformable heightfield, salvage economy, teleporter objective, adaptive AI.
 ## Checks and tests
 
 A `SessionStart` hook (`.claude/hooks/session-start.sh`) installs a headless
-Godot 4.6 into `~/.cache/` for Claude Code on the web sessions and exports it as
+Godot 4.7 into `~/.cache/` for Claude Code on the web sessions and exports it as
 `$GODOT`. It no-ops on local machines, which have their own.
 
 **Lint** — parse-checks every `.gd` in the repo, main project and spikes:

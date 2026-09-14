@@ -10,9 +10,9 @@ get there — neither needs anything from the Claude session.
 Best if you want the answer tonight from the phone alone.
 
 Godot ships an official **Android build of the editor itself**
-(godotengine.org → Download → Android; check the page for the current 4.6
-link). It runs the Vulkan mobile renderer natively, which is the thing the
-browser probe cannot do.
+It is on Google Play, and also downloadable from godotengine.org → Download →
+Android. It runs the Vulkan mobile renderer natively, which is the thing the
+browser probe cannot do. Verified against **4.7.2** (build `ed1daf0bf`).
 
 1. Install the Godot Android editor on the phone.
 2. Get this folder onto the phone — download the branch as a ZIP from GitHub
@@ -34,11 +34,11 @@ The proper measurement, and what you would ship.
 **One-time setup.** Godot needs the Android SDK's `build-tools` to sign the
 APK. Easiest route is to install Android Studio, then in Godot:
 *Editor → Editor Settings → Export → Android* and set the **Android SDK path**.
-Then *Editor → Manage Export Templates* and download the 4.6 templates.
+Then *Editor → Manage Export Templates* and download the 4.7 templates.
 
 **Export.**
 
-1. Open `spikes/01-terrain-perf/project.godot` in Godot 4.6.
+1. Open `spikes/01-terrain-perf/project.godot` in Godot 4.7.
 2. *Project → Export*. The **Android** preset is already configured here —
    arm64 only, immersive mode, wake-lock permission, Gradle build off.
 3. **Export Project**, untick *Export With Debug* if you want a release build,
