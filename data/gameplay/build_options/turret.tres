@@ -19,3 +19,5 @@ cooldown_s = 0.9
 reveal_m = 8.0
 escort_radius_m = 8.0
 escort_speed_mps = 6.0
+model = "turret"
+aim_node = "turret_head"

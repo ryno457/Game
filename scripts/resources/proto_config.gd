@@ -28,6 +28,21 @@ extends Resource
 ## can respond. Set too high this reads as an instant loss with no counterplay.
 @export var module_drain_per_s: float = 0.4
 
+@export_group("Models")
+@export var module_model: String = "module_forms"
+## One entry per growth form, chosen by how much mass the module is carrying.
+@export var module_forms: Array[String] = [
+	"module_form_0", "module_form_1", "module_form_2"]
+@export var drone_model: String = "drone"
+@export var swarmer_model: String = "alien_swarmer"
+@export var breacher_model: String = "alien_breacher"
+## Skinned meshes cannot go through MultiMesh, so every alien is an individual
+## animated node. This caps how many get a real body before the rest fall back
+## to cheap instanced boxes — the tradeoff Spike A's unit numbers imply.
+@export var animated_alien_cap: int = 40
+## Above this share of mass, the breacher shows up instead of the swarmer.
+@export_range(0.0, 1.0) var breacher_share: float = 0.3
+
 @export_group("Hostiles")
 @export var alien_speed_mps: float = 4.6
 @export var alien_damage: float = 7.0

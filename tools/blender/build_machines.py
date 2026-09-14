@@ -45,7 +45,7 @@ from mathutils import Matrix, Vector
 from _bl import script_args  # noqa: F401  (kept so both front ends work)
 
 argv = script_args()
-OUT = argv[0] if argv else "build/models"
+OUT = argv[0] if argv else "models"
 OUT = os.path.abspath(OUT)
 os.makedirs(OUT, exist_ok=True)
 

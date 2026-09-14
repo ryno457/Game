@@ -118,6 +118,35 @@ Mobile-renderer reality shaped the values: no SDFGI, no volumetric fog, no
 SSAO/SSIL, one directional shadow. Ambient comes from the sky rather than a
 bake, because the terrain deforms at runtime and cannot be baked.
 
+## Models, and the one constraint they impose
+
+`models/*.glb`, built procedurally by `tools/blender/build_*.py` (deterministic,
+re-runnable, no hand-authored art). `ModelLibrary` loads them, grounds each
+instance from its own AABB — three assets shipped 7-17 cm low, and fixing it
+centrally beats hoping every future build script complies — and extracts a
+single module growth form from the file that holds all three.
+
+| Asset | Tris | Budget |
+|---|---|---|
+| module forms 0 / 1 / 2 | 984 / 2090 / 3392 | 4000 each |
+| turret / radar / bulwark | 512 / 448 / 704 | 900 |
+| drone / guard | 264 / 400 | 600 |
+| swarmer / breacher | 576 / 704 | 900 |
+
+**A skinned mesh cannot be rendered through MultiMesh.** Godot has nowhere to
+put per-instance bone matrices. Both aliens are skinned — swarmer 16 joints
+(idle, run), breacher 11 joints (idle, walk, slam) — so every animated alien is
+an individual node. `animated_alien_cap` bounds how many get a real body before
+the rest fall back to instanced boxes.
+
+That is the live tradeoff: readable alien animation, or crowd size. Spike A
+measured 600 instanced units at 5.80 ms; individually animated skinned meshes
+will not reach that number. The cap is in `.tres` so the phone can settle it.
+
+The convoy is individual nodes too, but for a different reason: it is a dozen
+things, and nodes buy animated sub-parts free — the turret head and radar dish
+aim at what they are tracking.
+
 ## Open design questions — not mine to answer
 
 1. **How much recovery loss?** Enough that churn hurts, little enough that

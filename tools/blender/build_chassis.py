@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _bl import script_args, render, cycles_cpu
 
 argv = script_args()
-OUT = argv[0] if argv else "build/chassis"
+OUT = argv[0] if argv else "models"
 os.makedirs(OUT, exist_ok=True)
 
 BAYS = 6

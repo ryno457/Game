@@ -46,7 +46,7 @@ from mathutils import Matrix, Vector, Quaternion
 from _bl import script_args  # noqa: F401  (kept so both front ends work)
 
 argv = script_args()
-OUT = os.path.abspath(argv[0] if argv else "build/models")
+OUT = os.path.abspath(argv[0] if argv else "models")
 os.makedirs(OUT, exist_ok=True)
 
 TRI_BUDGET = 900                 # hard limit for one alien

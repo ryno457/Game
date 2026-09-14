@@ -21,6 +21,11 @@ extends Resource
 @export var radius_m: float = 0.8
 @export var speed_mps: float = 0.0
 @export var colour: Color = Color(0.31, 0.89, 0.76)
+## glTF in res://models/ to use for this, without extension. Empty falls back
+## to a coloured box, so a missing model degrades rather than breaks.
+@export var model: String = ""
+## Child node to spin toward a target (turret_head, radar_dish). Empty for none.
+@export var aim_node: String = ""
 
 @export_group("Function")
 @export var damage: float = 0.0

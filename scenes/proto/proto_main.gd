@@ -60,6 +60,11 @@ var _toast_t := 0.0
 var _fog_cd := 0.0
 var trenching := false
 var _rng := RandomNumberGenerator.new()
+var lib := ModelLibrary.new()
+var _module_body: Node3D = null
+var _module_form := -1
+var _unit_nodes: Array[Node3D] = []
+var _alien_nodes: Array[Node3D] = []
 
 
 func _ready() -> void:
@@ -89,10 +94,12 @@ func _ready() -> void:
 	_make_instancers()
 	_build_menu()
 
-	_dress(module.get_node("Hull") as MeshInstance3D,
-		Vector3(2.6, 1.7, 2.6), Color(0.20, 0.52, 0.58), 0.45)
-	_dress(drone.get_node("Body") as MeshInstance3D,
-		Vector3(1.1, 0.4, 1.1), Color(0.62, 0.95, 0.88), 1.6)
+	(module.get_node("Hull") as MeshInstance3D).queue_free()
+	(drone.get_node("Body") as MeshInstance3D).queue_free()
+	_set_module_form(0)
+	var d := lib.spawn(tune.drone_model)
+	if d != null:
+		drone.add_child(d)
 
 	_module_scale = mass.display_scale()
 	module.scale = Vector3.ONE * _module_scale
@@ -101,20 +108,27 @@ func _ready() -> void:
 	_say("A module. A drone. Debris. Start there.")
 
 
-## Grey-box bodies, built in code: boxes with an emissive tint so the module
-## and drone read against dark terrain without any art asset.
-func _dress(mi: MeshInstance3D, size: Vector3, c: Color, emit: float) -> void:
-	var m := BoxMesh.new()
-	m.size = size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = c
-	mat.roughness = 0.55
-	if emit > 0.0:
-		mat.emission_enabled = true
-		mat.emission = c
-		mat.emission_energy_multiplier = emit
-	m.material = mat
-	mi.mesh = m
+## Swap the module to the growth form matching its mass. The three forms share
+## a silhouette and grow by accreting plate, so this reads as the same machine
+## getting bigger rather than a different model appearing.
+func _set_module_form(form: int) -> void:
+	form = clampi(form, 0, tune.module_forms.size() - 1)
+	if form == _module_form:
+		return
+	_module_form = form
+	if _module_body != null:
+		_module_body.queue_free()
+	_module_body = lib.spawn(tune.module_model, tune.module_forms[form])
+	if _module_body != null:
+		module.add_child(_module_body)
+
+
+## Which growth form the current mass earns.
+func _form_for_mass() -> int:
+	var t := mass.normalized()
+	if t < 0.18:
+		return 0
+	return 1 if t < 0.45 else 2
 
 
 func _load_options() -> void:
@@ -482,16 +496,19 @@ func _present(delta: float) -> void:
 	_module_scale = lerpf(_module_scale, want,
 		clampf(delta / maxf(0.01, mass.cfg.scale_tween_s), 0.0, 1.0))
 	module.scale = Vector3.ONE * _module_scale
-	module.position = Vector3(module_pos.x, terrain.height_at(module_pos) + _module_scale, module_pos.y)
+	_set_module_form(_form_for_mass())
+	module.position = Vector3(module_pos.x, terrain.height_at(module_pos), module_pos.y)
 	drone.position = Vector3(drone_pos.x, terrain.height_at(drone_pos) + 5.5, drone_pos.y)
-	drone.rotate_y(delta * 2.4)
+	for r in drone.find_children("rotor_*", "Node3D", true, false):
+		(r as Node3D).rotate_y(delta * 26.0)
 
 	_draw(_mm_debris, debris.filter(func(d): return not d.taken),
 		func(d): return Vector3(0.9, 0.9, 0.9) * (2.3 if d.large else 1.0),
 		func(d): return Color(1.0, 0.62, 0.28) if d.large else Color(0.85, 0.74, 0.42))
-	_draw(_mm_built, built, func(u): return Vector3.ONE * (u.opt.radius_m * 2.0),
-		func(u): return u.opt.colour)
-	_draw(_mm_aliens, aliens, func(_a): return Vector3.ONE * tune.alien_radius_m * 2.0,
+	_sync_convoy()
+	_sync_aliens()
+	_draw(_mm_aliens, aliens.slice(mini(aliens.size(), tune.animated_alien_cap)),
+		func(_a): return Vector3.ONE * tune.alien_radius_m * 2.0,
 		func(_a): return Color(1.0, 0.36, 0.45))
 
 	terrain.upload()
@@ -517,6 +534,77 @@ func _draw(mmi: MultiMeshInstance3D, items: Array, size_fn: Callable, col_fn: Ca
 		mmi.multimesh.set_instance_color(n, col_fn.call(it))
 		n += 1
 	mmi.multimesh.visible_instance_count = n
+
+
+## Give every convoy member a real body, and point the aiming parts at what
+## they are shooting. Individual nodes rather than MultiMesh: the convoy is a
+## dozen things, and nodes buy animated sub-parts for free.
+func _sync_convoy() -> void:
+	while _unit_nodes.size() < built.size():
+		var u: Dictionary = built[_unit_nodes.size()]
+		var n: Node3D = lib.spawn(String(u.opt.model)) if String(u.opt.model) != "" else null
+		if n == null:
+			n = Node3D.new()
+		add_child(n)
+		_unit_nodes.append(n)
+	while _unit_nodes.size() > built.size():
+		var dead: Node3D = _unit_nodes.pop_back()
+		dead.queue_free()
+
+	for i in built.size():
+		var u: Dictionary = built[i]
+		var p: Vector2 = u.pos
+		var n: Node3D = _unit_nodes[i]
+		n.visible = fog.is_visible(p)
+		if not n.visible:
+			continue
+		n.position = Vector3(p.x, terrain.height_at(p), p.y)
+		var aim := String(u.opt.aim_node)
+		if aim == "":
+			continue
+		var part := n.find_child(aim, true, false)
+		if part == null:
+			continue
+		var t := _nearest_alien(p, u.opt.range_m if u.opt.damage > 0.0 else 40.0)
+		# Nothing to shoot: sweep slowly, so an idle turret still looks alive.
+		var sweep := Time.get_ticks_msec() * 0.0006
+		var face: Vector2 = (aliens[t].pos - p) if t >= 0 else Vector2(cos(sweep), sin(sweep))
+		(part as Node3D).rotation.y = atan2(face.x, face.y)
+
+
+## Skinned meshes cannot be instanced through MultiMesh, so animated aliens are
+## individual nodes and the rest fall back to cheap boxes past the cap. That is
+## the tradeoff in the open: readable animation, or crowd size.
+func _sync_aliens() -> void:
+	var animated := mini(aliens.size(), tune.animated_alien_cap)
+	while _alien_nodes.size() < animated:
+		var heavy := _rng.randf() < tune.breacher_share
+		var n: Node3D = lib.spawn(tune.breacher_model if heavy else tune.swarmer_model)
+		if n == null:
+			n = Node3D.new()
+		add_child(n)
+		var ap := n.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if ap != null:
+			var clip := ModelLibrary.pick_animation(ap, "walk" if heavy else "run")
+			if clip != "":
+				ap.play(clip)
+				ap.speed_scale = 0.8 if heavy else 1.35
+		_alien_nodes.append(n)
+	while _alien_nodes.size() > animated:
+		var dead: Node3D = _alien_nodes.pop_back()
+		dead.queue_free()
+
+	for i in animated:
+		var a: Dictionary = aliens[i]
+		var p: Vector2 = a.pos
+		var n: Node3D = _alien_nodes[i]
+		n.visible = fog.is_visible(p)
+		if not n.visible:
+			continue
+		n.position = Vector3(p.x, terrain.height_at(p), p.y)
+		var to := module_pos - p
+		if to.length_squared() > 0.01:
+			n.rotation.y = atan2(to.x, to.y)
 
 
 func _hud(delta: float) -> void:

@@ -19,3 +19,5 @@ cooldown_s = 1.0
 reveal_m = 34.0
 escort_radius_m = 4.5
 escort_speed_mps = 6.5
+model = "radar"
+aim_node = "radar_dish"

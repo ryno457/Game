@@ -19,3 +19,5 @@ cooldown_s = 1.0
 reveal_m = 4.0
 escort_radius_m = 9.5
 escort_speed_mps = 5.0
+model = "bulwark"
+aim_node = ""
