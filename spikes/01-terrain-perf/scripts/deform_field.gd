@@ -74,6 +74,25 @@ func _hash(a: int, b: int) -> float:
 	return n - floor(n)
 
 
+## Load an authored heightfield — the Biodome 01 test map — over the generated
+## noise. Returns false and leaves the noise in place if the file is missing or
+## the wrong shape, so a bad bake degrades the spike instead of breaking it.
+func load_heights(path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		push_warning("heightfield not found: %s" % path)
+		return false
+	var raw := f.get_buffer(f.get_length())
+	f.close()
+	if raw.size() != heights.size() * 4:
+		push_warning("heightfield %s is %d bytes, expected %d" %
+			[path, raw.size(), heights.size() * 4])
+		return false
+	heights = raw.to_float32_array()
+	mark_all_dirty()
+	return true
+
+
 func mark_all_dirty() -> void:
 	for cz in chunks.y:
 		for cx in chunks.x:

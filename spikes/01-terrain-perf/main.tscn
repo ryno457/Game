@@ -85,8 +85,33 @@ size_flags_horizontal = 3
 text = "UNITS 150"
 theme_override_font_sizes/font_size = 26
 
-[node name="Mode" type="Button" parent="HUD/Controls"]
+[node name="Terrain" type="Button" parent="HUD/Controls"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MAP"
+theme_override_font_sizes/font_size = 26
+
+[node name="Controls2" type="HBoxContainer" parent="HUD"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 14.0
+offset_top = -196.0
+offset_right = -14.0
+offset_bottom = -114.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 12
+
+[node name="Mode" type="Button" parent="HUD/Controls2"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "DIG"
+theme_override_font_sizes/font_size = 26
+
+[node name="Cam" type="Button" parent="HUD/Controls2"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "CAM RTS"
 theme_override_font_sizes/font_size = 26
