@@ -1,6 +1,10 @@
 .godot/
 android/
+# Export presets can carry keystore paths and passwords, so they are ignored by
+# default. The Spike A preset is deliberately keystore-free and IS tracked, so
+# `Project -> Export -> Android` works from a fresh clone without setup.
 export_presets.cfg
+!spikes/01-terrain-perf/export_presets.cfg
 *.translation
 addons/gut/
 build/
