@@ -62,8 +62,10 @@ extends Resource
 ## Trenches are the one thing that stays where it was built. Rate is per second
 ## and must comfortably breach impassable_below, or a trench is a cosmetic dent
 ## — the mistake CLAUDE.md records from the first prototype.
+##
+## Digging costs NO mass, deliberately. Mass is the module's body being
+## relocated into units and structures, not a fuel that burns away; moving
+## earth is not moving body. The cost of a trench is the time the drone is not
+## collecting and the fact that you cannot take it with you.
 @export var trench_rate_per_s: float = -1.5
 @export var trench_radius_m: float = 1.6
-## Mass spent per second of digging. Digging is not free; it is the cheapest
-## permanent defence in the game and should still cost body.
-@export var trench_mass_per_s: float = 0.6

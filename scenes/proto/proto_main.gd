@@ -349,15 +349,13 @@ func _abort_job() -> void:
 
 
 ## Dig where the player drags. The only thing in the game that stays where it
-## was put — and it still costs body, because nothing here is free.
+## was put — and it costs no mass at all.
+##
+## Mass is the module's body relocated into units and structures; it is never
+## consumed, only moved. Earth is not body, so shifting earth spends nothing.
+## What a trench costs is time the drone is not collecting, and the fact that
+## the convoy moves on and leaves it behind.
 func _dig(at: Vector2, delta: float) -> void:
-	var cost: float = tune.trench_mass_per_s * delta
-	if not mass.can_afford(cost):
-		_say("not enough mass to keep digging")
-		trenching = false
-		return
-	mass.mass -= cost
-	mass.changed.emit(mass.mass, -cost)
 	field.deform(at, tune.trench_radius_m, tune.trench_rate_per_s * delta)
 	terrain.mark_dirty()
 

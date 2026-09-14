@@ -31,11 +31,19 @@ This is the idea the rest hangs on, and it is worth protecting:
   recovers them; the mass comes home.
 - Over-building has an obvious, physical downside.
 
-**Conversion must lose something.** If a unit refunds its full cost instantly,
-repurposing is free and the decision collapses — the same trap CLAUDE.md
-already records for free module recall. Current model charges a **recovery
-loss** on the way back, so churn costs mass. That number is a feel question and
-is deliberately in `.tres`.
+**Mass is conserved. It is never consumed, only relocated.** It moves from the
+wreck, into the module's body, out into a unit, and back again. Nothing in the
+loop burns it away.
+
+That rule has consequences, and they are load-bearing:
+
+- **Digging costs nothing.** Earth is not body. A trench is paid for in the
+  drone's time and in the fact that the convoy moves on without it.
+- **The cost of churn cannot be a mass tax.** `recovery_loss` and `scrap_loss`
+  in `data/gameplay/mass.tres` are currently 25% and 15%, which contradicts the
+  rule. If the rule holds they should be zero, and the thing that stops free
+  repurposing has to be **time** — a drone trip out, a build that is not
+  instant. Open, flagged below.
 
 ## Pacing is the player's, not a timer
 
@@ -102,8 +110,9 @@ close the gap faster the further behind they fall.
 
 **The only permanent mark the player leaves on the world is dug terrain.** That
 is what gives the deformable heightfield a job no building can take, and it
-makes a trench a genuine commitment: you cannot take it with you. Digging costs
-mass per second, so even the permanent option is paid for in body.
+makes a trench a genuine commitment: you cannot take it with you. Digging is
+free of mass — earth is not body — so the whole price of a trench is time and
+immobility.
 
 ## Lighting is part of the measurement
 
@@ -153,5 +162,12 @@ aim at what they are tracking.
    experimenting is not punished.
 2. **Can the module starve?** If building drops it below a floor, is that a
    loss state, a vulnerability, or simply impossible?
-3. **Does trenching cost the right thing?** Mass-per-second makes digging
-   compete with building. Time might be the better currency.
+3. **Should `recovery_loss` and `scrap_loss` be zero?** Conservation says yes.
+   But a full instant refund makes build-and-scrap free, which is the trap
+   CLAUDE.md records for free module recall. The conservation-preserving answer
+   is a TIME cost — the drone must fly out and haul the parts back before the
+   mass is usable again — rather than a percentage that quietly deletes mass.
+4. **Where does the dug earth go?** Strict conservation implies spoil: a trench
+   should raise a berm beside it. The heightfield already supports positive
+   deformation, so this is cheap, and a rampart next to a ditch is tactically
+   real. Not built.
