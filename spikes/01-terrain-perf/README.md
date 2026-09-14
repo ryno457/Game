@@ -58,7 +58,7 @@ chassis is hot and the governor has stepped the clocks down.
 ## Running it
 
 **On a phone — the only run that counts.** Export an Android debug APK
-(Editor → Project → Export → Android), install, launch, press **SOAK 10 MIN**,
+(Editor → Project → Export → Android), install, launch, press **SOAK**,
 then put the phone on a desk screen-up and leave it alone for ten minutes. Do
 not hold it — a hand is a heatsink and will flatter the result.
 
@@ -82,9 +82,29 @@ godot --headless --path . --script tests/headless_check.gd
 
 | Control | Effect |
 |---|---|
-| **SOAK 10 MIN** | Start/stop the instrumented run with the scripted digger |
+| **SOAK** | Start/stop the instrumented run with the scripted digger |
 | **UNITS** | Cycle 150 → 300 → 600 → 0, to find the ceiling |
+| **MAP / NOISE** | Authored Biodome 01 test map, or procedural noise |
 | **DIG / PAN** | Drag to carve, or drag to move the camera |
+| **CAM** | FAR / RTS / CLOSE framing |
+
+### What is on the map
+
+The spike loads the authored **Biodome 01 test map** (see `docs/test-map.md`
+in the repo root) baked to `data/test_map_01.bin` — a chasm with two
+crossings, a rough band, a U-pocket and four craters, at true 1 m scale,
+centred in the spike's slightly larger 160×128 grid. Regenerate it with
+`godot --headless --path . --script tools/export_spike_map.gd` from the repo
+root. That bake is not an imported resource, so the Android preset carries
+`include_filter="data/*.bin"`.
+
+A grey-box **Sentinel chassis** sits at the map's spawn with a marker on each
+of its six module bays. The markers are not decoration: they show that the
+named empties survived glTF export, which is what lets "detach a module" be a
+reparent onto a real transform rather than a hardcoded offset.
+
+**CAM** exists so one run can answer whether the chassis and the terrain read
+at a plausible play distance on a phone, not only from orbit.
 
 ## Reading the result
 
