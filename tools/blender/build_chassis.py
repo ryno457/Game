@@ -9,8 +9,11 @@ Dimensions come from data/chassis/sentinel.tres (radius_m 1.625).
     blender --background --python tools/blender/build_chassis.py -- <out_dir>
 """
 import bpy, sys, os, math, struct, json
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _bl import script_args, render, cycles_cpu
 
-argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+argv = script_args()
 OUT = argv[0] if argv else "build/chassis"
 os.makedirs(OUT, exist_ok=True)
 

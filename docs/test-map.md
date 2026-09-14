@@ -13,9 +13,18 @@ maps we want, we find out now instead of at save/load time.
 
 ```
 godot --headless --path . --script tools/build_test_map.gd
-blender --background --python tools/blender/terrain_preview.py -- \
+
+tools/blender/install.sh          # once per container; prints the interpreter
+~/.cache/blender-venv/bin/python tools/blender/terrain_preview.py \
     build/terrain/test_map_01.r32 150 112 build/terrain
 ```
+
+The Blender scripts run under either front end — the `bpy` module above, or a
+normal `blender --background --python ... -- <args>` install. `bpy` is how this
+environment gets a current Blender at all: `download.blender.org` is blocked by
+the egress policy, and Ubuntu's apt build is 4.0 and lacks OpenImageDenoise, so
+its renders come out grainy. The render helper detects that and falls back
+rather than hardcoding denoising off for everyone.
 
 Everything under `build/` is generated and gitignored — the `.tres` is the
 source of truth.

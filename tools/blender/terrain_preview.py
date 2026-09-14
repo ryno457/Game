@@ -10,8 +10,11 @@ through. Renders on CPU (Cycles); no GPU needed.
 Emits <name>_persp.png, <name>_top.png and <name>.glb.
 """
 import bpy, sys, os, struct, math, time
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _bl import script_args, render, cycles_cpu
 
-argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+argv = script_args()
 if len(argv) < 4:
     raise SystemExit("need: <raw.r32> <cells_x> <cells_z> <out_dir>")
 RAW, CX, CZ, OUT = argv[0], int(argv[1]), int(argv[2]), argv[3]
@@ -74,10 +77,7 @@ world.use_nodes = True
 world.node_tree.nodes["Background"].inputs[0].default_value = (0.03, 0.04, 0.07, 1)
 
 sc = bpy.context.scene
-sc.render.engine = 'CYCLES'
-sc.cycles.device = 'CPU'
-sc.cycles.samples = 64
-sc.cycles.use_denoising = False        # this build ships without OpenImageDenoise
+cycles_cpu(sc, 64)
 sc.render.film_transparent = False
 
 cam_d = bpy.data.cameras.new("cam")
@@ -98,8 +98,9 @@ def shoot(name, loc, rot, ortho=None, res=(960, 640)):
     sc.render.resolution_x, sc.render.resolution_y = res
     sc.render.filepath = os.path.join(OUT, "%s_%s.png" % (NAME, name))
     t = time.time()
-    bpy.ops.render.render(write_still=True)
-    print("PY: %s render %.1fs -> %s" % (name, time.time() - t, sc.render.filepath))
+    denoised = render(sc)
+    print("PY: %s render %.1fs%s -> %s" % (
+        name, time.time() - t, " (denoised)" if denoised else "", sc.render.filepath))
 
 
 shoot("persp", (CX * 0.5, -CZ * 0.62, 92), (math.radians(52), 0, 0))
