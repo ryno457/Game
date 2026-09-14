@@ -1,0 +1,109 @@
+[gd_resource type="Resource" script_class="TerrainMap" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/terrain_map.gd" id="1_map"]
+[ext_resource type="Resource" path="res://data/terrain/biodome_01.tres" id="2_cfg"]
+
+[resource]
+script = ExtResource("1_map")
+display_name = "Biodome 01 — spike test map"
+terrain = ExtResource("2_cfg")
+noise_seed = 20260913
+amplitude = 0.22
+octaves = Array[Vector2]([Vector2(0.055, 0.6), Vector2(0.14, 0.28), Vector2(0.31, 0.12)])
+spawn = Vector2(12, 56)
+goal = Vector2(138, 56)
+ops = [{
+"op": "plateau",
+"x": 12.0,
+"z": 56.0,
+"r": 14.0,
+"level": 0.5,
+"strength": 1.0
+}, {
+"op": "plateau",
+"x": 138.0,
+"z": 56.0,
+"r": 14.0,
+"level": 0.5,
+"strength": 1.0
+}, {
+"op": "band",
+"x0": 30.0,
+"z0": 10.0,
+"x1": 62.0,
+"z1": 46.0,
+"level": 0.325,
+"edge": 5.0
+}, {
+"op": "trench",
+"x0": 75.0,
+"z0": -2.0,
+"x1": 75.0,
+"z1": 21.0,
+"r": 2.4,
+"amount": -1.0
+}, {
+"op": "trench",
+"x0": 75.0,
+"z0": 31.0,
+"x1": 75.0,
+"z1": 81.0,
+"r": 2.4,
+"amount": -1.0
+}, {
+"op": "trench",
+"x0": 75.0,
+"z0": 91.0,
+"x1": 75.0,
+"z1": 114.0,
+"r": 2.4,
+"amount": -1.0
+}, {
+"op": "trench",
+"x0": 104.0,
+"z0": 43.0,
+"x1": 104.0,
+"z1": 69.0,
+"r": 2.0,
+"amount": -1.0
+}, {
+"op": "trench",
+"x0": 92.0,
+"z0": 43.0,
+"x1": 104.0,
+"z1": 43.0,
+"r": 2.0,
+"amount": -1.0
+}, {
+"op": "trench",
+"x0": 92.0,
+"z0": 69.0,
+"x1": 104.0,
+"z1": 69.0,
+"r": 2.0,
+"amount": -1.0
+}, {
+"op": "crater",
+"x": 52.0,
+"z": 100.0,
+"r": 11.0,
+"amount": -0.34
+}, {
+"op": "crater",
+"x": 120.0,
+"z": 92.0,
+"r": 13.0,
+"amount": -0.38
+}, {
+"op": "crater",
+"x": 28.0,
+"z": 96.0,
+"r": 9.0,
+"amount": -0.3
+}, {
+"op": "crater",
+"x": 112.0,
+"z": 14.0,
+"r": 10.0,
+"amount": -0.32
+}]
