@@ -37,10 +37,31 @@ Open `prototype/sentinel_prototype.html` in any browser. Touch or mouse.
 It is a vertical slice of the whole design: modular chassis, drag-to-detach,
 deformable heightfield, salvage economy, teleporter objective, adaptive AI.
 
-## Tests
+## Checks and tests
 
-Tests target [GUT](https://github.com/bitwes/Gut), which is **not yet vendored**
-— install it to `addons/gut/` before running:
+A `SessionStart` hook (`.claude/hooks/session-start.sh`) installs a headless
+Godot 4.6 into `~/.cache/` for Claude Code on the web sessions and exports it as
+`$GODOT`. It no-ops on local machines, which have their own.
+
+**Lint** — parse-checks every `.gd` in the repo, main project and spikes:
+
+```
+tools/lint.sh
+```
+
+It filters two diagnostics that are artifacts of checking files in isolation
+rather than real defects: autoload identifiers (registered in `project.godot`,
+not instantiated by a single-file check) and the missing `GutTest` base class.
+GUT suites are reported as **skipped**, never as passed.
+
+**Spike tests** — no GUT needed, runs today:
+
+```
+"$GODOT" --headless --path spikes/01-terrain-perf --script tests/headless_check.gd
+```
+
+**GUT unit tests** — GUT is **not vendored**; the hook attempts to fetch it and
+skips cleanly when the host is unreachable. Install to `addons/gut/`, then:
 
 ```
 godot --headless -s addons/gut/gut_cmdln.gd -gdir=res://tests -ginclude_subdirs -gexit
