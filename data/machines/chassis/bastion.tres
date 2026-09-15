@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="MachineChassis" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_o2e0f"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_5j6im"]
+
+[sub_resource type="Resource" id="Resource_nkno4"]
+script = ExtResource("1_o2e0f")
+id = &"w0"
+max_size = 2
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_64q3s"]
+script = ExtResource("1_o2e0f")
+id = &"w1"
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_1v1sf"]
+script = ExtResource("1_o2e0f")
+id = &"a0"
+slot = 1
+max_size = 2
+
+[sub_resource type="Resource" id="Resource_5xmao"]
+script = ExtResource("1_o2e0f")
+id = &"u0"
+slot = 4
+
+[resource]
+script = ExtResource("2_5j6im")
+id = &"BASTION"
+display_name = "Bastion"
+description = "A heavy weapon mount that barely moves. Where the big guns go."
+base_mass = 12.0
+base_hp = 140.0
+base_armour = 8.0
+base_speed_mps = 2.8
+radius_m = 0.75
+part_capacity = 30.0
+escort_radius_m = 4.5
+escort_speed_mps = 6.0
+model = "turret"
+colour = Color(0.92, 0.64, 0.33, 1)
+hardpoints = Array[ExtResource("1_o2e0f")]([SubResource("Resource_nkno4"), SubResource("Resource_64q3s"), SubResource("Resource_1v1sf"), SubResource("Resource_5xmao")])

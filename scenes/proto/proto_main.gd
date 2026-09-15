@@ -18,6 +18,7 @@ const OPTIONS_DIR := "res://data/gameplay/build_options/"
 const TERRAIN_SHADER := "res://shaders/terrain_lit.gdshader"
 const LIGHT_CFG := "res://data/gameplay/lighting.tres"
 
+const MACHINE_RULES := "res://data/gameplay/machines.tres"
 const PROTO_CFG := "res://data/gameplay/proto.tres"
 const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
 
@@ -30,13 +31,18 @@ const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
 @onready var camera: Camera3D = $CameraRig/Camera3D
 @onready var readout: Label = $HUD/Panel/Readout
 @onready var toast: Label = $HUD/Panel/Toast
-@onready var build_bar: HBoxContainer = $HUD/Build
+@onready var build_bar: HBoxContainer = $HUD/BuildScroll/Build
 
 var field: Heightfield
 var fog: FogOfWar
 var mass: MassPool
 var waves: WaveDirector
 var options: Array[BuildOption] = []
+var rules: MachineRules
+## Resolved machine numbers, keyed by build-option id. Resolved once at load
+## because a loadout is fixed: the parts a machine was built with are the parts
+## it dies with. Everything in the sim reads these, never a part or a chassis.
+var specs: Dictionary = {}
 var tune: ProtoConfig
 
 var module_pos := Vector2.ZERO
@@ -49,6 +55,11 @@ var free_progress := 0.0
 
 var debris: Array[Dictionary] = []
 var built: Array[Dictionary] = []
+## Machines whose mass is already committed but which do not exist yet. This is
+## the entire cost of repurposing: mass is conserved, so the only thing a
+## rebuild can charge is the seconds it spends here and the hole in the line
+## while it waits.
+var assembling: Array[Dictionary] = []
 var aliens: Array[Dictionary] = []
 var wrecks: Array[Dictionary] = []
 
@@ -132,10 +143,24 @@ func _form_for_mass() -> int:
 
 
 func _load_options() -> void:
+	rules = load(MACHINE_RULES)
 	for f in DirAccess.get_files_at(OPTIONS_DIR):
 		if f.ends_with(".tres"):
 			options.append(load(OPTIONS_DIR + f))
 	options.sort_custom(func(a, b): return a.mass_cost < b.mass_cost)
+	for opt in options:
+		var spec := opt.spec(rules)
+		if not spec.is_valid():
+			push_error("%s: %s" % [opt.id, ", ".join(spec.errors)])
+		specs[opt.id] = spec
+
+
+## The machine numbers for one option. Never null: a flat option resolves to a
+## spec too, so the sim has exactly one shape to handle.
+func spec_for(opt: BuildOption) -> MachineSpec:
+	if not specs.has(opt.id):
+		specs[opt.id] = opt.spec(rules)
+	return specs[opt.id]
 
 
 ## Small pieces near the crash, large ones further out. The player starts with
@@ -191,18 +216,27 @@ func _instancer(mesh: Mesh, cap: int) -> MultiMeshInstance3D:
 	return mmi
 
 
+## Thumb-sized: the bar scrolls horizontally now that the machine catalogue
+## shares it with the legacy options, so a button is allowed to take real width
+## rather than being squeezed to fit everything on one screen.
+const BUTTON_MIN := Vector2(168.0, 88.0)
+
+
 func _build_menu() -> void:
 	var dig := Button.new()
 	dig.text = "TRENCH"
 	dig.toggle_mode = true
-	dig.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dig.custom_minimum_size = BUTTON_MIN
 	dig.add_theme_font_size_override("font_size", 19)
 	dig.toggled.connect(func(on): trenching = on)
 	build_bar.add_child(dig)
 	for opt in options:
+		var spec := spec_for(opt)
 		var b := Button.new()
-		b.text = "%s\n%d" % [opt.display_name, int(opt.mass_cost)]
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Role first: the player is choosing an army shape, not a unit name.
+		b.text = "%s\n%s  %d" % [opt.display_name, spec.role_name().left(4), int(spec.mass)]
+		b.tooltip_text = _machine_card(opt, spec)
+		b.custom_minimum_size = BUTTON_MIN
 		b.add_theme_font_size_override("font_size", 19)
 		b.pressed.connect(_try_build.bind(opt))
 		build_bar.add_child(b)
@@ -221,6 +255,7 @@ func _process(delta: float) -> void:
 ## deterministic sim: presentation reads this state, it never writes it.
 func step(delta: float) -> void:
 	_drone(delta)
+	_assembly(delta)
 	_units(delta)
 	_hostiles(delta)
 	waves.tick(delta)
@@ -235,8 +270,8 @@ func step(delta: float) -> void:
 		fog.reveal(module_pos, tune.module_reveal_m)
 		fog.reveal(drone_pos, tune.drone_reveal_m)
 		for u in built:
-			if u.opt.reveal_m > 0.0:
-				fog.reveal(u.pos, u.opt.reveal_m)
+			if u.spec.reveal_m > 0.0:
+				fog.reveal(u.pos, u.spec.reveal_m)
 
 
 ## The drone is the only thing that moves mass. Everything else spends it.
@@ -360,16 +395,82 @@ func _dig(at: Vector2, delta: float) -> void:
 	terrain.mark_dirty()
 
 
+## Committing mass to a machine. The mass leaves the module's body the instant
+## the player presses the button — that is why it shrinks straight away — but
+## the machine takes `build_time_s` to exist.
+##
+## That delay is the whole cost of the economy. Mass is conserved, so scrapping
+## and rebuilding loses nothing; what it costs is these seconds, plus the drone
+## trip to fetch the wreck first. A player who churns their army every wave is
+## not poorer, they are late.
 func _try_build(opt: BuildOption) -> void:
-	if not mass.spend(opt.mass_cost):
+	var spec := spec_for(opt)
+	if not spec.is_valid():
+		_say("%s will not assemble: %s" % [opt.display_name, spec.errors[0]])
+		return
+	if not mass.spend(spec.mass):
 		return
 	var a := _rng.randf() * TAU
 	var p := module_pos + Vector2(cos(a), sin(a)) * (3.0 + _module_scale)
-	built.append({
-		"opt": opt, "pos": p, "hp": opt.max_hp, "cd": 0.0,
-		"slot": built.size(),
-	})
-	_say("%s built — %d mass spent" % [opt.display_name, int(opt.mass_cost)])
+	assembling.append({"opt": opt, "spec": spec, "pos": p, "left": mass.cfg.build_time_s})
+	_say("%s — %d mass committed, %.0fs to assemble"
+		% [opt.display_name, int(spec.mass), mass.cfg.build_time_s])
+
+
+## Machines finish assembling and join the convoy.
+func _assembly(delta: float) -> void:
+	for i in range(assembling.size() - 1, -1, -1):
+		var job := assembling[i]
+		job.left -= delta
+		if job.left > 0.0:
+			continue
+		var spec: MachineSpec = job.spec
+		var cds := PackedFloat32Array()
+		cds.resize(spec.weapons.size())
+		built.append({
+			"opt": job.opt, "spec": spec, "pos": job.pos, "hp": spec.max_hp,
+			"cd": 0.0, "cds": cds, "slot": built.size(),
+		})
+		assembling.remove_at(i)
+		_say("%s ready" % spec.display_name)
+
+
+## Scrap a live machine back into the module.
+##
+## Lossless in mass and expensive in time: the machine becomes a wreck where it
+## stands, so the drone has to fly out and haul it home before that mass is
+## usable, and whatever the player builds instead takes build_time_s after
+## that. Repurposing is always available and never free.
+func _scrap(index: int) -> void:
+	if index < 0 or index >= built.size():
+		return
+	var u := built[index]
+	wrecks.append({"pos": u.pos, "mass": u.spec.mass, "wreck": true})
+	built.remove_at(index)
+	_say("%s scrapped — the drone has to fetch it" % u.spec.display_name)
+
+
+## One machine's numbers as the player needs to compare them. Range and dead
+## zone matter more than damage here: an artillery piece with a twelve-metre
+## hole is a different decision from a brawler, at similar mass.
+func _machine_card(opt: BuildOption, spec: MachineSpec) -> String:
+	var lines := [
+		"%s — %s" % [spec.display_name, spec.role_name()],
+		"%.0f mass   %.0f hp   %.0f armour" % [spec.mass, spec.max_hp, spec.armour],
+		"%.1f dps   %.1f m/s" % [spec.dps(), spec.speed_mps],
+	]
+	if spec.max_range_m() > 0.0:
+		var hole := spec.min_engage_m()
+		lines.append("reach %.0f m%s" % [spec.max_range_m(),
+			"   blind inside %.0f m" % hole if hole > 0.0 else ""])
+	if spec.reveal_m > 0.0:
+		lines.append("sees %.0f m" % spec.reveal_m)
+	if spec.overloaded:
+		lines.append("OVERLOADED — moves at %.0f%% speed" % (spec.speed_penalty * 100.0))
+	if opt.description != "":
+		lines.append("")
+		lines.append(opt.description)
+	return "\n".join(lines)
 
 
 ## EVERYTHING the module builds travels with it. Nothing roots down.
@@ -394,19 +495,48 @@ func _units(delta: float) -> void:
 			# A spring, not a leash: something left behind closes faster, so
 			# the convoy regroups instead of stringing out across the map.
 			var urgency := 1.0 + (dist / maxf(1.0, tune.escort_radius_m)) * tune.escort_catchup
-			var speed: float = u.opt.escort_speed_mps * urgency
+			var speed: float = u.spec.escort_speed_mps * urgency
 			u.pos = upos + gap / dist * minf(speed * delta, dist)
-		if u.opt.damage > 0.0 and u.cd <= 0.0:
-			var upos3: Vector2 = u.pos
-			var t := _nearest_alien(upos3, u.opt.range_m)
-			if t >= 0:
-				aliens[t].hp -= u.opt.damage
-				u.cd = u.opt.cooldown_s
+		_fire(u, delta)
 		if u.hp <= 0.0:
-			# Not deleted — it becomes a wreck the drone can recover.
-			wrecks.append({"pos": u.pos, "mass": u.opt.mass_cost, "wreck": true})
+			# Not deleted — it becomes a wreck the drone can recover. Every
+			# gram comes back: what the player lost is the machine's time.
+			wrecks.append({"pos": u.pos, "mass": u.spec.mass, "wreck": true})
 			built.remove_at(i)
-			_say("%s lost — wreck marked for recovery" % u.opt.display_name)
+			_say("%s lost — wreck marked for recovery" % u.spec.display_name)
+
+
+## Every weapon fitted to a machine fires on its own cooldown.
+##
+## This is where a loadout stops being a spreadsheet. A melee arm and a mortar
+## on the same frame genuinely cover different bands, because each weapon picks
+## its own target inside its own range — and an artillery piece simply finds no
+## target inside its minimum range, which is the hole its escort exists to fill.
+func _fire(u: Dictionary, delta: float) -> void:
+	var spec: MachineSpec = u.spec
+	var cds: PackedFloat32Array = u.cds
+	for w in spec.weapons.size():
+		cds[w] = maxf(0.0, cds[w] - delta)
+		if cds[w] > 0.0:
+			continue
+		var gun: Dictionary = spec.weapons[w]
+		var t := _nearest_alien_in_band(u.pos, gun.min_range_m, gun.range_m)
+		if t < 0:
+			continue
+		cds[w] = gun.cooldown_s
+		aliens[t].hp -= gun.damage
+		if gun.splash_m <= 0.0:
+			continue
+		# Splash is what an artillery shell is FOR. Full damage at the centre,
+		# nothing at the rim, so a tight swarm is punished and a spread one is
+		# not — which is the behaviour that makes spacing matter to the enemy.
+		var centre: Vector2 = aliens[t].pos
+		for j in aliens.size():
+			if j == t:
+				continue
+			var d: float = centre.distance_to(aliens[j].pos)
+			if d < gun.splash_m:
+				aliens[j].hp -= gun.damage * (1.0 - d / gun.splash_m)
 
 
 ## Evenly spaced ring position for one convoy member.
@@ -414,6 +544,23 @@ func _station(slot: int, total: int, opt: BuildOption) -> Vector2:
 	var r: float = opt.escort_radius_m if opt.escort_radius_m > 0.0 else tune.escort_radius_m
 	var a := TAU * (float(slot) / maxf(1.0, float(total)))
 	return module_pos + Vector2(cos(a), sin(a)) * (r + _module_scale)
+
+
+## Nearest hostile between two ranges. `min_r` is what makes artillery
+## artillery: a mortar with a seven-metre minimum simply cannot see the thing
+## chewing on its legs, and no amount of damage on the sheet changes that.
+func _nearest_alien_in_band(from: Vector2, min_r: float, max_r: float) -> int:
+	if max_r <= 0.0:
+		return -1
+	var best := -1
+	var bd := max_r
+	for i in aliens.size():
+		var d: float = aliens[i].pos.distance_to(from)
+		if d < min_r or d >= bd:
+			continue
+		bd = d
+		best = i
+	return best
 
 
 func _nearest_alien(from: Vector2, rng: float) -> int:
@@ -473,7 +620,10 @@ func _hostiles(delta: float) -> void:
 			for u in built:
 				var up: Vector2 = u.pos
 				if apos.distance_to(up) <= 1.6:
-					u.hp -= tune.alien_damage
+					# Plating is the only reason a Breaker can stand in a swarm
+					# that kills a Skirmisher. Reduction, not hit points, so
+					# armour is worth more the smaller each bite is.
+					u.hp -= u.spec.damage_after_armour(tune.alien_damage, rules)
 					hit = true
 					break
 			if not hit:
@@ -618,7 +768,8 @@ func _hud(delta: float) -> void:
 		"MASS   %.0f   (reserve %.0f)" % [mass.mass, mass.cfg.reserve_mass],
 		"MODULE x%.2f" % _module_scale,
 		"DRONE  %s" % job,
-		"BUILT  %d   HOSTILES %d   WRECKS %d" % [built.size(), aliens.size(), wrecks.size()],
+		"BUILT  %d%s   HOSTILES %d   WRECKS %d"
+			% [built.size(), _assembly_note(), aliens.size(), wrecks.size()],
 		"SEEN   %.0f%%" % (fog.explored_fraction() * 100.0),
 		"ATTACK %s" % ("INCOMING" if waves.is_active() else "quiet"),
 		"MODE   %s" % ("TRENCH — drag to dig" if trenching else "move"),
@@ -627,6 +778,16 @@ func _hud(delta: float) -> void:
 		_toast_t -= delta
 		if _toast_t <= 0.0:
 			toast.text = ""
+
+
+## What the build queue is doing, for the one line of HUD it deserves.
+func _assembly_note() -> String:
+	if assembling.is_empty():
+		return ""
+	var soonest := INF
+	for job in assembling:
+		soonest = minf(soonest, job.left)
+	return "  (+%d in %.0fs)" % [assembling.size(), ceilf(soonest)]
 
 
 func _say(text: String) -> void:

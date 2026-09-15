@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_5jxk5"]
+
+[resource]
+script = ExtResource("1_5jxk5")
+id = &"SIEGE_HOWITZER"
+display_name = "Siege Howitzer"
+description = "Reaches further than anything can see unaided. Blind inside twelve metres."
+size = 2
+mass = 15.0
+family = 3
+damage = 95.0
+range_m = 34.0
+min_range_m = 12.0
+cooldown_s = 4.2
+splash_m = 5.0

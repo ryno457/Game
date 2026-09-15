@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_k8mb5"]
+
+[resource]
+script = ExtResource("1_k8mb5")
+id = &"SPOTTING_LINK"
+display_name = "Spotting Link"
+description = "A modest eye in a slot a weapon cannot use anyway."
+slot = 4
+reveal_m = 9.0

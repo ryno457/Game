@@ -1,0 +1,111 @@
+[gd_resource type="Resource" script_class="BuildOption" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_4y1ug"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_pumdb"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_fossu"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_cqpp7"]
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="5_qevaq"]
+
+[sub_resource type="Resource" id="Resource_sk52c"]
+script = ExtResource("1_4y1ug")
+id = &"w0"
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_7746c"]
+script = ExtResource("1_4y1ug")
+id = &"w1"
+max_size = 0
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_44aov"]
+script = ExtResource("1_4y1ug")
+id = &"a0"
+slot = 1
+
+[sub_resource type="Resource" id="Resource_xdchl"]
+script = ExtResource("1_4y1ug")
+id = &"m0"
+slot = 2
+
+[sub_resource type="Resource" id="Resource_vwjfl"]
+script = ExtResource("2_pumdb")
+id = &"WARDEN"
+display_name = "Warden"
+description = "Two weapons, plating and legs. The frame most armies are made of."
+base_mass = 7.0
+base_hp = 90.0
+base_armour = 4.0
+base_speed_mps = 4.2
+part_capacity = 20.0
+model = "guard"
+hardpoints = Array[ExtResource("1_4y1ug")]([SubResource("Resource_sk52c"), SubResource("Resource_7746c"), SubResource("Resource_44aov"), SubResource("Resource_xdchl")])
+
+[sub_resource type="Resource" id="Resource_k75gb"]
+script = ExtResource("3_fossu")
+id = &"COIL_RIFLE"
+display_name = "Coil Rifle"
+description = "Direct fire that outranges everything that has to reach you."
+mass = 7.0
+family = 2
+damage = 30.0
+range_m = 14.0
+cooldown_s = 1.1
+
+[sub_resource type="Resource" id="Resource_71dbw"]
+script = ExtResource("3_fossu")
+id = &"AUTOCANNON"
+display_name = "Autocannon"
+description = "Fast, short, dependable. The weapon you fit when you have one light slot left."
+size = 0
+family = 2
+damage = 11.0
+range_m = 9.0
+cooldown_s = 0.5
+
+[sub_resource type="Resource" id="Resource_ua7yf"]
+script = ExtResource("3_fossu")
+id = &"PLATE_LIGHT"
+display_name = "Light Plating"
+description = "A little steel. Cheap insurance against chip damage."
+slot = 1
+size = 0
+mass = 3.0
+hp_add = 30.0
+armour_add = 6.0
+speed_mult = 0.94
+
+[sub_resource type="Resource" id="Resource_15krd"]
+script = ExtResource("3_fossu")
+id = &"STRIDER_LEGS"
+display_name = "Strider Legs"
+description = "Long stride, a little frame reinforcement. The default walker."
+slot = 2
+mass = 5.0
+hp_add = 10.0
+speed_add_mps = 3.4
+
+[sub_resource type="Resource" id="Resource_gxukh"]
+script = ExtResource("4_cqpp7")
+id = &"LANCER"
+display_name = "Lancer"
+description = "Direct fire at two ranges behind light plating. The line infantry."
+chassis = SubResource("Resource_vwjfl")
+fitted = Array[ExtResource("3_fossu")]([SubResource("Resource_k75gb"), SubResource("Resource_71dbw"), SubResource("Resource_ua7yf"), SubResource("Resource_15krd")])
+
+[resource]
+script = ExtResource("5_qevaq")
+id = &"LANCER"
+display_name = "Lancer"
+mass_cost = 26.0
+description = "Direct fire at two ranges behind light plating. The line infantry."
+escort_speed_mps = 7.52
+max_hp = 130.0
+radius_m = 0.55
+speed_mps = 7.143999999999999
+model = "guard"
+aim_node = "weapon_arm"
+damage = 49.272727272727266
+range_m = 14.0
+loadout = SubResource("Resource_gxukh")

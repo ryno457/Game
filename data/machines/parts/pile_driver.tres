@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_glw8o"]
+
+[resource]
+script = ExtResource("1_glw8o")
+id = &"PILE_DRIVER"
+display_name = "Pile Driver"
+description = "A slow hammer that splashes. Turns a swarm that reached you into a problem it regrets."
+size = 2
+mass = 11.0
+family = 1
+damage = 110.0
+cooldown_s = 2.2
+splash_m = 1.2

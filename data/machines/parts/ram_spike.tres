@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_t678u"]
+
+[resource]
+script = ExtResource("1_t678u")
+id = &"RAM_SPIKE"
+display_name = "Ram Spike"
+description = "A spike on a piston. Cheap, light, and lethal at arm's length."
+size = 0
+mass = 3.0
+family = 1
+damage = 22.0
+cooldown_s = 0.9

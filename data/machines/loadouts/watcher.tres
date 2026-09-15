@@ -1,0 +1,80 @@
+[gd_resource type="Resource" script_class="MachineLoadout" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_07awf"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_02cq2"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_rjbhi"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_6alju"]
+
+[sub_resource type="Resource" id="Resource_133e1"]
+script = ExtResource("1_07awf")
+id = &"s0"
+slot = 3
+max_size = 2
+socket = "radar_dish"
+aims = true
+
+[sub_resource type="Resource" id="Resource_vrwlt"]
+script = ExtResource("1_07awf")
+id = &"u0"
+slot = 4
+
+[sub_resource type="Resource" id="Resource_kp1lp"]
+script = ExtResource("1_07awf")
+id = &"a0"
+slot = 1
+max_size = 0
+
+[sub_resource type="Resource" id="Resource_a7a7g"]
+script = ExtResource("2_02cq2")
+id = &"VANE"
+display_name = "Vane"
+description = "No weapon hardpoint at all. It exists to see, which is what artillery needs."
+base_hp = 70.0
+base_speed_mps = 3.6
+radius_m = 0.6
+part_capacity = 16.0
+escort_radius_m = 5.0
+escort_speed_mps = 7.0
+model = "radar"
+colour = Color(0.55, 0.74, 0.98, 1)
+hardpoints = Array[ExtResource("1_07awf")]([SubResource("Resource_133e1"), SubResource("Resource_vrwlt"), SubResource("Resource_kp1lp")])
+
+[sub_resource type="Resource" id="Resource_80rlj"]
+script = ExtResource("3_rjbhi")
+id = &"RADAR_MAST"
+display_name = "Radar Mast"
+description = "Sees twenty-six metres. Artillery is blind without one of these nearby."
+slot = 3
+size = 2
+mass = 8.0
+hp_add = 10.0
+reveal_m = 26.0
+model = "radar"
+
+[sub_resource type="Resource" id="Resource_87sdp"]
+script = ExtResource("3_rjbhi")
+id = &"SPOTTING_LINK"
+display_name = "Spotting Link"
+description = "A modest eye in a slot a weapon cannot use anyway."
+slot = 4
+reveal_m = 9.0
+
+[sub_resource type="Resource" id="Resource_ua7yf"]
+script = ExtResource("3_rjbhi")
+id = &"PLATE_LIGHT"
+display_name = "Light Plating"
+description = "A little steel. Cheap insurance against chip damage."
+slot = 1
+size = 0
+mass = 3.0
+hp_add = 30.0
+armour_add = 6.0
+speed_mult = 0.94
+
+[resource]
+script = ExtResource("4_6alju")
+id = &"WATCHER"
+display_name = "Watcher"
+description = "Unarmed. Its whole job is making the artillery's range mean something."
+chassis = SubResource("Resource_a7a7g")
+fitted = Array[ExtResource("3_rjbhi")]([SubResource("Resource_80rlj"), SubResource("Resource_87sdp"), SubResource("Resource_ua7yf")])

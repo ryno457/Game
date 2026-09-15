@@ -33,3 +33,49 @@ extends Resource
 @export var cooldown_s: float = 1.0
 ## Radius this reveals through fog. 0 means it reveals nothing of its own.
 @export var reveal_m: float = 0.0
+
+@export_group("Machine")
+## A customised machine: a chassis plus the parts fitted to it. When this is
+## set it OVERRIDES every flat number above — mass, hp, speed and weapons all
+## come from the parts instead. The flat fields stay for things that are not
+## machines (a pylon is a lump of mass, not a frame with hardpoints).
+@export var loadout: MachineLoadout
+
+
+## The numbers the sim fights with, whether they came from a loadout or from
+## the flat fields on this option. Everything downstream reads this, so a
+## hand-tuned option and a player-assembled machine are the same shape.
+func spec(rules: MachineRules = null) -> MachineSpec:
+	if loadout != null:
+		var s := LoadoutResolver.resolve(loadout, rules)
+		if s.display_name == "":
+			s.display_name = display_name
+		s.id = id
+		return s
+
+	var flat := MachineSpec.new()
+	flat.id = id
+	flat.display_name = display_name
+	flat.mass = mass_cost
+	flat.max_hp = max_hp
+	flat.radius_m = radius_m
+	flat.speed_mps = speed_mps
+	flat.reveal_m = reveal_m
+	flat.escort_radius_m = escort_radius_m
+	flat.escort_speed_mps = escort_speed_mps
+	flat.colour = colour
+	flat.model = model
+	if damage > 0.0:
+		flat.weapons.append({
+			"family": MachinePart.Family.RANGED,
+			"damage": damage,
+			"range_m": range_m,
+			"min_range_m": 0.0,
+			"cooldown_s": cooldown_s,
+			"splash_m": 0.0,
+			"source": id,
+			"socket": "",
+			"aims": aim_node != "",
+			"model": "",
+		})
+	return flat

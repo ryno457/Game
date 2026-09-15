@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_d1rde"]
+
+[resource]
+script = ExtResource("1_d1rde")
+id = &"STRIDER_LEGS"
+display_name = "Strider Legs"
+description = "Long stride, a little frame reinforcement. The default walker."
+slot = 2
+mass = 5.0
+hp_add = 10.0
+speed_add_mps = 3.4

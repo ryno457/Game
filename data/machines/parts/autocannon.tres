@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_b3er6"]
+
+[resource]
+script = ExtResource("1_b3er6")
+id = &"AUTOCANNON"
+display_name = "Autocannon"
+description = "Fast, short, dependable. The weapon you fit when you have one light slot left."
+size = 0
+family = 2
+damage = 11.0
+range_m = 9.0
+cooldown_s = 0.5

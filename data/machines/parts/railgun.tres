@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_gwuff"]
+
+[resource]
+script = ExtResource("1_gwuff")
+id = &"RAILGUN"
+display_name = "Railgun"
+description = "One heavy shot every few seconds at extreme direct-fire range."
+size = 2
+mass = 12.0
+family = 2
+damage = 85.0
+range_m = 22.0
+cooldown_s = 2.6

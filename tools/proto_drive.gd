@@ -57,11 +57,40 @@ func _process(_delta: float) -> bool:
 	_ok("building spends mass", scene.mass.mass < before_mass,
 		"%s cost %.0f, %.0f -> %.0f" % [opt.display_name, opt.mass_cost,
 			before_mass, scene.mass.mass])
-	_ok("something was built", scene.built.size() == 1, "%d on the field" % scene.built.size())
 	# Measured with no steps in between: the drone is still working, and it
 	# banks more than a Bulwark costs, so stepping first hides the shrink.
 	_ok("module shrinks the moment mass is spent", scene.mass.display_scale() < before_scale,
 		"scale %.3f -> %.3f" % [before_scale, scene.mass.display_scale()])
+
+	# Mass is conserved, so the ONLY price of building is the wait. If the
+	# machine appeared instantly there would be no cost at all and repurposing
+	# would be free — the trap CLAUDE.md records for free module recall.
+	var build_s: float = scene.mass.cfg.build_time_s
+	_ok("the machine does not exist yet",
+		scene.built.is_empty() and scene.assembling.size() == 1,
+		"%.0fs of assembly still to run" % build_s)
+	var half := int(build_s * 0.5 / DT)
+	for i in half:
+		scene.step(DT)
+	_ok("still nothing on the field halfway through", scene.built.is_empty(),
+		"%.1fs elapsed of %.0fs" % [half * DT, build_s])
+	while not scene.assembling.is_empty():
+		scene.step(DT)
+	_ok("it arrives when the assembly time is up", scene.built.size() == 1,
+		"%d on the field after %.0fs" % [scene.built.size(), build_s])
+
+	# Scrapping returns every gram and costs a drone trip instead.
+	var before_scrap: float = scene.mass.mass
+	var wrecks_before: int = scene.wrecks.size()
+	var scrapped: float = scene.built[0].spec.mass
+	scene._scrap(0)
+	_ok("scrapping refunds nothing immediately",
+		is_equal_approx(scene.mass.mass, before_scrap) and scene.built.is_empty(),
+		"%.0f mass unchanged" % scene.mass.mass)
+	_ok("scrapping leaves a wreck for the drone",
+		scene.wrecks.size() == wrecks_before + 1
+			and is_equal_approx(scene.wrecks[-1].mass, scrapped),
+		"%.0f mass lying on the ground" % scrapped)
 
 	# --- pacing: quiet until the player commits ------------------------------
 	_ok("no attack while only scavenging", not scene.waves.is_active() and scene.aliens.is_empty(),

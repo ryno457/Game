@@ -1,0 +1,110 @@
+[gd_resource type="Resource" script_class="BuildOption" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_4soce"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_sq08u"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_o2p1w"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_1ahsu"]
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="5_gaob8"]
+
+[sub_resource type="Resource" id="Resource_sk52c"]
+script = ExtResource("1_4soce")
+id = &"w0"
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_7746c"]
+script = ExtResource("1_4soce")
+id = &"w1"
+max_size = 0
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_44aov"]
+script = ExtResource("1_4soce")
+id = &"a0"
+slot = 1
+
+[sub_resource type="Resource" id="Resource_xdchl"]
+script = ExtResource("1_4soce")
+id = &"m0"
+slot = 2
+
+[sub_resource type="Resource" id="Resource_vwjfl"]
+script = ExtResource("2_sq08u")
+id = &"WARDEN"
+display_name = "Warden"
+description = "Two weapons, plating and legs. The frame most armies are made of."
+base_mass = 7.0
+base_hp = 90.0
+base_armour = 4.0
+base_speed_mps = 4.2
+part_capacity = 20.0
+model = "guard"
+hardpoints = Array[ExtResource("1_4soce")]([SubResource("Resource_sk52c"), SubResource("Resource_7746c"), SubResource("Resource_44aov"), SubResource("Resource_xdchl")])
+
+[sub_resource type="Resource" id="Resource_hfran"]
+script = ExtResource("3_o2p1w")
+id = &"CLEAVER_ARM"
+display_name = "Cleaver Arm"
+description = "A powered blade. The best damage per mass in the catalogue, if you can close."
+mass = 6.0
+family = 1
+damage = 46.0
+cooldown_s = 1.2
+
+[sub_resource type="Resource" id="Resource_71dbw"]
+script = ExtResource("3_o2p1w")
+id = &"AUTOCANNON"
+display_name = "Autocannon"
+description = "Fast, short, dependable. The weapon you fit when you have one light slot left."
+size = 0
+family = 2
+damage = 11.0
+range_m = 9.0
+cooldown_s = 0.5
+
+[sub_resource type="Resource" id="Resource_ua7yf"]
+script = ExtResource("3_o2p1w")
+id = &"PLATE_LIGHT"
+display_name = "Light Plating"
+description = "A little steel. Cheap insurance against chip damage."
+slot = 1
+size = 0
+mass = 3.0
+hp_add = 30.0
+armour_add = 6.0
+speed_mult = 0.94
+
+[sub_resource type="Resource" id="Resource_15krd"]
+script = ExtResource("3_o2p1w")
+id = &"STRIDER_LEGS"
+display_name = "Strider Legs"
+description = "Long stride, a little frame reinforcement. The default walker."
+slot = 2
+mass = 5.0
+hp_add = 10.0
+speed_add_mps = 3.4
+
+[sub_resource type="Resource" id="Resource_lgsow"]
+script = ExtResource("4_1ahsu")
+id = &"VANGUARD"
+display_name = "Vanguard"
+description = "A blade and a gun. No dead zone at any range it can reach."
+chassis = SubResource("Resource_vwjfl")
+fitted = Array[ExtResource("3_o2p1w")]([SubResource("Resource_hfran"), SubResource("Resource_71dbw"), SubResource("Resource_ua7yf"), SubResource("Resource_15krd")])
+
+[resource]
+script = ExtResource("5_gaob8")
+id = &"VANGUARD"
+display_name = "Vanguard"
+mass_cost = 25.0
+description = "A blade and a gun. No dead zone at any range it can reach."
+escort_speed_mps = 7.52
+max_hp = 130.0
+radius_m = 0.55
+speed_mps = 7.143999999999999
+model = "guard"
+aim_node = "weapon_arm"
+damage = 60.333333333333336
+range_m = 9.0
+loadout = SubResource("Resource_lgsow")

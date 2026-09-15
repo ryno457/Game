@@ -1,0 +1,79 @@
+[gd_resource type="Resource" script_class="MachineLoadout" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_s3xdm"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_6t0xi"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_ygkgv"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_7xy2t"]
+
+[sub_resource type="Resource" id="Resource_864we"]
+script = ExtResource("1_s3xdm")
+id = &"w0"
+max_size = 0
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_ig6gg"]
+script = ExtResource("1_s3xdm")
+id = &"s0"
+slot = 3
+max_size = 0
+
+[sub_resource type="Resource" id="Resource_3mo7v"]
+script = ExtResource("1_s3xdm")
+id = &"m0"
+slot = 2
+max_size = 0
+
+[sub_resource type="Resource" id="Resource_dobyn"]
+script = ExtResource("2_6t0xi")
+id = &"SKIFF"
+display_name = "Skiff"
+description = "A light frame with one weapon and somewhere to put an eye."
+base_mass = 4.0
+base_hp = 45.0
+base_speed_mps = 5.6
+radius_m = 0.45
+escort_radius_m = 9.0
+escort_speed_mps = 10.0
+model = "guard"
+colour = Color(0.42, 0.92, 0.78, 1)
+hardpoints = Array[ExtResource("1_s3xdm")]([SubResource("Resource_864we"), SubResource("Resource_ig6gg"), SubResource("Resource_3mo7v")])
+
+[sub_resource type="Resource" id="Resource_71dbw"]
+script = ExtResource("3_ygkgv")
+id = &"AUTOCANNON"
+display_name = "Autocannon"
+description = "Fast, short, dependable. The weapon you fit when you have one light slot left."
+size = 0
+family = 2
+damage = 11.0
+range_m = 9.0
+cooldown_s = 0.5
+
+[sub_resource type="Resource" id="Resource_sa6l1"]
+script = ExtResource("3_ygkgv")
+id = &"SPOTTER_ARRAY"
+display_name = "Spotter Array"
+description = "Sees twelve metres. Enough for direct fire to use its whole range."
+slot = 3
+size = 0
+mass = 3.0
+reveal_m = 12.0
+
+[sub_resource type="Resource" id="Resource_bxqc4"]
+script = ExtResource("3_ygkgv")
+id = &"SPRINT_LEGS"
+display_name = "Sprint Legs"
+description = "Light limbs. Gets a scout to the edge of the fog and back."
+slot = 2
+size = 0
+mass = 3.0
+speed_add_mps = 2.2
+
+[resource]
+script = ExtResource("4_7xy2t")
+id = &"SKIRMISHER"
+display_name = "Skirmisher"
+description = "Fast, sees far, hits lightly. The machine that finds the debris."
+chassis = SubResource("Resource_dobyn")
+fitted = Array[ExtResource("3_ygkgv")]([SubResource("Resource_71dbw"), SubResource("Resource_sa6l1"), SubResource("Resource_bxqc4")])

@@ -1,0 +1,102 @@
+[gd_resource type="Resource" script_class="BuildOption" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_60776"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_lyws2"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_jcg7f"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_hf008"]
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="5_twsf4"]
+
+[sub_resource type="Resource" id="Resource_sk52c"]
+script = ExtResource("1_60776")
+id = &"w0"
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_7746c"]
+script = ExtResource("1_60776")
+id = &"w1"
+max_size = 0
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_44aov"]
+script = ExtResource("1_60776")
+id = &"a0"
+slot = 1
+
+[sub_resource type="Resource" id="Resource_xdchl"]
+script = ExtResource("1_60776")
+id = &"m0"
+slot = 2
+
+[sub_resource type="Resource" id="Resource_vwjfl"]
+script = ExtResource("2_lyws2")
+id = &"WARDEN"
+display_name = "Warden"
+description = "Two weapons, plating and legs. The frame most armies are made of."
+base_mass = 7.0
+base_hp = 90.0
+base_armour = 4.0
+base_speed_mps = 4.2
+part_capacity = 20.0
+model = "guard"
+hardpoints = Array[ExtResource("1_60776")]([SubResource("Resource_sk52c"), SubResource("Resource_7746c"), SubResource("Resource_44aov"), SubResource("Resource_xdchl")])
+
+[sub_resource type="Resource" id="Resource_cspte"]
+script = ExtResource("3_jcg7f")
+id = &"MORTAR_POD"
+display_name = "Mortar Pod"
+description = "Indirect fire with a wide splash and a hole inside seven metres."
+mass = 8.0
+family = 3
+damage = 40.0
+range_m = 20.0
+min_range_m = 7.0
+cooldown_s = 2.4
+splash_m = 3.0
+
+[sub_resource type="Resource" id="Resource_ua7yf"]
+script = ExtResource("3_jcg7f")
+id = &"PLATE_LIGHT"
+display_name = "Light Plating"
+description = "A little steel. Cheap insurance against chip damage."
+slot = 1
+size = 0
+mass = 3.0
+hp_add = 30.0
+armour_add = 6.0
+speed_mult = 0.94
+
+[sub_resource type="Resource" id="Resource_15krd"]
+script = ExtResource("3_jcg7f")
+id = &"STRIDER_LEGS"
+display_name = "Strider Legs"
+description = "Long stride, a little frame reinforcement. The default walker."
+slot = 2
+mass = 5.0
+hp_add = 10.0
+speed_add_mps = 3.4
+
+[sub_resource type="Resource" id="Resource_tii77"]
+script = ExtResource("4_hf008")
+id = &"MORTAR_WALKER"
+display_name = "Mortar Walker"
+description = "Indirect fire on legs. Helpless inside seven metres — escort it."
+chassis = SubResource("Resource_vwjfl")
+fitted = Array[ExtResource("3_jcg7f")]([SubResource("Resource_cspte"), null, SubResource("Resource_ua7yf"), SubResource("Resource_15krd")])
+
+[resource]
+script = ExtResource("5_twsf4")
+id = &"MORTAR_WALKER"
+display_name = "Mortar Walker"
+mass_cost = 23.0
+description = "Indirect fire on legs. Helpless inside seven metres — escort it."
+escort_speed_mps = 7.52
+max_hp = 130.0
+radius_m = 0.55
+speed_mps = 7.143999999999999
+model = "guard"
+aim_node = "weapon_arm"
+damage = 16.666666666666668
+range_m = 20.0
+loadout = SubResource("Resource_tii77")

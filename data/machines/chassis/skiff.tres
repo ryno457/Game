@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="MachineChassis" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_53dhh"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_6iv6d"]
+
+[sub_resource type="Resource" id="Resource_864we"]
+script = ExtResource("1_53dhh")
+id = &"w0"
+max_size = 0
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_ig6gg"]
+script = ExtResource("1_53dhh")
+id = &"s0"
+slot = 3
+max_size = 0
+
+[sub_resource type="Resource" id="Resource_3mo7v"]
+script = ExtResource("1_53dhh")
+id = &"m0"
+slot = 2
+max_size = 0
+
+[resource]
+script = ExtResource("2_6iv6d")
+id = &"SKIFF"
+display_name = "Skiff"
+description = "A light frame with one weapon and somewhere to put an eye."
+base_mass = 4.0
+base_hp = 45.0
+base_speed_mps = 5.6
+radius_m = 0.45
+escort_radius_m = 9.0
+escort_speed_mps = 10.0
+model = "guard"
+colour = Color(0.42, 0.92, 0.78, 1)
+hardpoints = Array[ExtResource("1_53dhh")]([SubResource("Resource_864we"), SubResource("Resource_ig6gg"), SubResource("Resource_3mo7v")])

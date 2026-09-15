@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_prayt"]
+
+[resource]
+script = ExtResource("1_prayt")
+id = &"HEAVY_TREADS"
+display_name = "Heavy Treads"
+description = "Slower than legs, but they carry plating without complaining."
+slot = 2
+mass = 7.0
+hp_add = 45.0
+armour_add = 8.0
+speed_add_mps = -0.6

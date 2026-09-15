@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_uqk5b"]
+
+[resource]
+script = ExtResource("1_uqk5b")
+id = &"CLEAVER_ARM"
+display_name = "Cleaver Arm"
+description = "A powered blade. The best damage per mass in the catalogue, if you can close."
+mass = 6.0
+family = 1
+damage = 46.0
+cooldown_s = 1.2

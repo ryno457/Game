@@ -39,11 +39,17 @@ That rule has consequences, and they are load-bearing:
 
 - **Digging costs nothing.** Earth is not body. A trench is paid for in the
   drone's time and in the fact that the convoy moves on without it.
-- **The cost of churn cannot be a mass tax.** `recovery_loss` and `scrap_loss`
-  in `data/gameplay/mass.tres` are currently 25% and 15%, which contradicts the
-  rule. If the rule holds they should be zero, and the thing that stops free
-  repurposing has to be **time** — a drone trip out, a build that is not
-  instant. Open, flagged below.
+- **The cost of churn is time, not a mass tax.** `recovery_loss` and
+  `scrap_loss` in `data/gameplay/mass.tres` are both **0.0**. Nothing is
+  deleted. What stops free repurposing is the clock:
+  - mass leaves the module the instant the button is pressed, so it shrinks now
+  - the machine spends `build_time_s` (4s) in the assembly queue and does not
+    exist yet
+  - scrapping a live machine leaves a **wreck where it stood**; nothing comes
+    back until the drone flies out and hauls it home
+
+  A player who rebuilds their army every wave is not poorer, they are late, and
+  their line has a hole in it while they wait.
 
 ## Pacing is the player's, not a timer
 
@@ -67,7 +73,7 @@ a reward.
 
 | Piece | State |
 |---|---|
-| Mass economy — spend, refund, recovery loss | built, headless-tested |
+| Mass economy — fully conserved, time-priced | built, headless-tested |
 | Module grows and shrinks with mass | built |
 | Drone: fly out, collect, haul home | built |
 | Small debris (free) and large debris (stuck) | built |
@@ -76,13 +82,24 @@ a reward.
 | Fog of war with reveal sources | built |
 | Procedural terrain material, sun, sky | built |
 | Build menu spending mass | built |
+| Assembly queue — mass committed, machine delayed | built, headless-tested |
+| Scrapping a machine into a wreck | built, headless-tested |
+| Machine customisation — chassis, hardpoints, parts | built, headless-tested |
+| Melee / ranged / artillery / mixed roles | built, headless-tested |
+
+Machine customisation has its own write-up:
+**[docs/machine-customisation.md](machine-customisation.md)**.
 
 ## Deliberately not built yet
 
 - Repurposing a unit directly into a *different* unit (today: refund to mass,
   then build). Same outcome, one more step, far less code.
 - Radar pings for nests and large debris.
-- Weapon/defence/process attachments on units.
+- An in-game loadout editor. The parts system supports arbitrary
+  chassis+part combinations; the build bar only offers eight pre-assembled
+  machines. How much fiddling is fun on a phone is a feel question.
+- Shell travel time for artillery. Splash lands instantly today, so there is
+  no arc to read and no leading a moving target.
 - Units auto-following the module as a caravan.
 - Alien adaptation (the v1 system still exists and is tested; it is not wired
   into this loop yet).
@@ -158,16 +175,19 @@ aim at what they are tracking.
 
 ## Open design questions — not mine to answer
 
-1. **How much recovery loss?** Enough that churn hurts, little enough that
-   experimenting is not punished.
+1. ~~**How much recovery loss?**~~ Settled: none. See 3.
 2. **Can the module starve?** If building drops it below a floor, is that a
    loss state, a vulnerability, or simply impossible?
-3. **Should `recovery_loss` and `scrap_loss` be zero?** Conservation says yes.
-   But a full instant refund makes build-and-scrap free, which is the trap
-   CLAUDE.md records for free module recall. The conservation-preserving answer
-   is a TIME cost — the drone must fly out and haul the parts back before the
-   mass is usable again — rather than a percentage that quietly deletes mass.
-4. **Where does the dug earth go?** Strict conservation implies spoil: a trench
-   should raise a berm beside it. The heightfield already supports positive
-   deformation, so this is cheap, and a rampart next to a ditch is tactically
-   real. Not built.
+3. ~~**Should `recovery_loss` and `scrap_loss` be zero?**~~ Settled: yes, both
+   zero, with time as the price. Implemented and tested.
+4. ~~**Where does the dug earth go?**~~ Settled: nowhere. Conservation applies
+   to mass — the module's body — and earth is not body, so a trench raises no
+   berm and the dug ground is simply gone. Not built, deliberately.
+5. **Is four seconds the right assembly time?** `build_time_s` is the entire
+   cost of repurposing, so it is the single most load-bearing number in the
+   economy. Too short and churn is free; too long and experimenting with
+   loadouts is punished. This is a feel question and needs playing, not
+   deriving.
+6. **Should parts be gated?** Every chassis and part is available from the
+   first minute. Almost certainly wants to change once missions exist, but what
+   unlocks what is a progression decision, not a systems one.

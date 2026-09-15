@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_5q3xi"]
+
+[resource]
+script = ExtResource("1_5q3xi")
+id = &"RADAR_MAST"
+display_name = "Radar Mast"
+description = "Sees twenty-six metres. Artillery is blind without one of these nearby."
+slot = 3
+size = 2
+mass = 8.0
+hp_add = 10.0
+reveal_m = 26.0
+model = "radar"

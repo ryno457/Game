@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_o8f4n"]
+
+[resource]
+script = ExtResource("1_o8f4n")
+id = &"PLATE_LIGHT"
+display_name = "Light Plating"
+description = "A little steel. Cheap insurance against chip damage."
+slot = 1
+size = 0
+mass = 3.0
+hp_add = 30.0
+armour_add = 6.0
+speed_mult = 0.94

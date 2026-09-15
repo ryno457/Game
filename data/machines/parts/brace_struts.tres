@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_8xngl"]
+
+[resource]
+script = ExtResource("1_8xngl")
+id = &"BRACE_STRUTS"
+display_name = "Brace Struts"
+description = "Frame bracing. Hit points without the armour tax on speed."
+slot = 4
+hp_add = 50.0
+speed_mult = 0.95

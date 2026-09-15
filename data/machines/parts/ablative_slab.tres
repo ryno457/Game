@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_uj5o4"]
+
+[resource]
+script = ExtResource("1_uj5o4")
+id = &"ABLATIVE_SLAB"
+display_name = "Ablative Slab"
+description = "Walks through a swarm. Does not walk quickly."
+slot = 1
+size = 2
+mass = 11.0
+hp_add = 140.0
+armour_add = 34.0
+speed_mult = 0.78

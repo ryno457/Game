@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="MachineChassis" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_4286y"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_njkg5"]
+
+[sub_resource type="Resource" id="Resource_sk52c"]
+script = ExtResource("1_4286y")
+id = &"w0"
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_7746c"]
+script = ExtResource("1_4286y")
+id = &"w1"
+max_size = 0
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_44aov"]
+script = ExtResource("1_4286y")
+id = &"a0"
+slot = 1
+
+[sub_resource type="Resource" id="Resource_xdchl"]
+script = ExtResource("1_4286y")
+id = &"m0"
+slot = 2
+
+[resource]
+script = ExtResource("2_njkg5")
+id = &"WARDEN"
+display_name = "Warden"
+description = "Two weapons, plating and legs. The frame most armies are made of."
+base_mass = 7.0
+base_hp = 90.0
+base_armour = 4.0
+base_speed_mps = 4.2
+part_capacity = 20.0
+model = "guard"
+hardpoints = Array[ExtResource("1_4286y")]([SubResource("Resource_sk52c"), SubResource("Resource_7746c"), SubResource("Resource_44aov"), SubResource("Resource_xdchl")])

@@ -1,0 +1,118 @@
+[gd_resource type="Resource" script_class="BuildOption" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_tuydy"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_ddtxl"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_1sdhl"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_sayek"]
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="5_uan7a"]
+
+[sub_resource type="Resource" id="Resource_nkno4"]
+script = ExtResource("1_tuydy")
+id = &"w0"
+max_size = 2
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_64q3s"]
+script = ExtResource("1_tuydy")
+id = &"w1"
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_1v1sf"]
+script = ExtResource("1_tuydy")
+id = &"a0"
+slot = 1
+max_size = 2
+
+[sub_resource type="Resource" id="Resource_5xmao"]
+script = ExtResource("1_tuydy")
+id = &"u0"
+slot = 4
+
+[sub_resource type="Resource" id="Resource_q7sfi"]
+script = ExtResource("2_ddtxl")
+id = &"BASTION"
+display_name = "Bastion"
+description = "A heavy weapon mount that barely moves. Where the big guns go."
+base_mass = 12.0
+base_hp = 140.0
+base_armour = 8.0
+base_speed_mps = 2.8
+radius_m = 0.75
+part_capacity = 30.0
+escort_radius_m = 4.5
+escort_speed_mps = 6.0
+model = "turret"
+colour = Color(0.92, 0.64, 0.33, 1)
+hardpoints = Array[ExtResource("1_tuydy")]([SubResource("Resource_nkno4"), SubResource("Resource_64q3s"), SubResource("Resource_1v1sf"), SubResource("Resource_5xmao")])
+
+[sub_resource type="Resource" id="Resource_0ay0h"]
+script = ExtResource("3_1sdhl")
+id = &"RAILGUN"
+display_name = "Railgun"
+description = "One heavy shot every few seconds at extreme direct-fire range."
+size = 2
+mass = 12.0
+family = 2
+damage = 85.0
+range_m = 22.0
+cooldown_s = 2.6
+
+[sub_resource type="Resource" id="Resource_k75gb"]
+script = ExtResource("3_1sdhl")
+id = &"COIL_RIFLE"
+display_name = "Coil Rifle"
+description = "Direct fire that outranges everything that has to reach you."
+mass = 7.0
+family = 2
+damage = 30.0
+range_m = 14.0
+cooldown_s = 1.1
+
+[sub_resource type="Resource" id="Resource_6yd26"]
+script = ExtResource("3_1sdhl")
+id = &"ABLATIVE_SLAB"
+display_name = "Ablative Slab"
+description = "Walks through a swarm. Does not walk quickly."
+slot = 1
+size = 2
+mass = 11.0
+hp_add = 140.0
+armour_add = 34.0
+speed_mult = 0.78
+
+[sub_resource type="Resource" id="Resource_vv5ns"]
+script = ExtResource("3_1sdhl")
+id = &"BRACE_STRUTS"
+display_name = "Brace Struts"
+description = "Frame bracing. Hit points without the armour tax on speed."
+slot = 4
+hp_add = 50.0
+speed_mult = 0.95
+
+[sub_resource type="Resource" id="Resource_hcaui"]
+script = ExtResource("4_sayek")
+id = &"OVERGUN"
+display_name = "Overgun"
+description = "Deliberately overloaded: everything the frame can hold and then some."
+chassis = SubResource("Resource_q7sfi")
+fitted = Array[ExtResource("3_1sdhl")]([SubResource("Resource_0ay0h"), SubResource("Resource_k75gb"), SubResource("Resource_6yd26"), SubResource("Resource_vv5ns")])
+
+[resource]
+script = ExtResource("5_uan7a")
+id = &"OVERGUN"
+display_name = "Overgun"
+mass_cost = 46.0
+description = "Deliberately overloaded: everything the frame can hold and then some."
+escort_radius_m = 4.5
+escort_speed_mps = 3.9229411764705877
+max_hp = 330.0
+radius_m = 0.75
+speed_mps = 1.830705882352941
+colour = Color(0.92, 0.64, 0.33, 1)
+model = "turret"
+aim_node = "turret_head"
+damage = 59.96503496503496
+range_m = 22.0
+loadout = SubResource("Resource_hcaui")

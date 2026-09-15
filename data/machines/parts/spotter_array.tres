@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_nobro"]
+
+[resource]
+script = ExtResource("1_nobro")
+id = &"SPOTTER_ARRAY"
+display_name = "Spotter Array"
+description = "Sees twelve metres. Enough for direct fire to use its whole range."
+slot = 3
+size = 0
+mass = 3.0
+reveal_m = 12.0

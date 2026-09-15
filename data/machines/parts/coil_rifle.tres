@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_eyl73"]
+
+[resource]
+script = ExtResource("1_eyl73")
+id = &"COIL_RIFLE"
+display_name = "Coil Rifle"
+description = "Direct fire that outranges everything that has to reach you."
+mass = 7.0
+family = 2
+damage = 30.0
+range_m = 14.0
+cooldown_s = 1.1

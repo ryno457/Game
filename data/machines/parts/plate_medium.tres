@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_ol3iq"]
+
+[resource]
+script = ExtResource("1_ol3iq")
+id = &"PLATE_MEDIUM"
+display_name = "Composite Plating"
+description = "Real protection. You will feel the weight in the convoy."
+slot = 1
+mass = 6.0
+hp_add = 70.0
+armour_add = 16.0
+speed_mult = 0.88

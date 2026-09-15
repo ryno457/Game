@@ -1,0 +1,109 @@
+[gd_resource type="Resource" script_class="BuildOption" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_lkfvs"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_dwk6s"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_oabya"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_slxrn"]
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="5_jueem"]
+
+[sub_resource type="Resource" id="Resource_nkno4"]
+script = ExtResource("1_lkfvs")
+id = &"w0"
+max_size = 2
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_64q3s"]
+script = ExtResource("1_lkfvs")
+id = &"w1"
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_1v1sf"]
+script = ExtResource("1_lkfvs")
+id = &"a0"
+slot = 1
+max_size = 2
+
+[sub_resource type="Resource" id="Resource_5xmao"]
+script = ExtResource("1_lkfvs")
+id = &"u0"
+slot = 4
+
+[sub_resource type="Resource" id="Resource_q7sfi"]
+script = ExtResource("2_dwk6s")
+id = &"BASTION"
+display_name = "Bastion"
+description = "A heavy weapon mount that barely moves. Where the big guns go."
+base_mass = 12.0
+base_hp = 140.0
+base_armour = 8.0
+base_speed_mps = 2.8
+radius_m = 0.75
+part_capacity = 30.0
+escort_radius_m = 4.5
+escort_speed_mps = 6.0
+model = "turret"
+colour = Color(0.92, 0.64, 0.33, 1)
+hardpoints = Array[ExtResource("1_lkfvs")]([SubResource("Resource_nkno4"), SubResource("Resource_64q3s"), SubResource("Resource_1v1sf"), SubResource("Resource_5xmao")])
+
+[sub_resource type="Resource" id="Resource_hcdrd"]
+script = ExtResource("3_oabya")
+id = &"SIEGE_HOWITZER"
+display_name = "Siege Howitzer"
+description = "Reaches further than anything can see unaided. Blind inside twelve metres."
+size = 2
+mass = 15.0
+family = 3
+damage = 95.0
+range_m = 34.0
+min_range_m = 12.0
+cooldown_s = 4.2
+splash_m = 5.0
+
+[sub_resource type="Resource" id="Resource_6yd26"]
+script = ExtResource("3_oabya")
+id = &"ABLATIVE_SLAB"
+display_name = "Ablative Slab"
+description = "Walks through a swarm. Does not walk quickly."
+slot = 1
+size = 2
+mass = 11.0
+hp_add = 140.0
+armour_add = 34.0
+speed_mult = 0.78
+
+[sub_resource type="Resource" id="Resource_vv5ns"]
+script = ExtResource("3_oabya")
+id = &"BRACE_STRUTS"
+display_name = "Brace Struts"
+description = "Frame bracing. Hit points without the armour tax on speed."
+slot = 4
+hp_add = 50.0
+speed_mult = 0.95
+
+[sub_resource type="Resource" id="Resource_6alab"]
+script = ExtResource("4_slxrn")
+id = &"SIEGE_BATTERY"
+display_name = "Siege Battery"
+description = "Thirty-four metres of reach and twelve metres of blindness."
+chassis = SubResource("Resource_q7sfi")
+fitted = Array[ExtResource("3_oabya")]([SubResource("Resource_hcdrd"), null, SubResource("Resource_6yd26"), SubResource("Resource_vv5ns")])
+
+[resource]
+script = ExtResource("5_jueem")
+id = &"SIEGE_BATTERY"
+display_name = "Siege Battery"
+mass_cost = 42.0
+description = "Thirty-four metres of reach and twelve metres of blindness."
+escort_radius_m = 4.5
+escort_speed_mps = 4.446
+max_hp = 330.0
+radius_m = 0.75
+speed_mps = 2.0747999999999998
+colour = Color(0.92, 0.64, 0.33, 1)
+model = "turret"
+aim_node = "turret_head"
+damage = 22.619047619047617
+range_m = 34.0
+loadout = SubResource("Resource_6alab")
