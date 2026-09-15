@@ -51,7 +51,7 @@ func _mass() -> void:
 	# MASS IS CONSERVED. It is the module's body relocated into a unit, never
 	# consumed, so a wreck returns every gram. What stops free repurposing is
 	# time: the drone has to fly out and haul the wreck home, and the rebuild
-	# takes `build_time_s` during which the unit does not exist.
+	# takes seconds to assemble, during which the unit does not exist.
 	var before_mass := pool.mass
 	var back := pool.recover(10.0)
 	_ok("wreck recovery is lossless", is_equal_approx(back, 10.0),
@@ -71,8 +71,19 @@ func _mass() -> void:
 		churn.scrap(10.0)
 	_ok("churning conserves mass", is_equal_approx(churn.mass, start),
 		"%.1f -> %.1f over 5 build/scrap cycles" % [start, churn.mass])
-	_ok("churning costs time instead", cfg.build_time_s > 0.0,
-		"%.1fs per rebuild, %.1fs for those 5" % [cfg.build_time_s, cfg.build_time_s * 5.0])
+	var rebuild := cfg.build_time_for(10.0)
+	_ok("churning costs time instead", rebuild > 0.0,
+		"%.1fs per rebuild, %.1fs for those 5" % [rebuild, rebuild * 5.0])
+
+	# Assembly time has to rise with mass or a Siege Battery arriving as fast
+	# as a Bulwark makes the size of a machine mean nothing — and merging two
+	# units into a bigger one becomes free.
+	_ok("heavier machines take longer", cfg.build_time_for(42.0) > cfg.build_time_for(10.0),
+		"%.1fs at 10 mass, %.1fs at 42" % [cfg.build_time_for(10.0), cfg.build_time_for(42.0)])
+	_ok("assembly is never instant and never endless",
+		cfg.build_time_for(0.0) >= cfg.build_time_min_s
+			and cfg.build_time_for(9999.0) <= cfg.build_time_max_s,
+		"clamped to [%.0fs, %.0fs]" % [cfg.build_time_min_s, cfg.build_time_max_s])
 
 	# Mass committed to standing units is not gone, it is somewhere else. The
 	# module body plus the field must hold constant across a build.

@@ -19,6 +19,7 @@ const TERRAIN_SHADER := "res://shaders/terrain_lit.gdshader"
 const LIGHT_CFG := "res://data/gameplay/lighting.tres"
 
 const MACHINE_RULES := "res://data/gameplay/machines.tres"
+const MERGE_RULES := "res://data/gameplay/merge.tres"
 const PROTO_CFG := "res://data/gameplay/proto.tres"
 const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
 
@@ -32,6 +33,8 @@ const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
 @onready var readout: Label = $HUD/Panel/Readout
 @onready var toast: Label = $HUD/Panel/Toast
 @onready var build_bar: HBoxContainer = $HUD/BuildScroll/Build
+@onready var forge_panel: Control = $HUD/ForgeScroll
+@onready var forge_bar: HBoxContainer = $HUD/ForgeScroll/Forge
 
 var field: Heightfield
 var fog: FogOfWar
@@ -39,6 +42,7 @@ var mass: MassPool
 var waves: WaveDirector
 var options: Array[BuildOption] = []
 var rules: MachineRules
+var forge: MergeRules
 ## Resolved machine numbers, keyed by build-option id. Resolved once at load
 ## because a loadout is fixed: the parts a machine was built with are the parts
 ## it dies with. Everything in the sim reads these, never a part or a chassis.
@@ -60,21 +64,31 @@ var built: Array[Dictionary] = []
 ## rebuild can charge is the seconds it spends here and the hole in the line
 ## while it waits.
 var assembling: Array[Dictionary] = []
+## Merge orders in flight. A machine is mass in a shape, and this is where one
+## shape becomes another: the group walks to a rendezvous, meets, and reforges.
+var merging: Array[Dictionary] = []
+## Machines the player has tapped, by uid. Indices would go stale the moment
+## anything died.
+var selected: Array[int] = []
+var _next_uid := 1
 var aliens: Array[Dictionary] = []
 var wrecks: Array[Dictionary] = []
 
 var _mm_debris: MultiMeshInstance3D
 var _mm_built: MultiMeshInstance3D
 var _mm_aliens: MultiMeshInstance3D
+var _mm_marks: MultiMeshInstance3D
 var _module_scale := 1.0
 var _toast_t := 0.0
 var _fog_cd := 0.0
+var _forge_sig := ""
 var trenching := false
 var _rng := RandomNumberGenerator.new()
 var lib := ModelLibrary.new()
 var _module_body: Node3D = null
 var _module_form := -1
-var _unit_nodes: Array[Node3D] = []
+## uid -> Node3D. See _sync_convoy for why this is not an array.
+var _unit_nodes: Dictionary = {}
 var _alien_nodes: Array[Node3D] = []
 
 
@@ -144,6 +158,7 @@ func _form_for_mass() -> int:
 
 func _load_options() -> void:
 	rules = load(MACHINE_RULES)
+	forge = load(MERGE_RULES)
 	for f in DirAccess.get_files_at(OPTIONS_DIR):
 		if f.ends_with(".tres"):
 			options.append(load(OPTIONS_DIR + f))
@@ -190,6 +205,26 @@ func _make_instancers() -> void:
 	_mm_debris = _instancer(_chunk_mesh(Color(0.85, 0.74, 0.42)), 64)
 	_mm_built = _instancer(_chunk_mesh(Color(0.31, 0.89, 0.76)), 96)
 	_mm_aliens = _instancer(_chunk_mesh(Color(1.0, 0.36, 0.45)), 192)
+	_mm_marks = _instancer(_ring_mesh(), 32)
+	_mm_marks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## A flat glowing disc under a selected machine. Unlit and emissive so it reads
+## on a phone in a dark biodome without competing with the unit itself.
+func _ring_mesh() -> Mesh:
+	var m := CylinderMesh.new()
+	m.top_radius = 1.0
+	m.bottom_radius = 1.0
+	m.height = 0.06
+	m.radial_segments = 20
+	m.rings = 0
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(1.0, 0.86, 0.35, 0.55)
+	m.material = mat
+	return m
 
 
 func _chunk_mesh(c: Color) -> Mesh:
@@ -242,6 +277,66 @@ func _build_menu() -> void:
 		build_bar.add_child(b)
 
 
+## The reforge bar. Appears only when something is selected, because a bar of
+## dead buttons is worse than no bar on a phone.
+##
+## Rebuilt on change rather than every frame: the signature is the selection
+## plus the pooled mass, which is exactly what the offered list depends on.
+func _refresh_forge_bar() -> void:
+	# A selected machine can die, or be swallowed by a merge order. Drop it
+	# from the selection rather than showing a pool that no longer exists.
+	for k in range(selected.size() - 1, -1, -1):
+		if _index_of(selected[k]) < 0:
+			selected.remove_at(k)
+	var sig := ",".join(selected.map(func(u): return str(u)))
+	if sig == _forge_sig:
+		return
+	_forge_sig = sig
+	for c in forge_bar.get_children():
+		c.queue_free()
+	forge_panel.visible = not selected.is_empty()
+	if selected.is_empty():
+		return
+
+	var group := _selected_specs()
+	var pool := MergePlanner.pool_mass(group)
+	var head := Label.new()
+	head.text = "%d selected\n%d mass" % [group.size(), int(pool)]
+	head.add_theme_font_size_override("font_size", 19)
+	head.add_theme_color_override("font_color", Color(1.0, 0.86, 0.35))
+	head.custom_minimum_size = Vector2(120.0, BUTTON_MIN.y)
+	head.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	forge_bar.add_child(head)
+
+	var offers := forge_options()
+	if offers.is_empty():
+		var none := Label.new()
+		none.text = "nothing this group\ncan become"
+		none.add_theme_font_size_override("font_size", 18)
+		none.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		forge_bar.add_child(none)
+	for opt in offers:
+		var spec := spec_for(opt)
+		var b := Button.new()
+		var spare := MergePlanner.leftover(pool, spec.mass)
+		var note := "%.0fs" % MergePlanner.work_time(spec.mass, mass.cfg, forge)
+		if spare > 0.0 and not MergePlanner.is_crumb(spare, forge):
+			note += "  -%d" % int(spare)
+		b.text = "→ %s\n%s  %s" % [opt.display_name, spec.role_name().left(4), note]
+		b.tooltip_text = _machine_card(opt, spec)
+		b.custom_minimum_size = BUTTON_MIN
+		b.add_theme_font_size_override("font_size", 18)
+		b.pressed.connect(_order_merge.bind(opt))
+		forge_bar.add_child(b)
+
+	var clear := Button.new()
+	clear.text = "CLEAR"
+	clear.custom_minimum_size = Vector2(110.0, BUTTON_MIN.y)
+	clear.add_theme_font_size_override("font_size", 18)
+	clear.pressed.connect(func(): selected.clear())
+	forge_bar.add_child(clear)
+
+
 # --- the loop ----------------------------------------------------------------
 func _process(delta: float) -> void:
 	step(delta)
@@ -256,6 +351,7 @@ func _process(delta: float) -> void:
 func step(delta: float) -> void:
 	_drone(delta)
 	_assembly(delta)
+	_merges(delta)
 	_units(delta)
 	_hostiles(delta)
 	waves.tick(delta)
@@ -397,7 +493,8 @@ func _dig(at: Vector2, delta: float) -> void:
 
 ## Committing mass to a machine. The mass leaves the module's body the instant
 ## the player presses the button — that is why it shrinks straight away — but
-## the machine takes `build_time_s` to exist.
+## the machine takes `build_time_for(mass)` seconds to exist — heavier
+## machines take longer, so the size of a thing means something.
 ##
 ## That delay is the whole cost of the economy. Mass is conserved, so scrapping
 ## and rebuilding loses nothing; what it costs is these seconds, plus the drone
@@ -412,9 +509,10 @@ func _try_build(opt: BuildOption) -> void:
 		return
 	var a := _rng.randf() * TAU
 	var p := module_pos + Vector2(cos(a), sin(a)) * (3.0 + _module_scale)
-	assembling.append({"opt": opt, "spec": spec, "pos": p, "left": mass.cfg.build_time_s})
+	var secs := mass.cfg.build_time_for(spec.mass)
+	assembling.append({"opt": opt, "spec": spec, "pos": p, "left": secs, "total": secs})
 	_say("%s — %d mass committed, %.0fs to assemble"
-		% [opt.display_name, int(spec.mass), mass.cfg.build_time_s])
+		% [opt.display_name, int(spec.mass), secs])
 
 
 ## Machines finish assembling and join the convoy.
@@ -427,19 +525,37 @@ func _assembly(delta: float) -> void:
 		var spec: MachineSpec = job.spec
 		var cds := PackedFloat32Array()
 		cds.resize(spec.weapons.size())
-		built.append({
-			"opt": job.opt, "spec": spec, "pos": job.pos, "hp": spec.max_hp,
-			"cd": 0.0, "cds": cds, "slot": built.size(),
-		})
+		_field(job.opt, spec, job.pos)
 		assembling.remove_at(i)
 		_say("%s ready" % spec.display_name)
+
+
+## Put a finished machine on the field. One place, so a machine that arrived
+## from the build queue and one that came out of a merge are identical.
+func _field(opt: BuildOption, spec: MachineSpec, at: Vector2) -> Dictionary:
+	var cds := PackedFloat32Array()
+	cds.resize(spec.weapons.size())
+	var u := {
+		"uid": _next_uid, "opt": opt, "spec": spec, "pos": at, "hp": spec.max_hp,
+		"cd": 0.0, "cds": cds, "slot": built.size(), "rally": null,
+	}
+	_next_uid += 1
+	built.append(u)
+	return u
+
+
+func _index_of(uid: int) -> int:
+	for i in built.size():
+		if built[i].uid == uid:
+			return i
+	return -1
 
 
 ## Scrap a live machine back into the module.
 ##
 ## Lossless in mass and expensive in time: the machine becomes a wreck where it
 ## stands, so the drone has to fly out and haul it home before that mass is
-## usable, and whatever the player builds instead takes build_time_s after
+## usable, and whatever the player builds instead takes its own assembly time
 ## that. Repurposing is always available and never free.
 func _scrap(index: int) -> void:
 	if index < 0 or index >= built.size():
@@ -448,6 +564,192 @@ func _scrap(index: int) -> void:
 	wrecks.append({"pos": u.pos, "mass": u.spec.mass, "wreck": true})
 	built.remove_at(index)
 	_say("%s scrapped — the drone has to fetch it" % u.spec.display_name)
+
+
+# --- reforging in the field --------------------------------------------------
+## What the current selection could become, heaviest first.
+##
+## A machine is mass in a shape. One Skirmisher can become anything up to its
+## own 14 mass; two of them pool 28 and can become a Lancer or a Breaker. That
+## is the whole rule — if you want something bigger, bring more machines.
+func forge_options() -> Array:
+	var group := _selected_specs()
+	if group.is_empty() or not MergePlanner.group_is_legal(group.size(), forge):
+		return []
+	var only: StringName = &""
+	if group.size() == 1:
+		only = (group[0] as MachineSpec).id
+	return MergePlanner.candidates(MergePlanner.pool_mass(group), options, specs, only)
+
+
+func _selected_specs() -> Array:
+	var out: Array = []
+	for uid in selected:
+		var i := _index_of(uid)
+		if i >= 0:
+			out.append(built[i].spec)
+	return out
+
+
+## Order the selection to become `target`. They walk together first.
+func _order_merge(target: BuildOption) -> void:
+	var group := _selected_specs()
+	if group.is_empty():
+		return
+	if not MergePlanner.group_is_legal(group.size(), forge):
+		_say("too many at once — %d machines is the most that can combine" % forge.max_group)
+		return
+	var pool := MergePlanner.pool_mass(group)
+	var want := spec_for(target)
+	if want.mass > pool + 0.001:
+		_say("%s needs %d mass — this group is %d. Add another machine."
+			% [target.display_name, int(want.mass), int(pool)])
+		return
+
+	# Rendezvous at the group's centre of mass, so nobody walks further than
+	# they must and the merge happens where the player was already looking.
+	var at := Vector2.ZERO
+	var uids: Array[int] = []
+	for uid in selected:
+		var i := _index_of(uid)
+		if i < 0:
+			continue
+		at += built[i].pos
+		uids.append(uid)
+		built[i].rally = Vector2.ZERO        # filled in below once `at` is known
+	if uids.is_empty():
+		return
+	at /= float(uids.size())
+	for uid in uids:
+		built[_index_of(uid)].rally = at
+
+	merging.append({
+		"uids": uids, "opt": target, "spec": want, "at": at,
+		"state": "gathering", "left": 0.0, "wait": 0.0,
+	})
+	selected.clear()
+	if uids.size() == 1:
+		_say("%s is reshaping into a %s" % [group[0].display_name, target.display_name])
+	else:
+		_say("%d machines converging to form a %s" % [uids.size(), target.display_name])
+
+
+func _merges(delta: float) -> void:
+	for i in range(merging.size() - 1, -1, -1):
+		var job := merging[i]
+		if job.state == "gathering":
+			if _gather(job, delta):
+				merging.remove_at(i)
+		else:
+			job.left -= delta
+			if job.left <= 0.0:
+				_finish_merge(job)
+				merging.remove_at(i)
+
+
+## Wait for every member to reach the rendezvous, then start the work.
+##
+## Members can die on the way. That does not cancel the order — it shrinks the
+## pool, and if the pool can no longer make the target the order downgrades to
+## the best thing the survivors can still become. Losing a machine mid-merge
+## should cost you the machine, not the whole decision.
+## Returns true when the order is finished with — abandoned or started.
+func _gather(job: Dictionary, delta: float) -> bool:
+	job.wait += delta
+	var alive: Array[int] = []
+	var pool := 0.0
+	var here := 0
+	for uid in job.uids:
+		var i := _index_of(uid)
+		if i < 0:
+			continue
+		alive.append(uid)
+		pool += built[i].spec.mass
+		if built[i].pos.distance_to(job.at) <= forge.gather_radius_m:
+			here += 1
+	job.uids = alive
+
+	if alive.is_empty():
+		return true
+
+	if pool + 0.001 < job.spec.mass:
+		var fallback := MergePlanner.best(pool, options, specs)
+		if fallback == null:
+			_release(job)
+			_say("the merge lost too much — the survivors go back to formation")
+			return true
+		job.opt = fallback
+		job.spec = spec_for(fallback)
+		_say("down to %d mass — reforging as a %s instead" % [int(pool), fallback.display_name])
+
+	if here < alive.size():
+		if job.wait < forge.gather_timeout_s:
+			return false
+		_release(job)
+		_say("they could not reach each other — merge abandoned")
+		return true
+
+	# Everyone has arrived. The machines come apart here and the new one starts
+	# assembling; from this moment the group is off the board.
+	for uid in alive:
+		var i := _index_of(uid)
+		if i >= 0:
+			built.remove_at(i)
+	job.state = "working"
+	job.left = MergePlanner.work_time(job.spec.mass, mass.cfg, forge)
+	job.total = job.left
+	job.pool = pool
+	return false
+
+
+func _finish_merge(job: Dictionary) -> void:
+	_field(job.opt, job.spec, job.at)
+	# Mass the new shape could not use. NOTHING is destroyed here — the rule is
+	# conservation, so every gram either lies on the ground as an offcut the
+	# drone must fetch (which is what makes overshooting a merge cost a trip)
+	# or, if it is too small to be worth a trip, goes straight home.
+	var spare := MergePlanner.leftover(job.pool, job.spec.mass)
+	if spare <= 0.0:
+		_say("%s forged" % job.spec.display_name)
+	elif MergePlanner.is_crumb(spare, forge) or not forge.leftover_as_wreck:
+		mass.gain(spare)
+		_say("%s forged" % job.spec.display_name)
+	else:
+		wrecks.append({"pos": job.at + Vector2(1.2, 0.8), "mass": spare, "wreck": true})
+		_say("%s forged — %d mass of offcuts left for the drone"
+			% [job.spec.display_name, int(spare)])
+
+
+## Every gram in the world, wherever it currently happens to be.
+##
+## Mass is conserved, so this number only moves when the drone brings something
+## in from outside the loop — or when hostiles chew on the module, which is the
+## one place in the game that genuinely destroys body. Everything else here
+## just shuffles mass between buckets, and this is how that gets checked rather
+## than asserted in a comment.
+func system_mass() -> float:
+	var total := mass.mass + drone_cargo
+	for u in built:
+		total += u.spec.mass
+	for job in assembling:
+		total += job.spec.mass           # committed, not yet standing
+	for job in merging:
+		if job.state == "working":
+			total += job.pool            # gathering groups are still in `built`
+	for w in wrecks:
+		total += w.mass
+	for d in debris:
+		if not d.taken:
+			total += d.mass
+	return total
+
+
+## Send an abandoned group back to formation.
+func _release(job: Dictionary) -> void:
+	for uid in job.uids:
+		var i := _index_of(uid)
+		if i >= 0:
+			built[i].rally = null
 
 
 ## One machine's numbers as the player needs to compare them. Range and dead
@@ -488,13 +790,18 @@ func _units(delta: float) -> void:
 		var u := built[i]
 		u.cd -= delta
 		var upos: Vector2 = u.pos
-		var station := _station(i, built.size(), u.opt)
+		# A machine under a merge order leaves formation and walks to the
+		# rendezvous. That hole in the line is half the cost of reforging.
+		var rallying: bool = u.rally != null
+		var station: Vector2 = u.rally if rallying else _station(i, built.size(), u.opt)
 		var gap := station - upos
 		var dist := gap.length()
 		if dist > 0.05:
 			# A spring, not a leash: something left behind closes faster, so
 			# the convoy regroups instead of stringing out across the map.
 			var urgency := 1.0 + (dist / maxf(1.0, tune.escort_radius_m)) * tune.escort_catchup
+			if rallying:
+				urgency = forge.gather_speed_mult
 			var speed: float = u.spec.escort_speed_mps * urgency
 			u.pos = upos + gap / dist * minf(speed * delta, dist)
 		_fire(u, delta)
@@ -658,10 +965,31 @@ func _present(delta: float) -> void:
 	_draw(_mm_aliens, aliens.slice(mini(aliens.size(), tune.animated_alien_cap)),
 		func(_a): return Vector3.ONE * tune.alien_radius_m * 2.0,
 		func(_a): return Color(1.0, 0.36, 0.45))
+	_draw(_mm_marks, _markers(),
+		func(m): return Vector3(m.r, 0.12, m.r),
+		func(m): return m.col)
+	_refresh_forge_bar()
 
 	terrain.upload()
 	fog.upload(delta)
 	_hud(delta)
+
+
+## Discs on the ground: amber under a selected machine, cyan at a rendezvous a
+## merge is converging on. The rendezvous ring is drawn at the gather radius, so
+## the player can see exactly how close the group has to get.
+func _markers() -> Array:
+	var out: Array = []
+	for uid in selected:
+		var i := _index_of(uid)
+		if i >= 0:
+			out.append({"pos": built[i].pos, "r": built[i].spec.radius_m * 2.6,
+				"col": Color(1.0, 0.86, 0.35, 0.55)})
+	var pulse := 0.75 + 0.25 * sin(Time.get_ticks_msec() * 0.005)
+	for job in merging:
+		out.append({"pos": job.at, "r": forge.gather_radius_m,
+			"col": Color(0.35, 0.95, 0.88, 0.30 * pulse)})
+	return out
 
 
 ## Only draw what the player can actually see. Fog is not a post effect here —
@@ -688,21 +1016,28 @@ func _draw(mmi: MultiMeshInstance3D, items: Array, size_fn: Callable, col_fn: Ca
 ## they are shooting. Individual nodes rather than MultiMesh: the convoy is a
 ## dozen things, and nodes buy animated sub-parts for free.
 func _sync_convoy() -> void:
-	while _unit_nodes.size() < built.size():
-		var u: Dictionary = built[_unit_nodes.size()]
+	# Keyed by uid, not by index. Machines leave the array from the middle all
+	# the time now — a merge takes two out at once — and an index-keyed pool
+	# would quietly hand a Siege Battery the Skirmisher's body.
+	var live := {}
+	for u in built:
+		live[u.uid] = true
+		if _unit_nodes.has(u.uid):
+			continue
 		var n: Node3D = lib.spawn(String(u.opt.model)) if String(u.opt.model) != "" else null
 		if n == null:
 			n = Node3D.new()
 		add_child(n)
-		_unit_nodes.append(n)
-	while _unit_nodes.size() > built.size():
-		var dead: Node3D = _unit_nodes.pop_back()
-		dead.queue_free()
+		_unit_nodes[u.uid] = n
+	for uid in _unit_nodes.keys():
+		if not live.has(uid):
+			(_unit_nodes[uid] as Node3D).queue_free()
+			_unit_nodes.erase(uid)
 
 	for i in built.size():
 		var u: Dictionary = built[i]
 		var p: Vector2 = u.pos
-		var n: Node3D = _unit_nodes[i]
+		var n: Node3D = _unit_nodes[u.uid]
 		n.visible = fog.is_visible(p)
 		if not n.visible:
 			continue
@@ -770,6 +1105,7 @@ func _hud(delta: float) -> void:
 		"DRONE  %s" % job,
 		"BUILT  %d%s   HOSTILES %d   WRECKS %d"
 			% [built.size(), _assembly_note(), aliens.size(), wrecks.size()],
+		"FORGE  %s" % _forge_note(),
 		"SEEN   %.0f%%" % (fog.explored_fraction() * 100.0),
 		"ATTACK %s" % ("INCOMING" if waves.is_active() else "quiet"),
 		"MODE   %s" % ("TRENCH — drag to dig" if trenching else "move"),
@@ -788,6 +1124,19 @@ func _assembly_note() -> String:
 	for job in assembling:
 		soonest = minf(soonest, job.left)
 	return "  (+%d in %.0fs)" % [assembling.size(), ceilf(soonest)]
+
+
+## What the reforge orders are doing, for the HUD.
+func _forge_note() -> String:
+	if merging.is_empty():
+		return "—" if selected.is_empty() else "%d selected" % selected.size()
+	var parts := PackedStringArray()
+	for job in merging:
+		if job.state == "gathering":
+			parts.append("%s converging" % job.spec.display_name)
+		else:
+			parts.append("%s %.0fs" % [job.spec.display_name, ceilf(job.left)])
+	return ", ".join(parts)
 
 
 func _say(text: String) -> void:
@@ -840,6 +1189,30 @@ func _tap(screen: Vector2) -> void:
 	if hit == null:
 		return
 	var p := Vector2(hit.x, hit.z)
+
+	# A machine first. Tapping one selects it; tapping it again drops it. That
+	# is the whole selection model — no drag box, no modifier key, nothing that
+	# needs a second hand on a phone.
+	var nearest := -1
+	var nd := 2.2
+	for i in built.size():
+		var d: float = built[i].pos.distance_to(p)
+		if d < nd:
+			nd = d
+			nearest = i
+	if nearest >= 0:
+		var uid: int = built[nearest].uid
+		if selected.has(uid):
+			selected.erase(uid)
+		elif selected.size() >= forge.max_group:
+			_say("%d is the most that can combine at once" % forge.max_group)
+		else:
+			selected.append(uid)
+		return
+	if not selected.is_empty():
+		selected.clear()
+		return
+
 	for i in debris.size():
 		if debris[i].taken or not debris[i].large:
 			continue

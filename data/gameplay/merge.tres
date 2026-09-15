@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MergeRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/merge_rules.gd" id="1_merge"]
+
+[resource]
+script = ExtResource("1_merge")
+gather_radius_m = 3.2
+gather_speed_mult = 1.7
+gather_timeout_s = 20.0
+max_group = 4
+field_work_mult = 0.7
+min_work_s = 2.0
+leftover_as_wreck = true
+leftover_floor = 1.0

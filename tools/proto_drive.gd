@@ -65,7 +65,7 @@ func _process(_delta: float) -> bool:
 	# Mass is conserved, so the ONLY price of building is the wait. If the
 	# machine appeared instantly there would be no cost at all and repurposing
 	# would be free — the trap CLAUDE.md records for free module recall.
-	var build_s: float = scene.mass.cfg.build_time_s
+	var build_s: float = scene.mass.cfg.build_time_for(scene.spec_for(opt).mass)
 	_ok("the machine does not exist yet",
 		scene.built.is_empty() and scene.assembling.size() == 1,
 		"%.0fs of assembly still to run" % build_s)
@@ -78,6 +78,72 @@ func _process(_delta: float) -> bool:
 		scene.step(DT)
 	_ok("it arrives when the assembly time is up", scene.built.size() == 1,
 		"%d on the field after %.0fs" % [scene.built.size(), build_s])
+
+	# --- reforging: two machines walk together and become a bigger one -------
+	# The player's rule: if you want something bigger, bring a second machine.
+	scene._try_build(opt)
+	while not scene.assembling.is_empty():
+		scene.step(DT)
+	_ok("a second machine joins it", scene.built.size() == 2,
+		"%d on the field" % scene.built.size())
+
+	var pool: float = scene.built[0].spec.mass + scene.built[1].spec.mass
+	# Appended rather than assigned: `selected` is Array[int], and handing a
+	# typed array an untyped literal from another script fails at runtime.
+	scene.selected.clear()
+	scene.selected.append(scene.built[0].uid)
+	scene.selected.append(scene.built[1].uid)
+	var solo: Array = MergePlanner.candidates(scene.built[0].spec.mass, scene.options,
+		scene.specs, scene.built[0].spec.id)
+	var offers: Array = scene.forge_options()
+	var target: BuildOption = offers[0]
+	var target_mass: float = scene.spec_for(target).mass
+	_ok("the pair is offered more than one alone", offers.size() > solo.size(),
+		"%d offers alone -> %d together at %.0f mass" % [solo.size(), offers.size(), pool])
+	_ok("the pair can reach a heavier machine than either of them",
+		target_mass > scene.built[0].spec.mass,
+		"%s at %.0f mass" % [target.display_name, target_mass])
+
+	# Every gram in the world, wherever it is — module body, standing machines,
+	# committed builds, wrecks, uncollected debris, the drone's claw. The drone
+	# keeps working through the merge, so a naive module-plus-field total would
+	# drift; this one cannot, because collection only moves mass between two of
+	# those buckets.
+	var before_total: float = scene.system_mass()
+	scene._order_merge(target)
+	_ok("the order sends them to a rendezvous",
+		scene.merging.size() == 1 and scene.merging[0].state == "gathering",
+		"converging on %.0f, %.0f" % [scene.merging[0].at.x, scene.merging[0].at.y])
+	_ok("both machines are still on the field while they walk", scene.built.size() == 2,
+		"nothing disappears until they meet")
+
+	var gather := 0.0
+	while gather < 40.0 and not scene.merging.is_empty() \
+			and scene.merging[0].state == "gathering":
+		scene.step(DT)
+		gather += DT
+	_ok("they meet and the old machines come apart",
+		scene.merging.size() == 1 and scene.merging[0].state == "working"
+			and scene.built.is_empty(),
+		"met after %.1fs" % gather)
+
+	var work := 0.0
+	while work < 40.0 and not scene.merging.is_empty():
+		scene.step(DT)
+		work += DT
+	_ok("the bigger machine exists", scene.built.size() == 1
+			and is_equal_approx(scene.built[0].spec.mass, target_mass),
+		"%s, %.0f mass, after %.1fs of work"
+			% [scene.built[0].spec.display_name, target_mass, work])
+	_ok("reforging costs real seconds", work > 1.0, "%.1fs" % work)
+
+	var after_total: float = scene.system_mass()
+	_ok("the merge destroyed nothing", is_equal_approx(before_total, after_total),
+		"%.1f mass in the system before and after" % before_total)
+	_ok("the offcut is lying on the ground, not gone",
+		_wreck_mass(scene) >= pool - target_mass - 0.001,
+		"%.1f spare from a %.0f pool making a %.0f machine"
+			% [pool - target_mass, pool, target_mass])
 
 	# Scrapping returns every gram and costs a drone trip instead.
 	var before_scrap: float = scene.mass.mass
@@ -146,6 +212,14 @@ func _process(_delta: float) -> bool:
 	else:
 		print("%d CHECK(S) FAILED" % _failed)
 	return true    # done — end the main loop
+
+
+## Mass lying on the ground waiting for the drone.
+func _wreck_mass(s: Node3D) -> float:
+	var total := 0.0
+	for w in s.wrecks:
+		total += w.mass
+	return total
 
 
 func _ok(name: String, cond: bool, detail: String) -> void:
