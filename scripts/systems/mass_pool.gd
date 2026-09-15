@@ -57,12 +57,20 @@ func gain(amount: float) -> float:
 	return got
 
 
-## Recover a destroyed unit's wreck. Lossy on purpose.
+## Recover a destroyed unit's wreck. Lossless: the mass was never gone, it was
+## lying on the ground waiting for the drone.
 func recover(original_cost: float) -> float:
 	return gain(original_cost * (1.0 - cfg.recovery_loss))
 
 
-## Voluntarily scrap a live unit back into the module. Less lossy than losing
-## it in a fight, so choosing to reconfigure beats being forced to.
+## Scrap a live unit back into the module. Also lossless — the cost is that the
+## unit becomes a wreck the drone still has to fetch.
 func scrap(original_cost: float) -> float:
 	return gain(original_cost * (1.0 - cfg.scrap_loss))
+
+
+## Total mass in the system: the module's body plus everything currently
+## standing on the field or lying in a wreck. Conservation says this only
+## changes when debris is collected from the world.
+static func total_in_system(module_mass: float, committed: float) -> float:
+	return module_mass + committed

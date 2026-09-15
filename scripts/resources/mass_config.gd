@@ -16,9 +16,18 @@ extends Resource
 @export var scale_tween_s: float = 0.45
 
 @export_group("Recovery")
-## Fraction of a unit's mass lost when its wreck is recovered. Without a loss,
-## building and scrapping is free and the decision collapses — the same trap
-## CLAUDE.md records for free module recall. Feel question; tune here.
-@export_range(0.0, 1.0) var recovery_loss: float = 0.25
-## Fraction lost when a live unit is voluntarily scrapped back into the module.
-@export_range(0.0, 1.0) var scrap_loss: float = 0.15
+## MASS IS CONSERVED. Both losses are zero and should stay zero: mass is the
+## module's body relocated into units and structures, never consumed. A
+## percentage tax would quietly delete body, which the rule forbids.
+##
+## What stops free repurposing is TIME, not attrition:
+##   - a wreck sits where it fell until the drone flies out and hauls it back
+##   - scrapping a live unit turns it into a wreck, so it takes the same trip
+##   - building takes `build_time_s`, during which the mass is committed and
+##     the unit does not exist yet
+## Churn therefore costs minutes of drone work and a hole in your line, which
+## is a real price without breaking conservation.
+@export_range(0.0, 1.0) var recovery_loss: float = 0.0
+@export_range(0.0, 1.0) var scrap_loss: float = 0.0
+## Seconds to assemble a unit once its mass is committed.
+@export var build_time_s: float = 4.0

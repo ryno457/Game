@@ -48,24 +48,40 @@ func _mass() -> void:
 	_ok("affordable spend succeeds", ok and is_equal_approx(pool.mass, cfg.starting_mass - 10.0),
 		"%.0f left" % pool.mass)
 
-	# Recovery must LOSE something, or building and scrapping is free and the
-	# decision collapses — the trap CLAUDE.md records for free module recall.
+	# MASS IS CONSERVED. It is the module's body relocated into a unit, never
+	# consumed, so a wreck returns every gram. What stops free repurposing is
+	# time: the drone has to fly out and haul the wreck home, and the rebuild
+	# takes `build_time_s` during which the unit does not exist.
 	var before_mass := pool.mass
 	var back := pool.recover(10.0)
-	assert(before_mass <= pool.mass)
-	_ok("wreck recovery is lossy", back < 10.0 and back > 0.0,
-		"%.1f of 10.0 returned (%.0f%% loss)" % [back, cfg.recovery_loss * 100.0])
-	_ok("scrapping beats being destroyed", cfg.scrap_loss < cfg.recovery_loss,
-		"scrap %.0f%% vs wreck %.0f%% loss" % [cfg.scrap_loss * 100.0, cfg.recovery_loss * 100.0])
+	_ok("wreck recovery is lossless", is_equal_approx(back, 10.0),
+		"%.2f of 10.0 returned" % back)
+	_ok("build then recover is a round trip", is_equal_approx(pool.mass, cfg.starting_mass),
+		"%.0f -> %.0f -> %.0f" % [cfg.starting_mass, before_mass, pool.mass])
+	_ok("scrapping is lossless too", is_equal_approx(cfg.scrap_loss, 0.0)
+		and is_equal_approx(cfg.recovery_loss, 0.0),
+		"scrap %.0f%%, wreck %.0f%%" % [cfg.scrap_loss * 100.0, cfg.recovery_loss * 100.0])
 
-	# A full build/scrap cycle must leave the player worse off than not doing it.
+	# Churn must cost nothing in mass and something in time, or conservation is
+	# a lie in one direction and repurposing is free in the other.
 	var churn := MassPool.new(_cfg())
 	var start := churn.mass
 	for i in 5:
 		churn.spend(10.0)
 		churn.scrap(10.0)
-	_ok("churning loses mass", churn.mass < start,
+	_ok("churning conserves mass", is_equal_approx(churn.mass, start),
 		"%.1f -> %.1f over 5 build/scrap cycles" % [start, churn.mass])
+	_ok("churning costs time instead", cfg.build_time_s > 0.0,
+		"%.1fs per rebuild, %.1fs for those 5" % [cfg.build_time_s, cfg.build_time_s * 5.0])
+
+	# Mass committed to standing units is not gone, it is somewhere else. The
+	# module body plus the field must hold constant across a build.
+	var book := MassPool.new(_cfg())
+	var total_before := MassPool.total_in_system(book.mass, 0.0)
+	book.spend(10.0)
+	_ok("nothing leaves the system when building",
+		is_equal_approx(MassPool.total_in_system(book.mass, 10.0), total_before),
+		"%.1f total before and after" % total_before)
 
 	var cap := MassPool.new(_cfg())
 	cap.gain(9999.0)
