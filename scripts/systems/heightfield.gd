@@ -30,6 +30,18 @@ var heights: PackedFloat32Array
 ## creates a lake.
 var water: PackedFloat32Array
 
+## Which GROUND MATERIAL each cell is, as an index.
+##
+## The reference map is not one surface shaded by height — it is large flat
+## areas of distinct stuff with hard organic borders between them: moss flats,
+## bare rock, pale sediment at the waterline, dark loam, and the root mat that
+## rings every plateau. A height ramp cannot express that, because two places
+## at the same altitude are often different materials.
+##
+## Like `water`, it is authored once and uploaded once. Digging changes the
+## shape of the ground, not what it is made of.
+var material_id: PackedByteArray
+
 
 func _init(config: TerrainConfig) -> void:
 	cfg = config
@@ -37,6 +49,8 @@ func _init(config: TerrainConfig) -> void:
 	heights.resize(cfg.cells_x * cfg.cells_z)
 	water = PackedFloat32Array()
 	water.resize(cfg.cells_x * cfg.cells_z)
+	material_id = PackedByteArray()
+	material_id.resize(cfg.cells_x * cfg.cells_z)
 	heights.fill(cfg.neutral_height)
 
 

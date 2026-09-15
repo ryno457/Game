@@ -494,3 +494,122 @@ Sources: [Kuwahara in Unreal](https://alexdiallo.wordpress.com/2019/06/23/the-ku
 [#88786](https://github.com/godotengine/godot/issues/88786) screen-texture on Mobile ·
 [Screen-reading shaders](https://docs.godotengine.org/en/stable/tutorials/shaders/screen-reading_shaders.html) ·
 [Triplanar mapping](https://craftpbr.com/guides/triplanar-mapping)
+
+---
+
+# Ground materials, ink, and a real brush
+
+Three things, all from looking at the reference again.
+
+## 1. The ground is made of different stuff
+
+The reference is **large flat areas of distinct material with hard organic
+borders** — moss flats, bare rock, pale sediment at every waterline, dark loam,
+and a root mat ringing each plateau. A height ramp cannot say that: two places
+at the same altitude are routinely different materials.
+
+`Heightfield` now carries a `material_id` byte per cell, classified **after** the
+ops (a material depends on the shape they left behind — how steep, how near the
+water, how near the world's edge) and uploaded once as an R8 texture. Five slots,
+each with two colours a painter would have mixed, its own roughness, its own
+stroke size, and its own filament-web strength.
+
+| | share | where |
+|---|---|---|
+| sediment | 31% | shorelines and a narrow band above the waterline |
+| loam | 25% | broad noise patches, so the flats are not one colour |
+| vine | 21% | a 2.5 m border at every plateau rim |
+| moss | 21% | the open flats |
+| rock | 3% | steep faces and ridge tops |
+
+The shader samples the map with **`filter_nearest` and a jittered position**. A
+blurred lookup would return an index halfway between rock and moss, which is not
+a material; jittering the sample instead keeps every read a real slot and gives
+the torn painterly border the reference has.
+
+**This is what keeps the vines to the borders.** The glowing web is no longer a
+global effect — its strength is a per-material property, and only the root mat
+has a real value. The open flats are clear.
+
+Two numbers had to be found by measuring, not guessing:
+
+- **The root mat at 5 m wide covered half the walkable ground**, and bare rock
+  never appeared at all, because the mat is applied last and overrode it. On
+  plateaus 20 m across, a border is 2.5 m.
+- **Sediment keyed to `rough_below` swallowed the whole cliff band** and became
+  40% of the map. Sediment is a shoreline, not an altitude.
+
+## 2. Ink, from depth alone
+
+The usual Godot outline reads the normal-roughness buffer. **That does not
+compile on the Mobile renderer** — `normal_roughness_buffer` is only defined in
+the Forward+ GLSL and left undeclared in Mobile
+([#78411](https://github.com/godotengine/godot/issues/78411)); the proposal to
+add it ([#11992](https://github.com/godotengine/godot-proposals/issues/11992))
+is still open. Every normal-based outline tutorial is unavailable to us.
+
+Depth is available everywhere, so it all comes out of the depth buffer:
+
+- a **first difference** catches silhouettes — where one thing ends and
+  something much further away begins
+- a **second difference** (a Laplacian) catches creases — on a flat surface the
+  centre sample equals the average of its neighbours, so anything that does not
+  is a fold
+
+Both divided by depth, making the test scale-invariant: a crease forty metres
+out inks as readily as one under the camera.
+
+It runs on a full-screen quad written straight to clip space — a
+`MeshInstance3D`, not a `ColorRect`, because the depth texture is unavailable to
+canvas_item shaders ([#74464](https://github.com/godotengine/godot/issues/74464)).
+A screen-reading pass forces a resolve on a tile-based mobile GPU, so its cost is
+*structural* rather than proportional; it is **off on the Low preset** so the
+phone can say what it costs.
+
+First values inked the cliffs as a solid dark wash rather than a line — a rim's
+second difference is enormous next to a plateau's. Ink is a line.
+
+## 3. A real brush, and it is *cheaper*
+
+`textures/brush_strokes.png` is **the first texture asset in this project.**
+
+```
+R  stroke value
+G  d(value)/dx, remapped 0..1
+B  d(value)/dy, remapped 0..1
+A  canvas grain
+```
+
+Packing the gradient means one fetch gives the value **and** the slope needed to
+bend the normal. It replaces three fbm evaluations — twelve value-noise lookups,
+forty-eight hash operations — so this is the unusual case where the
+better-looking option is also the faster one.
+
+Every stroke on the sheet points along +X; the shader rotates the *lookup* per
+fragment so the marks follow the contour. The texture must carry no direction of
+its own for that to work.
+
+Generated deterministically by `tools/make_brush_texture.py` in three passes —
+broad laid-in marks, mid strokes, fine detail — with tapered ends, bristle
+streaks, and paint load running out toward the end of each stroke. Stamps wrap
+at the edges so the sheet tiles.
+
+Two things it needed:
+
+- **Bristle frequency** started at 0.55–1.5 rad/px — a four-to-eleven pixel
+  period — and 246 stacked strokes read as *scan lines*. A few streaks per
+  stroke is what a loaded brush leaves.
+- **`detect_3d/compress_to` had to be turned off.** Godot auto-switches a
+  texture to VRAM compression once it sees it used in 3D, and block compression
+  treats the packed gradient channels as colour and smears them.
+
+## Still not the reference
+
+Closer, but these are illustrations and this is a real-time renderer. What is
+genuinely still missing: the material borders are organic but the underlying
+cell grid still shows at close range, the props are untouched by any of this
+(they get no strokes and no material), and there is no hand-drawn linework
+*inside* shapes the way the reference has.
+
+**And none of it is measured.** Ink adds a screen-reading pass, the brush adds a
+texture fetch, materials add one more. The phone has not seen any of it.

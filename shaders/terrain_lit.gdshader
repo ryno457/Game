@@ -12,6 +12,25 @@ uniform sampler2D fog_map : filter_linear, repeat_disable;
 // cannot tell a basin from the outer rim of an island, because they sit in the
 // same band and a fragment can only see its own cell.
 uniform sampler2D water_map : filter_linear, repeat_disable;
+
+// WHAT THE GROUND IS MADE OF, one byte per cell.
+//
+// The reference map is large flat areas of different stuff with hard organic
+// borders — moss flats, bare rock, pale sediment at the waterline, and a root
+// mat ringing every plateau. A height ramp cannot express that: two places at
+// the same altitude are routinely different materials.
+//
+// filter_nearest on purpose. A blurred lookup would give a material index
+// halfway between rock and moss, which is not a material. The border is made
+// organic by jittering the SAMPLE POSITION with noise instead, which keeps
+// every sample a real slot and gives the hard painterly edge the reference has.
+uniform sampler2D material_map : filter_nearest, repeat_disable;
+uniform vec3 mat_colour[5] : source_color;
+uniform vec3 mat_colour_alt[5] : source_color;
+uniform float mat_rough[5];
+uniform float mat_vein[5];
+uniform float mat_stroke[5];
+uniform float material_jitter_m = 1.8;
 uniform vec2 field_size_m = vec2(150.0, 112.0);
 uniform float height_scale_m = 12.0;
 uniform float texel_m = 1.0;
@@ -85,6 +104,17 @@ uniform float stroke_depth = 0.60;      // how hard the stroke bends the normal
 uniform float paint_quantise = 0.0;     // albedo posterise steps; 0 is off
 uniform float edge_ink = 0.0;           // darkening where the bands meet
 uniform float paint_tone = 0.0;         // how much a stroke shifts the COLOUR
+uniform float canvas_grain = 0.0;       // the weave under the paint
+
+// The brush sheet. R is the stroke value, GB is its gradient packed to 0..1,
+// A is canvas grain. Packing the gradient means ONE FETCH gives both the value
+// and the slope needed to bend the normal — computing the gradient in the
+// shader would take two more taps and undo the saving.
+//
+// No `source_color`: this is data, not a picture, and an sRGB conversion would
+// bend the packed gradient. It is also imported uncompressed, because block
+// compression treats the gradient channels as colour and smears them.
+uniform sampler2D brush_tex : filter_linear_mipmap, repeat_enable;
 
 // Surface detail. There are no textures in this project — no image files, no
 // UVs on any mesh — so "higher quality ground" means more procedural surface,
@@ -178,7 +208,7 @@ void vertex() {
 // `along` runs perpendicular to the slope, so strokes lie across the hill the
 // way a brush would; `down` is squashed by stroke_stretch, which is what turns
 // round noise blobs into long thin marks.
-vec3 paint_strokes(vec2 world_xz, vec3 n, out float tone) {
+vec3 paint_strokes(vec2 world_xz, vec3 n, float size_mult, out float tone) {
 	// Stroke direction. On a slope it follows the contour, which is what a
 	// painter does — the marks describe the form. On FLAT ground there is no
 	// contour to follow, and normalising a near-zero gradient gives a direction
@@ -194,12 +224,21 @@ vec3 paint_strokes(vec2 world_xz, vec3 n, out float tone) {
 		smoothstep(0.02, 0.18, grade)));
 	vec2 along = vec2(-down.y, down.x);
 
-	vec2 sp = world_xz * stroke_scale;
+	// The sheet's strokes all run along +X, so rotating the LOOKUP is what
+	// makes them follow the contour. The texture must carry no direction of
+	// its own for this to work.
+	vec2 sp = world_xz * stroke_scale * size_mult;
 	vec2 rot = vec2(dot(sp, along), dot(sp, down) * stroke_stretch);
-	float e = 0.25;
-	float c0 = fbm(rot);
-	float dx = fbm(rot + vec2(e, 0.0)) - fbm(rot - vec2(e, 0.0));
-	float dz = fbm(rot + vec2(0.0, e)) - fbm(rot - vec2(0.0, e));
+
+	// One fetch, replacing three fbm evaluations — twelve value-noise lookups
+	// and forty-eight hash operations. Cheaper AND it looks like a brush
+	// instead of like noise, which is the rare case where the better-looking
+	// option is also the faster one.
+	vec4 b = texture(brush_tex, rot);
+	float c0 = b.r;
+	vec2 g = (b.gb - 0.5) * 2.0;
+	float dx = g.x;
+	float dz = g.y;
 
 	// The stroke's own value, handed back to modulate ALBEDO.
 	//
@@ -209,6 +248,12 @@ vec3 paint_strokes(vec2 world_xz, vec3 n, out float tone) {
 	// the map is. A painter laying marks on a flat field varies the COLOUR,
 	// not the surface angle.
 	tone = (c0 - 0.5) * paint_tone * paint_strength;
+	// Canvas under the paint. Sampled unrotated and much finer, because a
+	// weave belongs to the surface being painted on, not to the marks.
+	if (canvas_grain > 0.0) {
+		float weave = texture(brush_tex, world_xz * 0.9).a;
+		tone += (weave - 0.5) * canvas_grain * paint_strength;
+	}
 
 	vec2 bend = along * dx + down * dz;
 	return normalize(n + vec3(bend.x, 0.0, bend.y) * stroke_depth * paint_strength);
@@ -238,20 +283,37 @@ void fragment() {
 			n = detail_normal(v_world.xz, n, detail_fade);
 		}
 	}
+	// Material is decided before the strokes, because rock takes shorter,
+	// choppier marks than moss and the stroke size comes from the slot.
+	vec2 jit0 = vec2(fbm(v_world.xz * 0.33), fbm(v_world.xz * 0.33 + 9.13)) - 0.5;
+	int mid0 = clamp(int(textureLod(material_map,
+		(v_world.xz + jit0 * material_jitter_m) / field_size_m, 0.0).r * 255.0 + 0.5), 0, 4);
 	float stroke_tone = 0.0;
 	if (paint_strength > 0.0) {
-		n = paint_strokes(v_world.xz, n, stroke_tone);
+		n = paint_strokes(v_world.xz, n, mat_stroke[mid0], stroke_tone);
 	}
 	float slope = 1.0 - clamp(n.y, 0.0, 1.0);
 
-	vec3 base;
+	// Which material this is. The jitter is two noise taps, and it is what
+	// turns a cell grid into a torn organic border.
+	vec2 jit = vec2(fbm(v_world.xz * 0.33), fbm(v_world.xz * 0.33 + 9.13)) - 0.5;
+	vec2 muv = (v_world.xz + jit * material_jitter_m) / field_size_m;
+	int mid = int(textureLod(material_map, muv, 0.0).r * 255.0 + 0.5);
+	mid = clamp(mid, 0, 4);
+
+	// Two values per material, mixed by the stroke field where painting is on
+	// and by plain noise where it is not — a painter mixes two and reuses them
+	// rather than filling flat.
+	float blend = fbm(v_world.xz * 0.22);
+	vec3 base = mix(mat_colour[mid], mat_colour_alt[mid], clamp(blend, 0.0, 1.0));
+
+	// Height still has a say, but only where it means something: standing
+	// water reads as water whatever the ground under it is made of, and the
+	// high ridges bleach out.
 	if (v_h < impassable_below) {
-		base = col_pool;
-	} else if (v_h < rough_below) {
-		base = mix(col_pool, col_rough,
-			(v_h - impassable_below) / max(0.001, rough_below - impassable_below));
-	} else {
-		base = mix(col_ground, col_ridge, clamp((v_h - rough_below) / 0.42, 0.0, 1.0));
+		base = mix(base, col_pool, 0.80);
+	} else if (v_h > rough_below) {
+		base = mix(base, col_ridge, clamp((v_h - 0.62) / 0.34, 0.0, 1.0) * 0.55);
 	}
 	// Steep faces read as exposed rock regardless of height band.
 	base = mix(base, col_cliff, smoothstep(0.35, 0.8, slope));
@@ -283,12 +345,15 @@ void fragment() {
 	// Filaments: a ridged fold of the same noise field, so the web costs
 	// arithmetic rather than another texture fetch. It fades out on steep
 	// faces, where a glowing vein reads as a smear rather than a root.
+	// The filament web grows on the ROOT MAT, not everywhere. That is the whole
+	// difference between a border of vines and a carpet of them.
 	vec3 emit = vec3(0.0);
-	if (vein_strength > 0.0) {
+	float vein_here = vein_strength * mat_vein[mid];
+	if (vein_here > 0.0) {
 		float w = fbm(v_world.xz * vein_scale * 10.0);
 		float ridge = 1.0 - abs(w * 2.0 - 1.0);
 		float web = pow(clamp(ridge, 0.0, 1.0), vein_sharpness);
-		emit += vein_glow * web * vein_strength * (1.0 - smoothstep(0.3, 0.7, slope));
+		emit += vein_glow * web * vein_here * (1.0 - smoothstep(0.3, 0.7, slope));
 	}
 
 	// Standing liquid. Brightest at the deepest point and feathered at the
@@ -346,7 +411,8 @@ void fragment() {
 	EMISSION = emit * seen;
 	// Back to view space, which is what the fragment stage wants written.
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
-	ROUGHNESS = mix(0.95, 0.7, smoothstep(0.3, 0.8, slope));
+	ROUGHNESS = mix(mat_rough[mid], mat_rough[mid] * 0.78,
+		smoothstep(0.3, 0.8, slope));
 	// Wet ground under the waterline. A pool that is as matte as the rock
 	// beside it does not read as liquid however brightly it glows.
 	if (v_h < rough_below && wet > 0.001) {

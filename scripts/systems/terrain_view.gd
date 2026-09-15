@@ -7,7 +7,9 @@ extends Node3D
 ## ray march against the heightfield instead, which needs no chunking
 ## constraints and no collision cook at all.
 
-const CHUNK := Vector2i(25, 28)     ## 150x112 divides into 6 x 4 chunks
+const CHUNK := Vector2i(25, 28)
+## The project's first texture asset. See the shader for the channel packing.
+const BRUSH_TEX := "res://textures/brush_strokes.png"     ## 150x112 divides into 6 x 4 chunks
 
 var field: Heightfield
 var fog: FogOfWar
@@ -17,6 +19,7 @@ var _tex: ImageTexture
 ## Uploaded once. See Heightfield.water: digging changes heights every frame
 ## and never creates a lake.
 var _water_tex: ImageTexture
+var _material_tex: ImageTexture
 var _dirty := true
 
 
@@ -36,6 +39,11 @@ func setup(p_field: Heightfield, p_fog: FogOfWar, shader: Shader) -> void:
 
 	_mat.set_shader_parameter("height_map", _tex)
 	_mat.set_shader_parameter("water_map", _water_tex)
+
+	var mimg := Image.create_from_data(cfg.cells_x, cfg.cells_z, false,
+		Image.FORMAT_R8, p_field.material_id)
+	_material_tex = ImageTexture.create_from_image(mimg)
+	_mat.set_shader_parameter("material_map", _material_tex)
 	_mat.set_shader_parameter("fog_map", fog.texture())
 	_mat.set_shader_parameter("field_size_m",
 		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m))
@@ -85,6 +93,43 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("paint_quantise", p.paint_quantise)
 	_mat.set_shader_parameter("edge_ink", p.edge_ink)
 	_mat.set_shader_parameter("paint_tone", p.paint_tone)
+	_mat.set_shader_parameter("canvas_grain", p.canvas_grain)
+	_mat.set_shader_parameter("brush_tex", load(BRUSH_TEX))
+	_apply_materials(p)
+
+
+## Unpack the material slots into the shader's parallel uniform arrays.
+##
+## A short array of small arrays rather than one array of structs, because GLSL
+## uniform arrays of structs are awkward to set from GDScript and this is five
+## entries — the unpacking is cheaper than the abstraction.
+func _apply_materials(p: BiomePalette) -> void:
+	var cols := PackedColorArray()
+	var alts := PackedColorArray()
+	var rough := PackedFloat32Array()
+	var vein := PackedFloat32Array()
+	var stroke := PackedFloat32Array()
+	for i in GroundMaterials.COUNT:
+		var m: GroundMaterial = p.materials[i] if i < p.materials.size() else null
+		if m == null:
+			# A missing slot must be visible, not silently black: an index the
+			# classifier emits with nothing behind it is a build error.
+			push_warning("palette has no material for slot %d (%s)"
+				% [i, GroundMaterials.NAMES[i]])
+			m = GroundMaterial.new()
+			m.colour = Color.MAGENTA
+			m.colour_alt = Color.MAGENTA
+		cols.append(m.colour)
+		alts.append(m.colour_alt)
+		rough.append(m.roughness)
+		vein.append(m.vein_strength)
+		stroke.append(m.stroke_scale_mult)
+	_mat.set_shader_parameter("mat_colour", cols)
+	_mat.set_shader_parameter("mat_colour_alt", alts)
+	_mat.set_shader_parameter("mat_rough", rough)
+	_mat.set_shader_parameter("mat_vein", vein)
+	_mat.set_shader_parameter("mat_stroke", stroke)
+	_mat.set_shader_parameter("material_jitter_m", p.material_jitter_m)
 
 
 ## Scale the per-fragment surface work without rebuilding the palette. The

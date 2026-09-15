@@ -8,7 +8,8 @@ extends RefCounted
 ## and is meant to differ between a phone and a desktop.
 
 static func apply(cfg: QualityConfig, viewport: Viewport,
-		terrain: TerrainView = null, palette: BiomePalette = null) -> void:
+		terrain: TerrainView = null, palette: BiomePalette = null,
+		ink: InkPass = null) -> void:
 	if cfg == null or viewport == null:
 		return
 	viewport.msaa_3d = cfg.msaa_3d as Viewport.MSAA
@@ -30,3 +31,5 @@ static func apply(cfg: QualityConfig, viewport: Viewport,
 
 	if terrain != null and palette != null:
 		terrain.set_detail_scale_factor(cfg.terrain_detail, palette)
+	if ink != null and palette != null:
+		ink.set_strength(palette.ink_strength * cfg.ink)

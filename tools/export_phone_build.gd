@@ -17,7 +17,8 @@ extends SceneTree
 
 const OUT := "res://build/phone/sentinel"
 ## Copied whole. Everything the running game touches lives in one of these.
-const DIRS := ["autoload", "data", "models", "scenes", "scripts", "shaders"]
+const DIRS := ["autoload", "data", "models", "scenes", "scripts", "shaders",
+	"textures"]
 const FILES := ["project.godot"]
 ## Left behind, and why, so this list is a decision rather than an oversight.
 const SKIPPED := {
@@ -258,6 +259,12 @@ func _check() -> void:
 		not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(OUT + "/spikes")),
 		"one project.godot only")
 	_ok("the instructions came across", FileAccess.file_exists(OUT + "/README.txt"), "")
+	# The brush sheet is the project's only texture asset, and the terrain is
+	# unpainted without it — a silent, look-only failure that no other check
+	# here would catch.
+	_ok("the brush sheet came across",
+		FileAccess.file_exists(OUT + "/textures/brush_strokes.png"),
+		"the only texture in the project")
 
 
 func _all_files(dir: String) -> PackedStringArray:

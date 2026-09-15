@@ -52,6 +52,106 @@ static func _apply(hf: Heightfield, op: Dictionary) -> void:
 			push_warning("TerrainBuilder: unknown op '%s'" % op.get("op", ""))
 
 
+## Decide what every cell is MADE OF, from the finished heightfield.
+##
+## Run after the ops, not during them: a material depends on the shape the ops
+## left behind — how steep it ended up, how close it is to water, how close to
+## the edge of the world — and none of that is known while they are still being
+## applied.
+##
+## Rules are applied in order and later ones win. The root mat is last because
+## in the reference it runs over everything at a plateau's rim, cliffs included.
+## `rim_m` is the width of the root mat, and it is the most sensitive number
+## here. At 5 m on plateaus 20 m across the mat covered HALF the walkable
+## ground and bare rock never appeared at all, because the mat is applied last
+## and overrode it. A border is a couple of metres.
+static func classify_materials(hf: Heightfield, void_below: float,
+		rim_m: float = 2.5, shore_m: float = 3.0) -> Dictionary:
+	var cfg := hf.cfg
+	var w := cfg.cells_x
+	var h := cfg.cells_z
+	var counts := {}
+
+	# Distance-to-edge, by dilation rather than by searching a radius per cell.
+	# Two passes over the grid instead of sixteen thousand small searches.
+	var near_edge := PackedByteArray()
+	near_edge.resize(w * h)
+	var near_water := PackedByteArray()
+	near_water.resize(w * h)
+	for z in h:
+		for x in w:
+			var i := z * w + x
+			near_edge[i] = 1 if hf.heights[i] < void_below else 0
+			near_water[i] = 1 if hf.water[i] > 0.05 else 0
+	near_edge = _dilate(near_edge, w, h, int(rim_m))
+	near_water = _dilate(near_water, w, h, int(shore_m))
+
+	for z in h:
+		for x in w:
+			var i := z * w + x
+			var height := hf.heights[i]
+			if height < void_below:
+				hf.material_id[i] = GroundMaterials.MOSS
+				continue
+
+			var id := GroundMaterials.MOSS
+			# Broad patches of darker soil, so the flats are not one colour.
+			if _vnoise(x * 0.035, z * 0.035, 7717) > 0.58:
+				id = GroundMaterials.LOAM
+			# Pale sediment where water has been, and in a NARROW band just
+			# above the waterline. Keyed to rough_below it swallowed the whole
+			# cliff band and became 40% of the map — sediment is a shoreline,
+			# not a altitude.
+			if near_water[i] == 1 or height < cfg.impassable_below + 0.05:
+				id = GroundMaterials.SEDIMENT
+			# Bare rock on anything steep, and on the tops of the ridges.
+			if _slope(hf, x, z) > 0.35 or height > 0.72:
+				id = GroundMaterials.ROCK
+			# The root mat, ringing every plateau. Last, so it runs over the
+			# cliffs the way it does in the reference.
+			if near_edge[i] == 1 and hf.water[i] <= 0.05:
+				id = GroundMaterials.VINE
+			hf.material_id[i] = id
+			counts[id] = int(counts.get(id, 0)) + 1
+	return counts
+
+
+## Grow a boolean mask outward by `steps` cells, separably.
+static func _dilate(mask: PackedByteArray, w: int, h: int, steps: int) -> PackedByteArray:
+	var src := mask
+	for pass_i in maxi(1, steps):
+		var dst := src.duplicate()
+		for z in h:
+			for x in w:
+				if src[z * w + x] == 1:
+					continue
+				var hit := false
+				var steps_4: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0),
+					Vector2i(0, 1), Vector2i(0, -1)]
+				for d in steps_4:
+					var nx: int = x + d.x
+					var nz: int = z + d.y
+					if nx >= 0 and nx < w and nz >= 0 and nz < h and src[nz * w + nx] == 1:
+						hit = true
+						break
+				if hit:
+					dst[z * w + x] = 1
+		src = dst
+	return src
+
+
+static func _slope(hf: Heightfield, x: int, z: int) -> float:
+	var cfg := hf.cfg
+	var sy := cfg.height_scale_m
+	var xl := clampi(x - 1, 0, cfg.cells_x - 1)
+	var xr := clampi(x + 1, 0, cfg.cells_x - 1)
+	var zd := clampi(z - 1, 0, cfg.cells_z - 1)
+	var zu := clampi(z + 1, 0, cfg.cells_z - 1)
+	var dx := (hf.heights[z * cfg.cells_x + xl] - hf.heights[z * cfg.cells_x + xr]) * sy
+	var dz := (hf.heights[zd * cfg.cells_x + x] - hf.heights[zu * cfg.cells_x + x]) * sy
+	return 1.0 - clampf(Vector3(dx, 2.0, dz).normalized().y, 0.0, 1.0)
+
+
 ## Paint the water mask over a disc, feathered at the rim so a shoreline fades
 ## rather than ending in a hard ring.
 static func _mark_water(hf: Heightfield, c: Vector2, r: float) -> void:

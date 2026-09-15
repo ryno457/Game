@@ -9,6 +9,16 @@ extends Resource
 
 @export var display_name: String = ""
 
+@export_group("Ground materials")
+## Five slots, in GroundMaterials index order. The reference map is large flat
+## areas of different stuff with hard borders, not one surface shaded by
+## altitude — and only the root-mat slot grows the glowing web, which is what
+## keeps the vines to the plateau rims instead of carpeting everything.
+@export var materials: Array[GroundMaterial] = []
+## How far the material lookup is jittered by noise. This is what turns the
+## cell grid into a torn organic border rather than a staircase.
+@export var material_jitter_m: float = 1.8
+
 @export_group("Bands")
 ## Below `impassable_below` the ground is not a hole, it is standing liquid.
 @export var col_pool: Color = Color(0.03, 0.30, 0.29)
@@ -104,6 +114,23 @@ extends Resource
 ## read as painted: bending the normal only shows through the light, and under
 ## a high sun a plateau top has the same N·L everywhere.
 @export_range(0.0, 1.0) var paint_tone: float = 0.35
+## The canvas weave under the paint. Sampled unrotated and much finer than the
+## strokes, because a weave belongs to the surface, not to the marks on it.
+@export_range(0.0, 0.5) var canvas_grain: float = 0.10
+
+@export_group("Ink")
+## Outlines, from the depth buffer alone. The usual Godot outline reads the
+## normal-roughness buffer, which FAILS TO COMPILE on the Mobile renderer
+## (godotengine/godot#78411) — so this is depth-only: first differences for
+## silhouettes, second differences for creases.
+@export var ink_colour: Color = Color(0.02, 0.05, 0.06)
+@export_range(0.0, 1.0) var ink_strength: float = 0.0
+@export var ink_silhouette: float = 0.012
+@export var ink_crease: float = 0.003
+@export var ink_thickness_px: float = 1.3
+## Past this, stop inking. Distant ground would otherwise turn into a mesh of
+## lines as every metre of relief crosses the threshold inside one pixel.
+@export var ink_fade_m: float = 140.0
 
 @export_group("Readability")
 ## The red line exactly at the impassable threshold. Grey-box readability aid,

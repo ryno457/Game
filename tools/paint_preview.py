@@ -38,6 +38,9 @@ VOID = meta.get("void_below", 0.0)
 PAL = meta["palette"]
 heights = np.fromfile(os.path.join(DATA, "biodome_01.r32"),
                       dtype="<f4").reshape(CZ, CX)
+_mpath = os.path.join(DATA, "biodome_01_mat.u8")
+matmap = (np.fromfile(_mpath, dtype=np.uint8).reshape(CZ, CX)
+          if os.path.exists(_mpath) else np.zeros((CZ, CX), np.uint8))
 _wpath = os.path.join(DATA, "biodome_01_water.r32")
 water = (np.fromfile(_wpath, dtype="<f4").reshape(CZ, CX)
          if os.path.exists(_wpath) else np.zeros_like(heights))
@@ -95,6 +98,41 @@ def sample_mask(wx, wz):
     return water[z, x]
 
 
+BRUSH = None
+
+
+def load_brush(path="textures/brush_strokes.png"):
+    """The same sheet the shader samples, read back as an array."""
+    global BRUSH
+    import bpy
+    if not os.path.exists(path):
+        return None
+    im = bpy.data.images.load(os.path.abspath(path))
+    w, h = im.size
+    buf = np.empty(w * h * 4, np.float32)
+    im.pixels.foreach_get(buf)
+    BRUSH = buf.reshape(h, w, 4)[::-1]
+    return BRUSH
+
+
+def sample_brush(u, v):
+    """Wrapped bilinear, matching repeat_enable + filter_linear."""
+    h, w = BRUSH.shape[:2]
+    x = (u * w) % w
+    y = (v * h) % h
+    x0, y0 = np.floor(x).astype(int) % w, np.floor(y).astype(int) % h
+    x1, y1 = (x0 + 1) % w, (y0 + 1) % h
+    fx, fy = (x - np.floor(x))[..., None], (y - np.floor(y))[..., None]
+    return (BRUSH[y0, x0] * (1 - fx) * (1 - fy) + BRUSH[y0, x1] * fx * (1 - fy)
+            + BRUSH[y1, x0] * (1 - fx) * fy + BRUSH[y1, x1] * fx * fy)
+
+
+def sample_mat(wx, wz):
+    x = np.clip(wx, 0, CX - 1.001).astype(int)
+    z = np.clip(wz, 0, CZ - 1.001).astype(int)
+    return matmap[z, x].astype(int)
+
+
 def normalize(v):
     return v / np.maximum(np.linalg.norm(v, axis=-1, keepdims=True), 1e-9)
 
@@ -117,6 +155,20 @@ def render(paint):
 
     # paint_strokes(): direction from the heightfield gradient, so strokes run
     # along the contour rather than in a fixed screen direction.
+    # Material. Nearest lookup with a jittered sample position, exactly as the
+    # shader does it: a blurred lookup would return an index halfway between
+    # rock and moss, which is not a material.
+    jx = fbm(wx * 0.33, wz * 0.33) - 0.5
+    jz = fbm(wx * 0.33 + 9.13, wz * 0.33 + 9.13) - 0.5
+    mi = np.clip(sample_mat(wx + jx * JITTER, wz + jz * JITTER), 0, 4)
+    blend = np.clip(fbm(wx * 0.22, wz * 0.22), 0, 1)[..., None]
+    base = MAT_COL[mi] + (MAT_ALT[mi] - MAT_COL[mi]) * blend
+
+    # Height still has a say, but only where it means something.
+    base = np.where((h < IMPASSABLE)[..., None], base + (POOL - base) * 0.80, base)
+    hi = np.clip((h - 0.62) / 0.34, 0, 1)[..., None] * 0.55
+    base = np.where((h > ROUGH)[..., None], base + (RIDGE - base) * hi, base)
+
     tone = np.zeros_like(h)
     if paint > 0.0:
         down = np.stack([n[..., 0], n[..., 2]], -1)
@@ -127,27 +179,22 @@ def render(paint):
         t = t * t * (3 - 2 * t)
         down = normalize(drift + (down / np.maximum(grade, 1e-4) - drift) * t)
         along = np.stack([-down[..., 1], down[..., 0]], -1)
-        spx, spz = wx * P["stroke_scale"], wz * P["stroke_scale"]
+        size = P["stroke_scale"] * MAT_STROKE[mi]
+        spx, spz = wx * size, wz * size
         rx = spx * along[..., 0] + spz * along[..., 1]
         rz = (spx * down[..., 0] + spz * down[..., 1]) * P["stroke_stretch"]
-        se = 0.25
-        c0 = fbm(rx, rz)
-        tone = (c0 - 0.5) * P["paint_tone"] * paint
-        dx = fbm(rx + se, rz) - fbm(rx - se, rz)
-        dz = fbm(rx, rz + se) - fbm(rx, rz - se)
+        b = sample_brush(rx, rz)
+        tone = (b[..., 0] - 0.5) * P["paint_tone"] * paint
+        weave = sample_brush(wx * 0.9, wz * 0.9)[..., 3]
+        tone = tone + (weave - 0.5) * P["canvas_grain"] * paint
+        dx = (b[..., 1] - 0.5) * 2.0
+        dz = (b[..., 2] - 0.5) * 2.0
         bend = along * dx[..., None] + down * dz[..., None]
         n = normalize(n + np.stack([bend[..., 0], np.zeros_like(h), bend[..., 1]], -1)
                       * P["stroke_depth"] * paint)
 
     slope = 1.0 - np.clip(n[..., 1], 0.0, 1.0)
 
-    # bands
-    t_low = np.clip((h - IMPASSABLE) / max(1e-3, ROUGH - IMPASSABLE), 0, 1)
-    t_high = np.clip((h - ROUGH) / 0.42, 0, 1)
-    base = np.where((h < ROUGH)[..., None],
-                    POOL + (ROUGHC - POOL) * t_low[..., None],
-                    GROUND + (RIDGE - GROUND) * t_high[..., None])
-    base = np.where((h < IMPASSABLE)[..., None], POOL, base)
     cliff_t = np.clip((slope - 0.35) / 0.45, 0, 1)
     cliff_t = cliff_t * cliff_t * (3 - 2 * cliff_t)
     base = base + (CLIFF - base) * cliff_t[..., None]
@@ -165,7 +212,8 @@ def render(paint):
     # emission: veins and pools
     w = fbm(wx * P["vein_scale"] * 10.0, wz * P["vein_scale"] * 10.0)
     ridge_n = np.clip(1.0 - np.abs(w * 2.0 - 1.0), 0, 1) ** P["vein_sharpness"]
-    emit = VEIN[None, None, :] * (ridge_n * P["vein_strength"]
+    vein_here = P["vein_strength"] * MAT_VEIN[mi]
+    emit = VEIN[None, None, :] * (ridge_n * vein_here
                                   * (1.0 - np.clip((slope - 0.3) / 0.4, 0, 1)))[..., None]
     wet = sample_mask(wx, wz)
     depth = np.clip((IMPASSABLE - h) / max(1e-3, IMPASSABLE), 0, 1)
@@ -212,6 +260,16 @@ GROUND, RIDGE, CLIFF = rgb(PAL["ground"]), rgb(PAL["ridge"]), rgb(PAL["cliff"])
 POOLG = rgb(PAL["pool_glow"])
 POOLA = rgb(PAL.get("pool_glow_alt", PAL["pool_glow"]))
 VEIN = rgb(PAL["vein_glow"])
+MATS = meta["materials"]
+MAT_COL = np.stack([rgb(m["colour"]) for m in MATS])
+MAT_ALT = np.stack([rgb(m["colour_alt"]) for m in MATS])
+MAT_VEIN = np.array([m["vein"] for m in MATS])
+MAT_STROKE = np.array([m["stroke"] for m in MATS])
+JITTER = 1.8
+INK = meta["paint"].get("ink_strength", 0.0)
+INK_COL = rgb(meta["paint"].get("ink_colour", "050d0f"))
+INK_SIL = meta["paint"].get("ink_silhouette", 0.02)
+INK_CREASE = meta["paint"].get("ink_crease", 0.006)
 GRID = np.array([0.55, 0.88, 0.95])
 CLOUD = np.array([0.42, 0.50, 0.58])
 PAL_ALT = meta["surface"]["pool_alt_mix"]
@@ -230,7 +288,7 @@ _s = meta["surface"]
 P = dict(stroke_scale=_p["stroke_scale"], stroke_stretch=_p["stroke_stretch"],
          stroke_depth=_p["stroke_depth"], paint_bands=_p["bands"],
          paint_quantise=_p["quantise"], edge_ink=_p["edge_ink"],
-         paint_tone=_p["tone"],
+         paint_tone=_p["tone"], canvas_grain=_p.get("canvas_grain", 0.0),
          macro_scale=_s["macro_scale"], macro_strength=_s["macro_strength"],
          striation_strength=_s["striation"], vein_scale=_s["vein_scale"],
          vein_sharpness=_s["vein_sharpness"], vein_strength=_s["vein_strength"],
@@ -239,8 +297,45 @@ P = dict(stroke_scale=_p["stroke_scale"], stroke_stretch=_p["stroke_stretch"],
          grid_strength=_s["grid_strength"])
 PAINT_ON = _p["strength"]
 
+load_brush()
+if BRUSH is None:
+    raise SystemExit("no brush sheet — run tools/make_brush_texture.py first")
+
+
+def ink(img, h):
+    """The ink pass, on height.
+
+    From a straight-down orthographic camera the depth buffer IS the terrain
+    height, so the same first- and second-difference tests the outline shader
+    runs on depth can run on height here. Not identical to the game — the game
+    also inks the props, which this has none of — but the same arithmetic on
+    the same ground.
+    """
+    if INK <= 0.0:
+        return img
+    d = -h * HS
+    dl, dr = np.roll(d, 1, 1), np.roll(d, -1, 1)
+    du, dd = np.roll(d, 1, 0), np.roll(d, -1, 0)
+    span = max(abs(float(d.max() - d.min())), 1e-3)
+    sil = np.maximum(np.maximum(np.abs(dl - d), np.abs(dr - d)),
+                     np.maximum(np.abs(du - d), np.abs(dd - d))) / span
+    crease = (np.abs(dl + dr - 2 * d) + np.abs(du + dd - 2 * d)) / span
+    def ss(x, a, b):
+        t = np.clip((x - a) / max(b - a, 1e-6), 0, 1)
+        return t * t * (3 - 2 * t)
+    # Thresholds come from the export, so this cannot drift from the shader.
+    line = np.maximum(ss(sil, INK_SIL, INK_SIL * 2.4),
+                      ss(crease, INK_CREASE, INK_CREASE * 3.0))
+    line = np.clip(line * INK, 0, 1)[..., None]
+    return img + (INK_COL[None, None, :] - img) * line
+
+
 plain = render(0.0)
 painted = render(PAINT_ON)
+H0, W0 = plain.shape[:2]
+hh = sample_h(np.linspace(0, CX - 1, W0)[None, :].repeat(H0, 0),
+              np.linspace(0, CZ - 1, H0)[:, None].repeat(W0, 1))
+painted = ink(painted, hh)
 gap = np.ones((plain.shape[0], 8, 3)) * 0.1
 img = np.concatenate([plain, gap, painted], 1)
 

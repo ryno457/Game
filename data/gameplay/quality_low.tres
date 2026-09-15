@@ -10,4 +10,5 @@ screen_space_aa = 1
 render_scale = 0.85
 terrain_detail = 0.0
 shadow_atlas_size = 1024
+ink = 0.0
 soft_shadow_quality = 0

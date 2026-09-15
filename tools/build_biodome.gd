@@ -184,8 +184,53 @@ func _map() -> TerrainMap:
 
 
 # --- the look ---------------------------------------------------------------
+## The five things the ground is made of.
+##
+## Read straight off the reference: the plateau interiors are large flat areas
+## of pale sage and teal, the rims are a dark root mat, bare rock shows on the
+## steep parts and the ridge tops, and there is pale sediment at every
+## waterline. Each is TWO values a painter would have mixed, not one flat fill.
+func _material(id: int, mname: String, col: Color, alt: Color,
+		rough: float, vein: float, stroke: float) -> GroundMaterial:
+	var m := GroundMaterial.new()
+	m.id = StringName(GroundMaterials.NAMES[id].to_upper())
+	m.display_name = mname
+	m.colour = col
+	m.colour_alt = alt
+	m.roughness = rough
+	m.vein_strength = vein
+	m.stroke_scale_mult = stroke
+	return m
+
+
+func _materials() -> Array[GroundMaterial]:
+	var out: Array[GroundMaterial] = []
+	out.resize(GroundMaterials.COUNT)
+	# Open moss flats — most of every plateau top, and deliberately CLEAR of the
+	# glowing web. This slot is the answer to "not all the ground is vines".
+	out[GroundMaterials.MOSS] = _material(GroundMaterials.MOSS, "Moss flat",
+		Color(0.255, 0.400, 0.335), Color(0.330, 0.470, 0.395), 0.88, 0.0, 1.0)
+	# Bare rock: steep faces and ridge tops. Shorter, choppier marks.
+	out[GroundMaterials.ROCK] = _material(GroundMaterials.ROCK, "Bare rock",
+		Color(0.235, 0.270, 0.310), Color(0.330, 0.365, 0.405), 0.94, 0.0, 1.9)
+	# Pale sediment at every waterline — the lightest thing on the map after the
+	# ridges, which is what makes the basins read from above.
+	out[GroundMaterials.SEDIMENT] = _material(GroundMaterials.SEDIMENT, "Sediment",
+		Color(0.520, 0.575, 0.520), Color(0.620, 0.660, 0.600), 0.80, 0.05, 0.75)
+	# Darker soil in broad patches, so the flats are not one colour.
+	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Loam",
+		Color(0.150, 0.235, 0.230), Color(0.205, 0.300, 0.280), 0.90, 0.10, 1.15)
+	# The root mat. The ONLY slot with a real vein strength, so the filament web
+	# rings each plateau instead of covering it.
+	out[GroundMaterials.VINE] = _material(GroundMaterials.VINE, "Root mat",
+		Color(0.085, 0.175, 0.145), Color(0.130, 0.245, 0.185), 0.85, 1.35, 0.85)
+	return out
+
+
 func _palette() -> BiomePalette:
 	var p := BiomePalette.new()
+	p.materials = _materials()
+	p.material_jitter_m = 1.8
 	p.display_name = "Biodome 01"
 	# Brighter than the cavern version, and deliberately so. That palette was
 	# written for ground lit from inside by its own pools; this map is a
@@ -205,9 +250,11 @@ func _palette() -> BiomePalette:
 	p.pool_alt_mix = 0.85
 	p.pool_glow_strength = 2.6
 	p.vein_glow = Color(0.28, 0.93, 0.66)
-	# Turned down from 0.42: the vein network was the loudest thing on the
-	# ground and the brush marks could not be seen past it.
-	p.vein_strength = 0.20
+	# Global multiplier now; WHERE the web grows is decided per material, and
+	# only the root mat has a real value. Back up from 0.20 because it is no
+	# longer competing with the brush marks across the whole map — it only
+	# appears on the rims.
+	p.vein_strength = 0.55
 	p.vein_scale = 0.052
 	p.vein_sharpness = 10.0
 	# Left ON. It is a readability aid and this is still a grey-box slice —
@@ -228,6 +275,18 @@ func _palette() -> BiomePalette:
 	p.paint_quantise = 14.0
 	p.edge_ink = 0.45
 	p.paint_tone = 0.55
+	p.canvas_grain = 0.10
+	# Ink. The reference has linework around every shape; this is depth-only
+	# because the normal buffer does not exist on the Mobile renderer.
+	p.ink_colour = Color(0.020, 0.052, 0.058)
+	# Turned down from 0.80 / 0.010 / 0.0026: at those values the cliffs inked
+	# as a solid dark wash rather than a line, because a rim's second
+	# difference is enormous compared with a plateau's. Ink is a line.
+	p.ink_strength = 0.55
+	p.ink_silhouette = 0.020
+	p.ink_crease = 0.0060
+	p.ink_thickness_px = 1.4
+	p.ink_fade_m = 150.0
 	p.threshold_line_strength = 0.85
 	# Below this nothing is drawn and the cloud deck shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.
@@ -333,6 +392,7 @@ func _dressing() -> BiomeDressing:
 func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	print("\nthe range")
 	var field := TerrainBuilder.build(map)
+	var mats := TerrainBuilder.classify_materials(field, VOID_BELOW)
 	var cfg := field.cfg
 	var total := cfg.cells_x * cfg.cells_z
 	var drawn := 0
@@ -401,6 +461,28 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	_ok("the necks are chokepoints", widest <= 16 and narrowest >= 3,
 		"%d to %d metres of walkable width" % [narrowest, widest])
 
+	print("\nwhat the ground is made of")
+	var ground := 0
+	for k in mats:
+		ground += int(mats[k])
+	for i in GroundMaterials.COUNT:
+		var n := int(mats.get(i, 0))
+		print("    %-10s %5d m2   %4.1f%%"
+			% [GroundMaterials.NAMES[i], n, 100.0 * n / maxi(1, ground)])
+	# The whole point of the material pass: the open flats must be the MAJORITY
+	# of the walkable ground, and the root mat must be a border rather than a
+	# carpet. Before this, the filament web covered everything.
+	var open_pct := 100.0 * (int(mats.get(GroundMaterials.MOSS, 0))
+		+ int(mats.get(GroundMaterials.LOAM, 0))) / maxi(1, ground)
+	var vine_pct := 100.0 * int(mats.get(GroundMaterials.VINE, 0)) / maxi(1, ground)
+	_ok("open ground is most of the map", open_pct > 45.0,
+		"%.1f%% moss and loam" % open_pct)
+	_ok("the root mat is a border, not a carpet", vine_pct > 8.0 and vine_pct < 32.0,
+		"%.1f%% vine" % vine_pct)
+	_ok("every material is actually used",
+		mats.size() == GroundMaterials.COUNT, "%d of %d slots"
+			% [mats.size(), GroundMaterials.COUNT])
+
 	print("\nthe dressing")
 	var placed := Dressing.place(field, plan, LANDING)
 	var got := 0
@@ -458,6 +540,19 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	_ok("the same seed gives the same map", same, "rebuilt identically")
 
 
+## The material slots, for tools/paint_preview.py. Same numbers the shader gets.
+func _material_json() -> Array:
+	var out := []
+	for m in _materials():
+		out.append({
+			"name": m.display_name,
+			"colour": m.colour.to_html(false),
+			"colour_alt": m.colour_alt.to_html(false),
+			"vein": m.vein_strength, "stroke": m.stroke_scale_mult,
+		})
+	return out
+
+
 # --- preview export ---------------------------------------------------------
 ## Write the heightfield and the prop placements where Blender can read them.
 ##
@@ -479,6 +574,11 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 	for h in field.heights:
 		raw.store_float(h)
 	raw.close()
+
+	TerrainBuilder.classify_materials(field, VOID_BELOW)
+	var mat := FileAccess.open(OUT + "/biodome_01_mat.u8", FileAccess.WRITE)
+	mat.store_buffer(field.material_id)
+	mat.close()
 
 	var wet := FileAccess.open(OUT + "/biodome_01_water.r32", FileAccess.WRITE)
 	for w in field.water:
@@ -528,6 +628,10 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 			"stroke_scale": pal.stroke_scale, "stroke_stretch": pal.stroke_stretch,
 			"stroke_depth": pal.stroke_depth, "quantise": pal.paint_quantise,
 			"edge_ink": pal.edge_ink, "tone": pal.paint_tone,
+			"canvas_grain": pal.canvas_grain,
+			"ink_strength": pal.ink_strength,
+			"ink_colour": pal.ink_colour.to_html(false),
+			"ink_silhouette": pal.ink_silhouette, "ink_crease": pal.ink_crease,
 		},
 		"surface": {
 			"macro_scale": pal.macro_scale, "macro_strength": pal.macro_strength,
@@ -536,6 +640,7 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 			"pool_glow_strength": pal.pool_glow_strength,
 			"pool_alt_mix": pal.pool_alt_mix, "grid_strength": pal.grid_strength,
 		},
+		"materials": _material_json(),
 		"palette": {
 			"pool": pal.col_pool.to_html(false), "rough": pal.col_rough.to_html(false),
 			"ground": pal.col_ground.to_html(false), "ridge": pal.col_ridge.to_html(false),

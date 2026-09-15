@@ -41,6 +41,12 @@ extends Resource
 ## noise taps per fragment entirely, which is most of what the low preset saves.
 @export_range(0.0, 2.0) var terrain_detail: float = 1.0
 
+## Outlines. A screen-reading pass forces a resolve on a tile-based mobile GPU
+## — it breaks tiling — so this is the one effect whose cost is structural
+## rather than proportional to how much of it there is. Off on Low so the
+## phone can say what it costs.
+@export_range(0.0, 1.0) var ink: float = 1.0
+
 @export_group("Shadows")
 @export var shadow_atlas_size: int = 2048
 @export_enum("Hard:0", "Soft Very Low:1", "Soft Low:2", "Soft Medium:3", "Soft High:4", "Soft Ultra:5")

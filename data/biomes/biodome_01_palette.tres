@@ -1,10 +1,58 @@
 [gd_resource type="Resource" script_class="BiomePalette" format=3]
 
-[ext_resource type="Script" path="res://scripts/resources/biome_palette.gd" id="1_leu0u"]
+[ext_resource type="Script" path="res://scripts/resources/ground_material.gd" id="1_yywnl"]
+[ext_resource type="Script" path="res://scripts/resources/biome_palette.gd" id="2_4ecwt"]
+
+[sub_resource type="Resource" id="Resource_pk5fx"]
+script = ExtResource("1_yywnl")
+id = &"MOSS"
+display_name = "Moss flat"
+colour = Color(0.255, 0.4, 0.335, 1)
+colour_alt = Color(0.33, 0.47, 0.395, 1)
+roughness = 0.88
+
+[sub_resource type="Resource" id="Resource_o5cs5"]
+script = ExtResource("1_yywnl")
+id = &"ROCK"
+display_name = "Bare rock"
+colour = Color(0.235, 0.27, 0.31, 1)
+colour_alt = Color(0.33, 0.365, 0.405, 1)
+roughness = 0.94
+stroke_scale_mult = 1.9
+
+[sub_resource type="Resource" id="Resource_ap7rc"]
+script = ExtResource("1_yywnl")
+id = &"SEDIMENT"
+display_name = "Sediment"
+colour = Color(0.52, 0.575, 0.52, 1)
+colour_alt = Color(0.62, 0.66, 0.6, 1)
+roughness = 0.8
+vein_strength = 0.05
+stroke_scale_mult = 0.75
+
+[sub_resource type="Resource" id="Resource_sgg00"]
+script = ExtResource("1_yywnl")
+id = &"LOAM"
+display_name = "Loam"
+colour = Color(0.15, 0.235, 0.23, 1)
+colour_alt = Color(0.205, 0.3, 0.28, 1)
+roughness = 0.9
+vein_strength = 0.1
+stroke_scale_mult = 1.15
+
+[sub_resource type="Resource" id="Resource_l3g72"]
+script = ExtResource("1_yywnl")
+id = &"VINE"
+display_name = "Root mat"
+colour = Color(0.085, 0.175, 0.145, 1)
+colour_alt = Color(0.13, 0.245, 0.185, 1)
+vein_strength = 1.35
+stroke_scale_mult = 0.85
 
 [resource]
-script = ExtResource("1_leu0u")
+script = ExtResource("2_4ecwt")
 display_name = "Biodome 01"
+materials = Array[ExtResource("1_yywnl")]([SubResource("Resource_pk5fx"), SubResource("Resource_o5cs5"), SubResource("Resource_ap7rc"), SubResource("Resource_sgg00"), SubResource("Resource_l3g72")])
 col_pool = Color(0.03, 0.165, 0.16, 1)
 col_rough = Color(0.185, 0.275, 0.215, 1)
 col_ground = Color(0.29, 0.355, 0.33, 1)
@@ -20,7 +68,6 @@ pool_glow_strength = 2.6
 pool_glow_alt = Color(0.78, 0.3, 0.96, 1)
 pool_alt_mix = 0.85
 vein_glow = Color(0.28, 0.93, 0.66, 1)
-vein_strength = 0.2
 vein_scale = 0.052
 vein_sharpness = 10.0
 paint_strength = 0.85
@@ -30,3 +77,9 @@ stroke_depth = 0.62
 paint_quantise = 14.0
 edge_ink = 0.45
 paint_tone = 0.55
+ink_colour = Color(0.02, 0.052, 0.058, 1)
+ink_strength = 0.55
+ink_silhouette = 0.02
+ink_crease = 0.006
+ink_thickness_px = 1.4
+ink_fade_m = 150.0

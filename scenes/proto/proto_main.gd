@@ -73,6 +73,7 @@ var options: Array[BuildOption] = []
 var rules: MachineRules
 var forge: MergeRules
 var palette: BiomePalette
+var ink: InkPass
 var quality: QualityConfig
 var _quality_slot := 0
 ## Resolved machine numbers, keyed by build-option id. Resolved once at load
@@ -146,10 +147,18 @@ func _ready() -> void:
 	fog = FogOfWar.new(Vector2i(cfg.cells_x, cfg.cells_z), cfg.cell_size_m)
 	terrain.setup(field, fog, load(TERRAIN_SHADER))
 	palette = load(PALETTE)
+	# What the ground is MADE OF, decided from the shape the ops left behind.
+	# Explicit rather than folded into TerrainBuilder.build(), because it needs
+	# the palette's world edge and the palette is a look, not a shape — one
+	# call, one source for that number.
+	TerrainBuilder.classify_materials(field, palette.void_below)
 	terrain.apply_palette(palette)
 	# The weather under the map. Added before anything else so it is the first
 	# opaque thing behind the terrain in the depth sort.
 	add_child(CloudSea.build(load(CLOUDS)))
+	ink = InkPass.build()
+	ink.apply(palette)
+	add_child(ink)
 	mini.bind(fog, Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m))
 
 	mass = MassPool.new(load(MASS_CFG))
@@ -500,7 +509,7 @@ func _refresh_forge_bar() -> void:
 func _apply_quality(slot: int) -> void:
 	_quality_slot = slot % QUALITY.size()
 	quality = load(QUALITY[_quality_slot])
-	QualityRig.apply(quality, get_viewport(), terrain, palette)
+	QualityRig.apply(quality, get_viewport(), terrain, palette, ink)
 	probe.reset()
 
 
