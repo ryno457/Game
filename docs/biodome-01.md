@@ -369,3 +369,128 @@ the game — arches, spires and machines all become circles.
   The game may well look right where the preview does not — unverified.
 - **The preview's island edges are stair-stepped.** It drops whole quads at the
   world edge; the game discards per fragment and will have a smooth edge.
+
+---
+
+# The painterly pass
+
+Researched rather than guessed. Findings first, because two of them ruled out
+the obvious answer.
+
+## What the obvious answer is, and why it is not this one
+
+**Kuwahara** is the standard painterly post-process: for each pixel it divides a
+window into sectors, finds the sector with least colour variance, and takes that
+sector's average — blurring while preserving hard edges, which is what makes a
+render look like paint. The classic variant is the one suited to real time;
+anisotropic is better-looking and dearer. Larger kernels denature the image, so
+there is a balance to strike between kernel size and effect strength.
+
+Two things rule it out here, for now:
+
+1. **Godot's compositor is only half-supported on the Mobile renderer.** The
+   docs say the compositor works on Mobile and Forward+, but the PR that added
+   it gave *full* support only to Forward+ and *limited* support on Mobile, and
+   in practice the colour texture has no storage flag there, so a compute
+   shader cannot write it. The clean route is unavailable.
+2. **Cost.** A circular-kernel Kuwahara is on the order of fifty texture fetches
+   per pixel. The one well-known Godot implementation claims 1080p60 — *"on any
+   modern computer"*. That is a desktop claim, and this runs at 2400×1080 on a
+   Mali-G68 with no measured frame-time headroom at all.
+
+The screen-reading route (a full-screen quad sampling `hint_screen_texture`) *is*
+available — the two Mobile-renderer artifact bugs, godotengine/godot#88786 and
+#91474, are both **closed**, fixed by PR #91480, and we are on 4.7.2. So
+Kuwahara stays on the table as a High-preset option once there are frame numbers
+to spend. It is not the foundation.
+
+## What is built instead
+
+**Triplanar-style projection of a stroke field, at material level.** The reason
+this is the right technique for *this* project, specifically: it needs **no UVs**,
+which is exactly why it survives ground that changes shape every time the player
+digs. There is nothing to re-unwrap because there was never an unwrap. That is
+the standard answer to texturing deforming geometry, and it happens to be the
+only one compatible with a heightfield displaced in a vertex shader.
+
+Brush-stroke shading works by **bending the normal through a stroke field before
+lighting**, which is how an artist shades a transition — marks, not a gradient.
+
+Four parts, all gated behind one `paint_strength` knob that skips the work at
+zero:
+
+| | |
+|---|---|
+| **stroke direction** | from the heightfield gradient — the same central difference the vertex stage already takes. Strokes run **along the contour**, describing the form the way a painter's would. |
+| **stroke normal bend** | one fbm plus two taps for the gradient. Three noise evaluations, against Kuwahara's fifty fetches. |
+| **stroke tone** | the same field shifts the **albedo**. See below — this is the half that matters. |
+| **banded light + ink** | a custom `light()` quantises N·L into steps, with the seam between steps darkened. |
+
+## Three things that were wrong, found by looking
+
+**Bending the normal alone did almost nothing.** Under a high sun on a plateau
+top, every pixel has the same N·L, so a normal-only effect changes nothing
+across most of the map. A painter laying marks on a flat field varies the
+*colour*. Adding `paint_tone` — the stroke field modulating albedo — is what
+made the pass visible at all.
+
+**The stroke direction collapsed on flat ground.** Normalising a near-zero
+gradient gives a direction that flips pixel to pixel, so every plateau — most of
+the playable map — got noise instead of strokes. Where the gradient dies it now
+falls back to a slowly-rotating field: still coherent over a few metres, just
+not tied to a slope that is not there.
+
+**The strokes were sub-pixel.** The first values made a mark about 90 cm long and
+**12 cm across**, which from the RTS camera is under a pixel wide, so every
+stroke aliased into noise. They are now roughly four metres by most of a metre.
+Size turned out to matter more than every other parameter combined.
+
+## And one bug this finally forced out
+
+The "every island edge glows" problem is **fixed**. Height alone genuinely
+cannot distinguish a pool from the outer rim of a plateau — they sit in the same
+band, and a fragment can only see its own cell, not the shape around it. So
+`Heightfield` now carries a **water mask** that the map author stamps (a
+`plateau` op with `"water": true`), uploaded once as its own texture because
+digging changes heights constantly and never creates a lake. The pool glow
+multiplies by it. The neon halo is gone and the pools are discrete.
+
+## Looking at it: `tools/paint_preview.py`
+
+The Blender preview cannot run a Godot shader, so every earlier picture was an
+approximation drawn by a different renderer — which is exactly how two of them
+came back lying about the colours.
+
+For a straight-down orthographic view none of that is necessary: every input the
+fragment shader has is computable per pixel without a rasteriser. So this is a
+**direct port of `terrain_lit.gdshader` evaluated in numpy**, rendering paint-off
+and paint-on side by side. It reads the paint values **out of the same JSON the
+build exports**, because an earlier version kept its own copy and they had
+drifted apart within the hour.
+
+It is not the game — no tonemapper, no shadows, no props, flat ambient — but the
+bands, strokes, posterise and banded light are the same arithmetic.
+
+## Honest state
+
+The pass works end to end and the difference is visible, but it is **subtle, not
+the bold illustrated look of the reference**. Those references are 2D
+illustrations with hand-drawn linework; a procedural stroke field will not reach
+them. Two things would close most of the remaining gap, and neither is built:
+
+- **Real brush-stroke textures** instead of procedural noise, projected
+  triplanar. This means introducing the project's first texture assets — there
+  are currently none at all.
+- **Outlines.** The reference has linework around every shape; there is none
+  here. Depth-and-normal edge detection is the usual approach and needs the
+  screen-reading quad that Kuwahara would also use, so the two would share a
+  pass.
+
+Sources: [Kuwahara in Unreal](https://alexdiallo.wordpress.com/2019/06/23/the-kuwahara-algorithm-implementing-a-painterly-effect-in-unreal/) ·
+[PeterEve/godot-kuwahara](https://github.com/PeterEve/godot-kuwahara) ·
+[Godot compositor docs](https://docs.godotengine.org/en/stable/tutorials/rendering/compositor.html) ·
+[#96737 compositor on Mobile](https://github.com/godotengine/godot/issues/96737) ·
+[#91474](https://github.com/godotengine/godot/issues/91474) and
+[#88786](https://github.com/godotengine/godot/issues/88786) screen-texture on Mobile ·
+[Screen-reading shaders](https://docs.godotengine.org/en/stable/tutorials/shaders/screen-reading_shaders.html) ·
+[Triplanar mapping](https://craftpbr.com/guides/triplanar-mapping)

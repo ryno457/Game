@@ -169,8 +169,12 @@ func _map() -> TerrainMap:
 		var r: float = b[1]
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
 			"r": r + 5.0, "level": 0.32, "strength": 0.62})
+		# "water": true also stamps the water mask, which is the only thing
+		# that tells the shader this is a pool and not the outer rim of an
+		# island — they are the same height, and before this every island was
+		# ringed with a neon halo.
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": r, "level": b[2], "strength": 0.95})
+			"r": r, "level": b[2], "strength": 0.95, "water": true})
 
 	# The landing clearing: flat, dry, buildable, and clear of the rim.
 	ops.append({"op": "plateau", "x": LANDING.x, "z": LANDING.y,
@@ -201,11 +205,29 @@ func _palette() -> BiomePalette:
 	p.pool_alt_mix = 0.85
 	p.pool_glow_strength = 2.6
 	p.vein_glow = Color(0.28, 0.93, 0.66)
-	p.vein_strength = 0.42
+	# Turned down from 0.42: the vein network was the loudest thing on the
+	# ground and the brush marks could not be seen past it.
+	p.vein_strength = 0.20
 	p.vein_scale = 0.052
 	p.vein_sharpness = 10.0
 	# Left ON. It is a readability aid and this is still a grey-box slice —
 	# turn it to 0 for a screenshot, not for a playtest.
+	# Painterly. Tuned for the overhead camera: strokes about a metre long
+	# running along the contours, five value steps, and a light posterise.
+	p.paint_strength = 0.85
+	p.paint_bands = 5.0
+	# SIZE MATTERS MORE THAN ANYTHING ELSE HERE. The first pass used a scale of
+	# 1.15 with a stretch of 7.5, which makes a stroke about 90 cm long and 12 cm
+	# across — under a pixel wide from the RTS camera, so every mark aliased
+	# into noise and the paint pass changed nothing. These are strokes roughly
+	# four metres long and most of a metre across: brush marks at the scale the
+	# camera actually sees.
+	p.stroke_scale = 0.22
+	p.stroke_stretch = 5.0
+	p.stroke_depth = 0.62
+	p.paint_quantise = 14.0
+	p.edge_ink = 0.45
+	p.paint_tone = 0.55
 	p.threshold_line_strength = 0.85
 	# Below this nothing is drawn and the cloud deck shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.
@@ -458,6 +480,11 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		raw.store_float(h)
 	raw.close()
 
+	var wet := FileAccess.open(OUT + "/biodome_01_water.r32", FileAccess.WRITE)
+	for w in field.water:
+		wet.store_float(w)
+	wet.close()
+
 	var placed := Dressing.place(field, plan, LANDING)
 	var props := []
 	for model in placed:
@@ -493,6 +520,21 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 			"horizon": cloud.horizon_colour.to_html(false),
 			"scale": cloud.cloud_scale, "coverage": cloud.coverage,
 			"softness": cloud.softness,
+		},
+		# Exported so tools/paint_preview.py reads the SAME numbers the shader
+		# gets. It used to keep its own copy and they drifted within an hour.
+		"paint": {
+			"strength": pal.paint_strength, "bands": pal.paint_bands,
+			"stroke_scale": pal.stroke_scale, "stroke_stretch": pal.stroke_stretch,
+			"stroke_depth": pal.stroke_depth, "quantise": pal.paint_quantise,
+			"edge_ink": pal.edge_ink, "tone": pal.paint_tone,
+		},
+		"surface": {
+			"macro_scale": pal.macro_scale, "macro_strength": pal.macro_strength,
+			"striation": pal.striation_strength, "vein_scale": pal.vein_scale,
+			"vein_sharpness": pal.vein_sharpness, "vein_strength": pal.vein_strength,
+			"pool_glow_strength": pal.pool_glow_strength,
+			"pool_alt_mix": pal.pool_alt_mix, "grid_strength": pal.grid_strength,
 		},
 		"palette": {
 			"pool": pal.col_pool.to_html(false), "rough": pal.col_rough.to_html(false),

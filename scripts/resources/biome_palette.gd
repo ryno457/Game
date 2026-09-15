@@ -78,6 +78,33 @@ extends Resource
 ## read as rock rather than as a grey ramp.
 @export_range(0.0, 1.0) var striation_strength: float = 0.30
 
+@export_group("Painterly")
+## Brush strokes at material level rather than a Kuwahara post-process. See the
+## shader for why: Godot's compositor is only half-supported on the Mobile
+## renderer, and a Kuwahara kernel is ~50 texture fetches per pixel on a phone
+## with no measured headroom. This is three noise evaluations.
+##
+## Master knob. Zero skips every part of it, including the extra taps.
+@export_range(0.0, 1.0) var paint_strength: float = 0.0
+## Steps in the light ramp. A painter mixes a handful of values and reuses
+## them; four to six reads as painted, two reads as toon.
+@export_range(2.0, 12.0) var paint_bands: float = 5.0
+## Strokes per metre, and how long each one is against how wide. The stretch is
+## what turns round noise into brush marks.
+@export var stroke_scale: float = 1.1
+@export_range(1.0, 16.0) var stroke_stretch: float = 7.0
+@export_range(0.0, 2.0) var stroke_depth: float = 0.60
+## Posterise the albedo into this many steps. Zero is off. Smooth gradients are
+## the giveaway that a surface was computed rather than mixed.
+@export var paint_quantise: float = 0.0
+## Darkening where two light bands meet — what a brush leaves when one value is
+## laid down next to another.
+@export_range(0.0, 1.0) var edge_ink: float = 0.0
+## How far a stroke shifts the colour. This is the half that makes flat ground
+## read as painted: bending the normal only shows through the light, and under
+## a high sun a plateau top has the same N·L everywhere.
+@export_range(0.0, 1.0) var paint_tone: float = 0.35
+
 @export_group("Readability")
 ## The red line exactly at the impassable threshold. Grey-box readability aid,
 ## not art: set to 0 for screenshots, back to 0.85 to check a trench actually

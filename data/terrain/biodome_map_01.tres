@@ -471,6 +471,7 @@ ops = Array[Dictionary]([{
 "op": "plateau",
 "r": 6.5,
 "strength": 0.95,
+"water": true,
 "x": 70.0,
 "z": 51.0
 }, {
@@ -485,6 +486,7 @@ ops = Array[Dictionary]([{
 "op": "plateau",
 "r": 5.5,
 "strength": 0.95,
+"water": true,
 "x": 84.0,
 "z": 61.0
 }, {
@@ -499,6 +501,7 @@ ops = Array[Dictionary]([{
 "op": "plateau",
 "r": 6.0,
 "strength": 0.95,
+"water": true,
 "x": 26.0,
 "z": 30.0
 }, {
@@ -513,6 +516,7 @@ ops = Array[Dictionary]([{
 "op": "plateau",
 "r": 5.5,
 "strength": 0.95,
+"water": true,
 "x": 122.0,
 "z": 28.0
 }, {
@@ -527,6 +531,7 @@ ops = Array[Dictionary]([{
 "op": "plateau",
 "r": 5.0,
 "strength": 0.95,
+"water": true,
 "x": 30.0,
 "z": 86.0
 }, {

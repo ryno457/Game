@@ -14,6 +14,9 @@ var fog: FogOfWar
 
 var _mat: ShaderMaterial
 var _tex: ImageTexture
+## Uploaded once. See Heightfield.water: digging changes heights every frame
+## and never creates a lake.
+var _water_tex: ImageTexture
 var _dirty := true
 
 
@@ -27,7 +30,12 @@ func setup(p_field: Heightfield, p_fog: FogOfWar, shader: Shader) -> void:
 
 	_mat = ShaderMaterial.new()
 	_mat.shader = shader
+	var wimg := Image.create_from_data(cfg.cells_x, cfg.cells_z, false,
+		Image.FORMAT_RF, p_field.water.to_byte_array())
+	_water_tex = ImageTexture.create_from_image(wimg)
+
 	_mat.set_shader_parameter("height_map", _tex)
+	_mat.set_shader_parameter("water_map", _water_tex)
 	_mat.set_shader_parameter("fog_map", fog.texture())
 	_mat.set_shader_parameter("field_size_m",
 		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m))
@@ -69,6 +77,14 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("grid_width_px", p.grid_width_px)
 	_mat.set_shader_parameter("pool_glow_alt", p.pool_glow_alt)
 	_mat.set_shader_parameter("pool_alt_mix", p.pool_alt_mix)
+	_mat.set_shader_parameter("paint_strength", p.paint_strength)
+	_mat.set_shader_parameter("paint_bands", p.paint_bands)
+	_mat.set_shader_parameter("stroke_scale", p.stroke_scale)
+	_mat.set_shader_parameter("stroke_stretch", p.stroke_stretch)
+	_mat.set_shader_parameter("stroke_depth", p.stroke_depth)
+	_mat.set_shader_parameter("paint_quantise", p.paint_quantise)
+	_mat.set_shader_parameter("edge_ink", p.edge_ink)
+	_mat.set_shader_parameter("paint_tone", p.paint_tone)
 
 
 ## Scale the per-fragment surface work without rebuilding the palette. The
@@ -80,6 +96,9 @@ func set_detail_scale_factor(factor: float, p: BiomePalette) -> void:
 	_mat.set_shader_parameter("detail_strength", p.detail_strength * factor)
 	_mat.set_shader_parameter("striation_strength", p.striation_strength * factor)
 	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m * maxf(0.35, factor))
+	# The strokes are the other half of the per-fragment bill: three noise
+	# evaluations on top of the detail bump's two. A Low preset drops both.
+	_mat.set_shader_parameter("paint_strength", p.paint_strength * factor)
 
 	_build_chunks()
 	upload()

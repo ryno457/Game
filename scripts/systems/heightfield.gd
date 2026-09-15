@@ -18,10 +18,25 @@ var cfg: TerrainConfig
 var heights: PackedFloat32Array
 
 
+## Which cells are WATER rather than merely low.
+##
+## Height alone cannot answer that. A pool in a hollow and the outer rim of a
+## plateau occupy the same height band, and "enclosed basin" versus "the edge of
+## the world" is a topological distinction a per-fragment shader has no way to
+## make — it can see one cell, not the shape around it. So the map author marks
+## it here and the shader reads the mark.
+##
+## Uploaded once, not per frame: digging changes heights constantly and never
+## creates a lake.
+var water: PackedFloat32Array
+
+
 func _init(config: TerrainConfig) -> void:
 	cfg = config
 	heights = PackedFloat32Array()
 	heights.resize(cfg.cells_x * cfg.cells_z)
+	water = PackedFloat32Array()
+	water.resize(cfg.cells_x * cfg.cells_z)
 	heights.fill(cfg.neutral_height)
 
 

@@ -8,6 +8,10 @@ render_mode cull_back, diffuse_burley, specular_schlick_ggx;
 
 uniform sampler2D height_map : filter_linear, repeat_disable;
 uniform sampler2D fog_map : filter_linear, repeat_disable;
+// Which low ground is actually a pool. See Heightfield.water — height alone
+// cannot tell a basin from the outer rim of an island, because they sit in the
+// same band and a fragment can only see its own cell.
+uniform sampler2D water_map : filter_linear, repeat_disable;
 uniform vec2 field_size_m = vec2(150.0, 112.0);
 uniform float height_scale_m = 12.0;
 uniform float texel_m = 1.0;
@@ -52,6 +56,35 @@ uniform float grid_spacing_m = 0.0;
 uniform vec3 grid_colour : source_color = vec3(0.55, 0.85, 0.92);
 uniform float grid_strength = 0.18;
 uniform float grid_width_px = 1.4;
+
+// --- PAINTERLY ---------------------------------------------------------------
+// Brush strokes at MATERIAL level, not as a post-process.
+//
+// The obvious answer to "make it painterly" is a Kuwahara filter over the whole
+// screen, and that is what most engines do. Two reasons it is not what this
+// does. First, Godot's CompositorEffect only has limited support on the Mobile
+// renderer — compute shaders cannot write the colour texture there — so the
+// clean route is unavailable, leaving a screen-reading full-screen quad.
+// Second, a Kuwahara kernel is on the order of fifty texture fetches PER PIXEL
+// at 2400x1080, on a phone with no measured frame-time headroom.
+//
+// The technique that actually fits this project is triplanar-style projection
+// of a stroke field: it needs NO UVS, which is exactly why it survives ground
+// that changes shape every time the player digs. There is nothing to re-unwrap
+// because there was never an unwrap.
+//
+// The strokes FOLLOW THE FORM. Their direction comes from the heightfield
+// gradient, which the vertex stage already computes for the normal — so they
+// run along the contour the way a painter's would, rather than in a fixed
+// screen direction. That is the single thing that stops it reading as noise.
+uniform float paint_strength = 0.0;     // master; 0 skips all of it
+uniform float paint_bands = 4.0;        // steps in the light ramp
+uniform float stroke_scale = 1.1;       // strokes per metre
+uniform float stroke_stretch = 7.0;     // how long a stroke is vs how wide
+uniform float stroke_depth = 0.60;      // how hard the stroke bends the normal
+uniform float paint_quantise = 0.0;     // albedo posterise steps; 0 is off
+uniform float edge_ink = 0.0;           // darkening where the bands meet
+uniform float paint_tone = 0.0;         // how much a stroke shifts the COLOUR
 
 // Surface detail. There are no textures in this project — no image files, no
 // UVs on any mesh — so "higher quality ground" means more procedural surface,
@@ -139,6 +172,48 @@ void vertex() {
 	NORMAL = nw;
 }
 
+// A stroke field, stretched along the contour. One fbm plus two taps for the
+// gradient — three evaluations, against a Kuwahara filter's fifty fetches.
+//
+// `along` runs perpendicular to the slope, so strokes lie across the hill the
+// way a brush would; `down` is squashed by stroke_stretch, which is what turns
+// round noise blobs into long thin marks.
+vec3 paint_strokes(vec2 world_xz, vec3 n, out float tone) {
+	// Stroke direction. On a slope it follows the contour, which is what a
+	// painter does — the marks describe the form. On FLAT ground there is no
+	// contour to follow, and normalising a near-zero gradient gives a direction
+	// that flips from pixel to pixel; the first version did exactly that and
+	// the strokes vanished into noise on every plateau top. So where the
+	// gradient dies, fall back to a slowly-rotating field: still coherent over
+	// a few metres, just not tied to a slope that is not there.
+	vec2 down = vec2(n.x, n.z);
+	float grade = length(down);
+	float a = fbm(world_xz * 0.035) * TAU;
+	vec2 drift = vec2(cos(a), sin(a));
+	down = normalize(mix(drift, down / max(grade, 0.0001),
+		smoothstep(0.02, 0.18, grade)));
+	vec2 along = vec2(-down.y, down.x);
+
+	vec2 sp = world_xz * stroke_scale;
+	vec2 rot = vec2(dot(sp, along), dot(sp, down) * stroke_stretch);
+	float e = 0.25;
+	float c0 = fbm(rot);
+	float dx = fbm(rot + vec2(e, 0.0)) - fbm(rot - vec2(e, 0.0));
+	float dz = fbm(rot + vec2(0.0, e)) - fbm(rot - vec2(0.0, e));
+
+	// The stroke's own value, handed back to modulate ALBEDO.
+	//
+	// This is the half that was missing. Bending the normal only shows up
+	// through the light, and on flat ground under a high sun every pixel has
+	// the same N·L — so the first pass changed almost nothing where most of
+	// the map is. A painter laying marks on a flat field varies the COLOUR,
+	// not the surface angle.
+	tone = (c0 - 0.5) * paint_tone * paint_strength;
+
+	vec2 bend = along * dx + down * dz;
+	return normalize(n + vec3(bend.x, 0.0, bend.y) * stroke_depth * paint_strength);
+}
+
 void fragment() {
 	// Nothing below the world edge. discard rather than a clip plane because
 	// the edge follows the heightfield, which is not a plane — and because the
@@ -162,6 +237,10 @@ void fragment() {
 		if (detail_fade > 0.003) {
 			n = detail_normal(v_world.xz, n, detail_fade);
 		}
+	}
+	float stroke_tone = 0.0;
+	if (paint_strength > 0.0) {
+		n = paint_strokes(v_world.xz, n, stroke_tone);
 	}
 	float slope = 1.0 - clamp(n.y, 0.0, 1.0);
 
@@ -215,9 +294,10 @@ void fragment() {
 	// Standing liquid. Brightest at the deepest point and feathered at the
 	// shoreline, so a freshly dug trench fills in rather than stamping a
 	// hard-edged puddle the moment it breaches.
-	if (pool_glow_strength > 0.0) {
+	float wet = textureLod(water_map, v_world.xz / field_size_m, 0.0).r;
+	if (pool_glow_strength > 0.0 && wet > 0.001) {
 		float depth = clamp((impassable_below - v_h) / max(0.001, impassable_below), 0.0, 1.0);
-		float shore = smoothstep(-0.03, 0.05, impassable_below - v_h);
+		float shore = smoothstep(-0.03, 0.05, impassable_below - v_h) * wet;
 		float ripple = 0.85 + 0.30 * fbm(v_world.xz * 0.55 + vec2(TIME * 0.05, 0.0));
 		// Which colour this basin is. One very low-frequency field, so a whole
 		// pool takes one tint and the next one over takes the other, instead of
@@ -252,6 +332,16 @@ void fragment() {
 		base = mix(base, grid_colour, line * grid_strength);
 	}
 
+	// Lay the stroke down as a value shift before posterising, so the marks
+	// land ON the steps rather than being flattened away by them.
+	base *= 1.0 + stroke_tone;
+
+	// Posterise. A painter mixes a handful of values and reuses them; smooth
+	// gradients are the giveaway that a surface was computed rather than mixed.
+	if (paint_quantise > 1.0) {
+		base = floor(base * paint_quantise + 0.5) / paint_quantise;
+	}
+
 	ALBEDO = base;
 	EMISSION = emit * seen;
 	// Back to view space, which is what the fragment stage wants written.
@@ -259,11 +349,39 @@ void fragment() {
 	ROUGHNESS = mix(0.95, 0.7, smoothstep(0.3, 0.8, slope));
 	// Wet ground under the waterline. A pool that is as matte as the rock
 	// beside it does not read as liquid however brightly it glows.
-	if (v_h < rough_below) {
-		float wet = smoothstep(rough_below, impassable_below - 0.04, v_h);
-		ROUGHNESS = mix(ROUGHNESS, 0.12, wet);
-		SPECULAR = mix(0.12, 0.6, wet);
+	if (v_h < rough_below && wet > 0.001) {
+		float slick = smoothstep(rough_below, impassable_below - 0.04, v_h) * wet;
+		ROUGHNESS = mix(ROUGHNESS, 0.12, slick);
+		SPECULAR = mix(0.12, 0.6, slick);
 	} else {
 		SPECULAR = 0.12;
 	}
+}
+
+
+// Banded diffuse — the painted look lives here as much as in the strokes.
+//
+// Defining light() overrides the render_mode diffuse model, so at
+// paint_strength 0 this is plain Lambert rather than Burley. That is a real
+// (small) change to the unpainted look and is why the knob is not free.
+void light() {
+	float ndl = clamp(dot(normalize(NORMAL), LIGHT), 0.0, 1.0);
+	float banded = ndl;
+	if (paint_strength > 0.0 && paint_bands > 1.0) {
+		// Quantise, but keep a soft edge inside each step so the terminator is
+		// a painted edge rather than a jagged one.
+		float scaled = ndl * paint_bands;
+		float step_i = floor(scaled);
+		float frac_v = fract(scaled);
+		banded = (step_i + smoothstep(0.35, 0.65, frac_v)) / paint_bands;
+		banded = mix(ndl, banded, paint_strength);
+
+		// Ink: darken the seam where two bands meet, which is what a brush
+		// leaves when one value is laid next to another.
+		if (edge_ink > 0.0) {
+			float seam = 1.0 - abs(frac_v - 0.5) * 2.0;
+			banded *= 1.0 - pow(seam, 8.0) * edge_ink * paint_strength;
+		}
+	}
+	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * banded;
 }

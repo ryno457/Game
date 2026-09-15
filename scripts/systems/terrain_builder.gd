@@ -39,11 +39,34 @@ static func _apply(hf: Heightfield, op: Dictionary) -> void:
 		"plateau":
 			_disc(hf, Vector2(op.x, op.z), op.r, op.level,
 				float(op.get("strength", 1.0)))
+			# A plateau op marked "water" also stamps the water mask, which is
+			# how the shader tells a pool from the outer rim of an island —
+			# they sit in the same height band and nothing about a single cell
+			# distinguishes them.
+			if bool(op.get("water", false)):
+				_mark_water(hf, Vector2(op.x, op.z), op.r)
 		"band":
 			_rect(hf, Rect2(op.x0, op.z0, op.x1 - op.x0, op.z1 - op.z0),
 				op.level, float(op.get("edge", 4.0)))
 		_:
 			push_warning("TerrainBuilder: unknown op '%s'" % op.get("op", ""))
+
+
+## Paint the water mask over a disc, feathered at the rim so a shoreline fades
+## rather than ending in a hard ring.
+static func _mark_water(hf: Heightfield, c: Vector2, r: float) -> void:
+	var cfg := hf.cfg
+	var x0 := clampi(int(c.x - r), 0, cfg.cells_x - 1)
+	var x1 := clampi(int(c.x + r), 0, cfg.cells_x - 1)
+	var z0 := clampi(int(c.y - r), 0, cfg.cells_z - 1)
+	var z1 := clampi(int(c.y + r), 0, cfg.cells_z - 1)
+	for z in range(z0, z1 + 1):
+		for x in range(x0, x1 + 1):
+			var d := Vector2(x - c.x, z - c.y).length()
+			if d > r:
+				continue
+			var i := z * cfg.cells_x + x
+			hf.water[i] = maxf(hf.water[i], clampf(1.0 - d / r, 0.0, 1.0))
 
 
 static func _disc(hf: Heightfield, c: Vector2, r: float, level: float, strength: float) -> void:
