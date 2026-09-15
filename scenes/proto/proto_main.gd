@@ -11,7 +11,9 @@ extends Node3D
 ## rules worth protecting live in tested systems (MassPool, WaveDirector,
 ## FogOfWar); what is here is wiring and presentation.
 
-const MAP := "res://data/terrain/test_map_01.tres"
+const MAP := "res://data/terrain/biodome_map_01.tres"
+const PALETTE := "res://data/biomes/biodome_01_palette.tres"
+const DRESSING := "res://data/biomes/biodome_01_dressing.tres"
 const MASS_CFG := "res://data/gameplay/mass.tres"
 const WAVES := "res://data/waves/biodome_01.tres"
 const OPTIONS_DIR := "res://data/gameplay/build_options/"
@@ -22,6 +24,10 @@ const MACHINE_RULES := "res://data/gameplay/machines.tres"
 const MERGE_RULES := "res://data/gameplay/merge.tres"
 const PROTO_CFG := "res://data/gameplay/proto.tres"
 const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
+## Scenery is bucketed into squares this big so the frustum can cull it. See
+## _dress — the number is a draw-calls-versus-wasted-triangles tradeoff, not a
+## gameplay knob, which is why it lives here and not in a .tres.
+const BUCKET_M := 48.0
 
 @onready var terrain: TerrainView = $Terrain
 @onready var module: Node3D = $Module
@@ -81,6 +87,7 @@ var _mm_marks: MultiMeshInstance3D
 var _module_scale := 1.0
 var _toast_t := 0.0
 var _fog_cd := 0.0
+var _scenery_dirty := true
 var _forge_sig := ""
 var trenching := false
 var _rng := RandomNumberGenerator.new()
@@ -90,6 +97,8 @@ var _module_form := -1
 ## uid -> Node3D. See _sync_convoy for why this is not an array.
 var _unit_nodes: Dictionary = {}
 var _alien_nodes: Array[Node3D] = []
+## One entry per prop kind: {mmi, spots}. See _dress.
+var _scenery: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -104,6 +113,7 @@ func _ready() -> void:
 
 	fog = FogOfWar.new(Vector2i(cfg.cells_x, cfg.cells_z), cfg.cell_size_m)
 	terrain.setup(field, fog, load(TERRAIN_SHADER))
+	terrain.apply_palette(load(PALETTE))
 
 	mass = MassPool.new(load(MASS_CFG))
 	mass.rejected.connect(func(why): _say(why))
@@ -116,6 +126,7 @@ func _ready() -> void:
 	module_pos = map.spawn
 	drone_pos = module_pos + Vector2(3.0, 0.0)
 	_scatter_debris()
+	_dress(map.spawn)
 	_make_instancers()
 	_build_menu()
 
@@ -199,6 +210,76 @@ func _add_debris(p: Vector2, large: bool) -> void:
 		"pos": p, "large": large, "taken": false,
 		"mass": tune.large_mass if large else tune.small_mass,
 	})
+
+
+## Grow the biodome. Scenery is placed once from a seed and never moves, so it
+## costs one scatter pass at load and six draw calls a frame thereafter.
+##
+## MultiMesh rather than nodes: a couple of hundred props as individual nodes
+## is a couple of hundred draw calls, which is the whole budget on a phone
+## before anything in the game has drawn. Skinned meshes cannot go through a
+## MultiMesh — none of these are skinned, which is why they were built as one
+## mesh each.
+func _dress(landing: Vector2) -> void:
+	var plan: BiomeDressing = load(DRESSING)
+	if plan == null:
+		return
+	var placed := Dressing.place(field, plan, landing)
+	for entry in plan.entries:
+		var spots: Array = placed.get(entry.model, [])
+		if spots.is_empty():
+			continue
+		var mesh := lib.biggest_mesh(String(entry.model))
+		if mesh == null:
+			push_warning("dressing: no mesh for '%s'" % entry.model)
+			continue
+		# Bucketed by a coarse grid rather than one MultiMesh per prop kind.
+		# Godot frustum-culls a MultiMesh as a single object, so one instancer
+		# covering the whole map submits every prop on it whichever way the
+		# camera is pointing — four hundred props' worth of triangles for the
+		# dozen actually on screen. A bucket is a few draw calls' worth of
+		# bookkeeping to make that culling work.
+		var buckets := {}
+		for t in spots:
+			var tr: Transform3D = t
+			var key := Vector2i(int(tr.origin.x / BUCKET_M), int(tr.origin.z / BUCKET_M))
+			if not buckets.has(key):
+				buckets[key] = []
+			buckets[key].append(tr)
+		for key in buckets:
+			var group: Array = buckets[key]
+			var mmi := MultiMeshInstance3D.new()
+			mmi.multimesh = MultiMesh.new()
+			mmi.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+			mmi.multimesh.mesh = mesh
+			mmi.multimesh.instance_count = group.size()
+			mmi.multimesh.visible_instance_count = 0
+			# Shadow casting is the expensive half — every instance is drawn
+			# again into the atlas — so only the props big enough for a missing
+			# shadow to read as floating pay for it.
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+				if entry.casts_shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+			add_child(mmi)
+			_scenery.append({"mmi": mmi, "spots": group})
+
+
+## Submit only the scenery the player has actually uncovered.
+##
+## Explored, not visible: geology is remembered. An arch you walked past stays
+## on the map when you walk away, the way the ground under it does — it is only
+## live contacts that vanish when nothing is watching.
+func _cull_scenery() -> void:
+	for group in _scenery:
+		var mmi: MultiMeshInstance3D = group.mmi
+		var n := 0
+		for t in group.spots:
+			var tr: Transform3D = t
+			if fog.level_at(Vector2(tr.origin.x, tr.origin.z)) <= 0.0:
+				continue
+			mmi.multimesh.set_instance_transform(n, tr)
+			n += 1
+		mmi.multimesh.visible_instance_count = n
 
 
 func _make_instancers() -> void:
@@ -368,6 +449,7 @@ func step(delta: float) -> void:
 		for u in built:
 			if u.spec.reveal_m > 0.0:
 				fog.reveal(u.pos, u.spec.reveal_m)
+		_scenery_dirty = true
 
 
 ## The drone is the only thing that moves mass. Everything else spends it.
@@ -965,6 +1047,10 @@ func _present(delta: float) -> void:
 	_draw(_mm_aliens, aliens.slice(mini(aliens.size(), tune.animated_alien_cap)),
 		func(_a): return Vector3.ONE * tune.alien_radius_m * 2.0,
 		func(_a): return Color(1.0, 0.36, 0.45))
+	# Scenery is static, so it only needs resubmitting when the fog moved.
+	if _scenery_dirty:
+		_scenery_dirty = false
+		_cull_scenery()
 	_draw(_mm_marks, _markers(),
 		func(m): return Vector3(m.r, 0.12, m.r),
 		func(m): return m.col)

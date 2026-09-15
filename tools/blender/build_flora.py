@@ -164,34 +164,39 @@ def build_arch(mats):
     mb = MB()
     span, rise = 2.9, 4.1
 
-    # Three struts of differing bow, so the arch has depth rather than reading
-    # as a flat croquet hoop from the RTS camera.
+    # Three struts, spread WIDE and ribbed hard. The first pass sat them 0.55 m
+    # apart with a 0.10 ridge and the render came back as one smooth grey tube:
+    # at RTS distance the struts have to be separated by more than their own
+    # diameter before the gaps between them read as fenestration at all.
     struts = []
-    for k, (dy, bow, rad) in enumerate([(-0.55, -0.25, 0.20),
-                                        (0.05, 0.10, 0.26),
-                                        (0.62, 0.30, 0.17)]):
+    for k, (dy, bow, rad) in enumerate([(-1.05, -0.35, 0.155),
+                                        (0.05, 0.12, 0.185),
+                                        (1.12, 0.38, 0.140)]):
         pts = og.arc((-span, dy, 0.0), (span * 0.92, dy * 0.7, 0.0),
-                     rise * (1.0 - 0.07 * k), 11, bow=bow)
-        radii = [rad * (0.55 + 0.9 * math.sin(i / 10.0 * math.pi) ** 0.5) + 0.06
+                     rise * (1.0 - 0.09 * k), 11, bow=bow)
+        radii = [rad * (0.55 + 0.9 * math.sin(i / 10.0 * math.pi) ** 0.5) + 0.05
                  for i in range(11)]
-        radii[0] = radii[-1] = rad * 1.5           # splayed feet
-        mb.tube(BONE, pts, radii, 7, ridge=0.10, seed=k * 3.0)
+        radii[0] = radii[-1] = rad * 1.7           # splayed feet
+        mb.tube(BONE, pts, radii, 7, ridge=0.26, seed=k * 3.0)
         struts.append(pts)
 
     # Cross ribs. The gaps between them are the fenestration — at this budget a
     # real hole would cost more triangles than the whole prop has.
-    for i in range(2, 10, 2):
+    for i in range(1, 11, 2):
         for a, b in ((0, 1), (1, 2)):
             p, q = struts[a][i], struts[b][i]
-            mb.tube(BONE, [p, q], [0.085, 0.085], 5, caps=True, seed=i)
+            mb.tube(BONE, [p, q], [0.070, 0.070], 5, caps=True, seed=i)
 
-    # Ocelli: the glowing eye-spots set into the membrane between the ribs.
-    for i, mat, r in ((3, GLOW_A, 0.20), (5, GLOW_T, 0.26), (7, GLOW_A, 0.17)):
-        mid = og.lerp3(struts[0][i], struts[2][i], 0.5)
-        mb.orb(mat, (mid[0], mid[1], mid[2]), r, 8, 5, lumps=0.10, seed=i)
-    for i in (4, 8):
-        mid = og.lerp3(struts[1][i], struts[2][i], 0.5)
-        mb.orb(GLOW_T, (mid[0], mid[1], mid[2] - 0.18), 0.13, 6, 4, seed=i)
+    # Ocelli: the glowing eye-spots. Set ON the outer struts rather than
+    # floating in the middle of the arch, where the ribs hid them completely.
+    for i, mat, r in ((3, GLOW_A, 0.22), (5, GLOW_T, 0.26), (7, GLOW_A, 0.19)):
+        for side in (0, 2):
+            p = struts[side][i]
+            out = 0.16 if side == 2 else -0.16
+            mb.orb(mat, (p[0], p[1] + out, p[2]), r, 8, 5, lumps=0.12, seed=i + side)
+    for i in (2, 9):
+        p = struts[1][i]
+        mb.orb(GLOW_T, (p[0], p[1], p[2] + 0.20), 0.15, 6, 4, seed=i)
 
     # Root flare where it meets the ground, so it grows out rather than
     # balancing on two sticks.

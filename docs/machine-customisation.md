@@ -113,21 +113,74 @@ Mass is conserved — it is the module's body relocated, never consumed — so a
 build cannot charge mass for churn. The price is **time**:
 
 1. Mass leaves the module the instant the button is pressed. It shrinks now.
-2. The machine spends `build_time_s` in the assembly queue and does not exist.
+2. The machine spends its assembly time in the queue and does not exist.
 3. Scrapping a live machine leaves a **wreck where it stood**. Nothing is
    refunded until the drone flies out and hauls it home.
+
+Assembly time scales with mass, so the size of a machine means something:
+
+```
+seconds = build_time_base_s + mass * build_time_per_mass_s
+        = 2.7 + mass * 0.175,  clamped to [2, 16]
+
+Bulwark        10 mass ->  4.5 s
+Skirmisher     14 mass ->  5.2 s
+Lancer         26 mass ->  7.3 s
+Siege Battery  42 mass -> 10.1 s
+```
 
 So repurposing an army is always available and never free: a player who rebuilds
 every wave is not poorer, they are late, and their line has a hole in it while
 they wait.
 
+## Reforging in the field
+
+Machines do not have to go home to change. Tap one to select it, tap more to
+add them, and the forge bar offers everything the selected mass could become.
+
+**The rule is only mass.** A machine is mass in a shape; changing the shape is
+always allowed, and how big a shape you can reach is how much mass you brought:
+
+| selection | pooled | reaches |
+|---|---|---|
+| one Skirmisher | 14 | Guard, Bulwark — anything no heavier than itself |
+| two Skirmishers | 28 | Lancer, Breaker, Vanguard |
+| three | 42 | Siege Battery |
+
+What it costs is the usual two things.
+
+**They have to meet.** The group leaves formation and walks to a rendezvous at
+its centre of mass. Nothing comes apart until every member is inside
+`gather_radius_m` (3.2 m) of it, and the hole in the line while they walk is
+half the price. If they cannot reach each other in twenty seconds the order is
+abandoned and they go back to formation. If one dies on the way the order
+**downgrades** to the best thing the survivors can still become — losing a
+machine mid-merge should cost you the machine, not the whole decision.
+
+**Then it assembles**, at `field_work_mult` (0.7×) of the from-scratch time,
+floored at two seconds. Reusing parts already in machine form is faster than
+building from raw body, but it is never instant.
+
+**Mass is still conserved exactly.** A merge that overshoots drops the offcut
+as a wreck on the spot, so overshooting costs a drone trip rather than costing
+mass. An offcut under a one-mass floor goes straight home instead of littering
+the field with pebbles. Nothing is deleted on either path — `system_mass()`
+counts every gram in the world (module body, standing machines, committed
+builds, wrecks, uncollected debris, the drone's claw) and the drive test
+asserts it does not move across a whole merge.
+
 ## Not built yet
 
 - **No in-game loadout editor.** The player picks from eight pre-assembled
-  machines in the build bar; the parts system underneath supports arbitrary
-  combinations but there is no UI to assemble one. That is the next piece of
-  work and it is a feel question — how much fiddling is fun on a phone — so it
-  needs a decision before it gets built.
+  machines in the build bar and reforges between them in the field; the parts
+  system underneath supports arbitrary combinations but there is no UI to bolt
+  a specific part onto a specific hardpoint. That is the next piece of work and
+  it is a feel question — how much fiddling is fun on a phone — so it needs a
+  decision before it gets built.
+- **No splitting.** A group can merge up, and a single machine can reshape into
+  anything no heavier than itself (dropping the difference as an offcut), but
+  one big machine cannot become two small ones in a single order. Two reshape
+  orders and a drone trip get you there; a direct split does not exist.
 - **Splash damage is instant.** `_fire()` applies artillery splash the moment
   the shot goes off. No shell travel time, so no leading a moving target and no
   visible arc. Both matter to how artillery *reads* and neither is modelled.

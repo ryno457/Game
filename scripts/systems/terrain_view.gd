@@ -36,6 +36,27 @@ func setup(p_field: Heightfield, p_fog: FogOfWar, shader: Shader) -> void:
 	_mat.set_shader_parameter("impassable_below", cfg.impassable_below)
 	_mat.set_shader_parameter("rough_below", cfg.rough_below)
 
+
+## Repaint the ground for a biodome. Separate from setup() because the palette
+## is a look, not a shape — the same heightfield is the same map whether it is
+## lit like a quarry or like the inside of something alive.
+func apply_palette(p: BiomePalette) -> void:
+	if p == null or _mat == null:
+		return
+	_mat.set_shader_parameter("col_pool", p.col_pool)
+	_mat.set_shader_parameter("col_rough", p.col_rough)
+	_mat.set_shader_parameter("col_ground", p.col_ground)
+	_mat.set_shader_parameter("col_ridge", p.col_ridge)
+	_mat.set_shader_parameter("col_cliff", p.col_cliff)
+	_mat.set_shader_parameter("fog_tint", p.fog_tint)
+	_mat.set_shader_parameter("pool_glow", p.pool_glow)
+	_mat.set_shader_parameter("pool_glow_strength", p.pool_glow_strength)
+	_mat.set_shader_parameter("vein_glow", p.vein_glow)
+	_mat.set_shader_parameter("vein_strength", p.vein_strength)
+	_mat.set_shader_parameter("vein_scale", p.vein_scale)
+	_mat.set_shader_parameter("vein_sharpness", p.vein_sharpness)
+	_mat.set_shader_parameter("threshold_line_strength", p.threshold_line_strength)
+
 	_build_chunks()
 	upload()
 

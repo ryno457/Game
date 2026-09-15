@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomePalette" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/biome_palette.gd" id="1_leu0u"]
+
+[resource]
+script = ExtResource("1_leu0u")
+display_name = "Biodome 01"
+col_pool = Color(0.02, 0.135, 0.13, 1)
+col_rough = Color(0.105, 0.18, 0.145, 1)
+col_ground = Color(0.14, 0.18, 0.185, 1)
+col_ridge = Color(0.56, 0.575, 0.545, 1)
+col_cliff = Color(0.085, 0.1, 0.12, 1)
+fog_tint = Color(0.014, 0.03, 0.042, 1)
+pool_glow = Color(0.16, 0.95, 0.83, 1)
+pool_glow_strength = 2.6
+vein_glow = Color(0.28, 0.93, 0.66, 1)
+vein_strength = 0.42
+vein_scale = 0.052
+vein_sharpness = 10.0
