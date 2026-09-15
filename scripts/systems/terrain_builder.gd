@@ -12,14 +12,14 @@ static func build(map: TerrainMap) -> Heightfield:
 	var hf := Heightfield.new(cfg)
 	var s := Vector2i(cfg.cells_x, cfg.cells_z)
 
+	var base: float = map.base_level if map.base_level >= 0.0 else cfg.neutral_height
 	for z in s.y:
 		for x in s.x:
 			var n := 0.0
 			for o in map.octaves:
 				n += _vnoise(x * o.x, z * o.x, map.noise_seed) * o.y
 			hf.heights[z * s.x + x] = clampf(
-				cfg.neutral_height + (n - 0.5) * map.amplitude,
-				cfg.clamp_min, cfg.clamp_max)
+				base + (n - 0.5) * map.amplitude, cfg.clamp_min, cfg.clamp_max)
 
 	for op in map.ops:
 		_apply(hf, op)

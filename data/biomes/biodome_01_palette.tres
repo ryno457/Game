@@ -5,14 +5,20 @@
 [resource]
 script = ExtResource("1_leu0u")
 display_name = "Biodome 01"
-col_pool = Color(0.02, 0.135, 0.13, 1)
-col_rough = Color(0.105, 0.18, 0.145, 1)
-col_ground = Color(0.14, 0.18, 0.185, 1)
-col_ridge = Color(0.56, 0.575, 0.545, 1)
-col_cliff = Color(0.085, 0.1, 0.12, 1)
-fog_tint = Color(0.014, 0.03, 0.042, 1)
+col_pool = Color(0.03, 0.165, 0.16, 1)
+col_rough = Color(0.185, 0.275, 0.215, 1)
+col_ground = Color(0.29, 0.355, 0.33, 1)
+col_ridge = Color(0.64, 0.655, 0.62, 1)
+col_cliff = Color(0.15, 0.17, 0.195, 1)
+fog_tint = Color(0.03, 0.055, 0.07, 1)
+void_below = 0.16
+grid_spacing_m = 10.0
+grid_colour = Color(0.55, 0.88, 0.95, 1)
+grid_strength = 0.13
 pool_glow = Color(0.16, 0.95, 0.83, 1)
 pool_glow_strength = 2.6
+pool_glow_alt = Color(0.78, 0.3, 0.96, 1)
+pool_alt_mix = 0.85
 vein_glow = Color(0.28, 0.93, 0.66, 1)
 vein_strength = 0.42
 vein_scale = 0.052

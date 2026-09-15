@@ -19,6 +19,13 @@ extends Resource
 
 @export_group("Base")
 @export var noise_seed: int = 20260913
+## Height the base noise sits around. Negative means "use the TerrainConfig's
+## neutral_height", which is what a continuous map wants.
+##
+## An ARCHIPELAGO map sets this far below the palette's `void_below`, so the
+## default state of the world is "no ground here" and every island is something
+## the ops list explicitly raised.
+@export var base_level: float = -1.0
 @export var amplitude: float = 0.30
 ## Each entry is (frequency, weight). Weights should sum to about 1.
 @export var octaves: Array[Vector2] = [

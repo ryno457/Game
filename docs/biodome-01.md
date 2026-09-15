@@ -261,3 +261,111 @@ to represent it. A colour-balance change is not worth that lie.
 
 **So the antialiasing and the terrain detail are unverified until the phone
 build runs.** That is what the three presets are for.
+
+---
+
+# Rebuild: peaks above a cloud deck
+
+> Replaces the valley described above. Same file, same tools, different map.
+
+The brief became two reference images: a top-down survey map of rounded
+plateaus joined by narrow necks, and a landscape phone UI. Three decisions
+came out of that, and they were yours, not mine:
+
+1. **Landscape**, matching the UI mockup.
+2. **Mass stays the only resource.** The mockup's SHIP PARTS and ESSENCE were
+   filler; the conservation rule is untouched.
+3. **Islands rather than a continuous valley** — and *clouds* underneath, not
+   space. These are peaks of a very high range, not a floating rock.
+
+## What changed in the map
+
+**The default state of the world is now "no ground here."** The base noise sits
+at 0.055, far below the palette's new `void_below` of 0.16, and every island is
+something the ops list explicitly raised. Ground below `void_below` is not drawn
+at all — `discard` in the fragment shader, not a clip plane, because the edge
+follows the heightfield and the cliff face above it has to keep rendering.
+
+`void_below` sits *under* `impassable_below` (0.26) deliberately. Between them
+is a rim of real-but-unwalkable ground — the cliff a plateau falls away over,
+which is what stops an island looking like a cut-out.
+
+| | |
+|---|---|
+| ground | 31.2% of the map; the rest is weather |
+| walkable | 76.5% of that ground |
+| cliff rim | 7.3% of the map, drawn but not walkable |
+| necks | 9–10 m of walkable width |
+
+**The route check is the one that matters.** Islands are only a design if you
+can get between them, and a neck the falloffs pinched shut would leave half the
+map unreachable with nothing else noticing. So the check builds a real
+`FlowField` from the far island and asserts every island — and the landing
+site — is reachable. It also measures each neck's walkable width, because a
+land bridge wide enough to walk around is not a chokepoint.
+
+## The cloud deck
+
+One plane under the map, one fragment program: four octaves of scrolling noise
+cut into billows by a coverage threshold, with a fake sun term from the noise
+gradient. Two layers shearing against each other at different speeds — a single
+scrolling field reads as a printed sheet being dragged sideways.
+
+Four octaves is more than anything else in this project pays for. It earns it:
+the deck is most of the screen in the gaps between peaks.
+
+It never casts shadows (a plane that size would fill the atlas by itself) and
+never receives GI.
+
+## Scatter: order is priority
+
+`Dressing.place` keeps **one shared `taken` list**, so each entry has to find
+room around everything placed before it. Spires were last and could place 9 of
+45 — not because the high ground was full, it had twice the area it needed, but
+because 380 pods and tendrils had already been strewn across it.
+
+Big and structural first, clutter last. The build now prints **legal square
+metres per rule** alongside the count, because a shortfall is otherwise
+indistinguishable between "the band is empty", "the clearance is too wide" and
+"the clusters landed badly".
+
+The rim band matters most: in the reference the roots and vines *are* the island
+edges, so tendrils and coral are banded into 0.18–0.42 rather than scattered
+over the tops. 94 props end up on the cliff edges.
+
+## The HUD
+
+Anchors only, no fixed screen sizes, so the same tree works on a 2400×1080 phone
+and on a tablet. Panels take the **edges** and the battlefield keeps the middle —
+which on a phone also keeps both thumbs off the part being looked at.
+
+Top bar (mass, capacity, explored) · corner map · centre alert and job bar ·
+right column (radar, then build tiles, scrolling) · bottom-left reforge ·
+bottom strip · bottom-right drone target.
+
+The corner map is **drawn, not rendered**. A second viewport and camera would
+cost a whole extra pass over the scene for a panel 300 px wide; this stretches
+the fog texture and stamps a dot per contact, which is a handful of draw calls
+and reads better at that size — a real top-down render of a 150 m map at 300 px
+is mush.
+
+The camera sits about 70° down, not flat. The reference survey map is drawn
+straight overhead and a camera copying it exactly would hide every silhouette in
+the game — arches, spires and machines all become circles.
+
+## Known wrong, not yet fixed
+
+- **Every island edge glows.** The pool glow keys off `impassable_below`, and
+  the new cliff rim occupies the same height band as a basin, so the rims light
+  up like the pools do. It happens to resemble the reference's glowing root
+  borders, which is why it is not a blocker — but it is an accident, not a
+  decision. The real fix is a **water mask**: a second channel in the height
+  texture marking which low ground is actually a pool, since "enclosed basin"
+  versus "outer edge" is a topological distinction a per-fragment shader cannot
+  make. Not built.
+- **The island tops still render dark in the Blender preview.** The palette was
+  brightened for open sky (it was written for ground lit from inside a cavern),
+  but the preview's exposure is not Godot's and the glowing rims dominate it.
+  The game may well look right where the preview does not — unverified.
+- **The preview's island edges are stair-stepped.** It drops whole quads at the
+  world edge; the game discards per fragment and will have a smooth edge.

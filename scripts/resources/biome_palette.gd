@@ -18,6 +18,25 @@ extends Resource
 @export var col_cliff: Color = Color(0.12, 0.14, 0.17)
 @export var fog_tint: Color = Color(0.02, 0.04, 0.06)
 
+@export_group("The edge of the world")
+## Ground below this is NOT DRAWN — the map becomes peaks of a high range
+## standing above a cloud deck rather than a continuous valley. Zero keeps the
+## ground continuous, which is what a normal map wants.
+##
+## Distinct from `impassable_below`, which is where units may not walk. This
+## sits lower, so between the two there is a rim of real-but-impassable ground:
+## the cliff edge a peak falls away over.
+@export_range(0.0, 0.5) var void_below: float = 0.0
+
+@export_group("Survey grid")
+## Metres between grid lines. Zero is off. A readability aid for judging
+## distance from a top-down camera, not decoration — and drawn with screen-space
+## derivatives so a line stays one pixel wide at any zoom.
+@export var grid_spacing_m: float = 0.0
+@export var grid_colour: Color = Color(0.55, 0.85, 0.92)
+@export_range(0.0, 1.0) var grid_strength: float = 0.18
+@export var grid_width_px: float = 1.4
+
 @export_group("Bioluminescence")
 ## The pools are the brightest thing on the map and the main fill light in a
 ## cavern with one weak sun. Emission, not albedo — they have to read through
@@ -26,6 +45,11 @@ extends Resource
 @export_range(0.0, 8.0) var pool_glow_strength: float = 2.4
 ## Filaments in the rock. Derived from the noise the shader already samples, so
 ## they cost arithmetic rather than another texture fetch.
+## A second pool colour. Which one a pool gets is decided by a very
+## low-frequency noise, so a map has teal water in one basin and violet in the
+## next rather than one uniform tint everywhere.
+@export var pool_glow_alt: Color = Color(0.72, 0.28, 0.95)
+@export_range(0.0, 1.0) var pool_alt_mix: float = 0.0
 @export var vein_glow: Color = Color(0.25, 0.92, 0.70)
 @export_range(0.0, 4.0) var vein_strength: float = 0.55
 @export var vein_scale: float = 0.055

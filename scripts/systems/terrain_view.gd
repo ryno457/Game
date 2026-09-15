@@ -62,6 +62,13 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("macro_strength", p.macro_strength)
 	_mat.set_shader_parameter("macro_scale", p.macro_scale)
 	_mat.set_shader_parameter("striation_strength", p.striation_strength)
+	_mat.set_shader_parameter("void_below", p.void_below)
+	_mat.set_shader_parameter("grid_spacing_m", p.grid_spacing_m)
+	_mat.set_shader_parameter("grid_colour", p.grid_colour)
+	_mat.set_shader_parameter("grid_strength", p.grid_strength)
+	_mat.set_shader_parameter("grid_width_px", p.grid_width_px)
+	_mat.set_shader_parameter("pool_glow_alt", p.pool_glow_alt)
+	_mat.set_shader_parameter("pool_alt_mix", p.pool_alt_mix)
 
 
 ## Scale the per-fragment surface work without rebuilding the palette. The

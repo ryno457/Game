@@ -29,11 +29,29 @@ uniform vec3 fog_tint : source_color = vec3(0.05, 0.06, 0.10);
 // pools are most of the fill light.
 uniform vec3 pool_glow : source_color = vec3(0.18, 0.94, 0.82);
 uniform float pool_glow_strength = 0.0;
+uniform vec3 pool_glow_alt : source_color = vec3(0.72, 0.28, 0.95);
+uniform float pool_alt_mix = 0.0;
 uniform vec3 vein_glow : source_color = vec3(0.25, 0.92, 0.70);
 uniform float vein_strength = 0.0;
 uniform float vein_scale = 0.055;
 uniform float vein_sharpness = 9.0;
 uniform float threshold_line_strength = 0.85;
+
+// THE EDGE OF THE WORLD. Ground below this height is not drawn at all, so the
+// map reads as peaks of a very high range standing above a cloud sea rather
+// than as a continuous valley floor. Everything below it is cloud.
+//
+// Distinct from `impassable_below`, which is a GAMEPLAY threshold (units may
+// not walk there). This one is purely "is there ground here", and it sits
+// lower, so a shoreline still exists between the two.
+uniform float void_below = 0.0;
+
+// Survey grid, as in the reference map. Off by default; it is a readability
+// aid for judging distance on a top-down camera, not decoration.
+uniform float grid_spacing_m = 0.0;
+uniform vec3 grid_colour : source_color = vec3(0.55, 0.85, 0.92);
+uniform float grid_strength = 0.18;
+uniform float grid_width_px = 1.4;
 
 // Surface detail. There are no textures in this project — no image files, no
 // UVs on any mesh — so "higher quality ground" means more procedural surface,
@@ -122,6 +140,15 @@ void vertex() {
 }
 
 void fragment() {
+	// Nothing below the world edge. discard rather than a clip plane because
+	// the edge follows the heightfield, which is not a plane — and because the
+	// cliff face above it has to keep rendering, which a clip would cut too.
+	//
+	// discard costs early-Z on a tile-based GPU, so it is OFF unless a map
+	// actually asks for it: void_below stays 0 for a continuous map.
+	if (void_below > 0.0 && v_h < void_below) {
+		discard;
+	}
 	vec3 n = normalize(v_normal_w);
 
 	// Surface detail, faded out with distance. Two reasons for the fade, and
@@ -192,7 +219,15 @@ void fragment() {
 		float depth = clamp((impassable_below - v_h) / max(0.001, impassable_below), 0.0, 1.0);
 		float shore = smoothstep(-0.03, 0.05, impassable_below - v_h);
 		float ripple = 0.85 + 0.30 * fbm(v_world.xz * 0.55 + vec2(TIME * 0.05, 0.0));
-		emit += pool_glow * pool_glow_strength * shore * (0.25 + 0.75 * depth) * ripple;
+		// Which colour this basin is. One very low-frequency field, so a whole
+		// pool takes one tint and the next one over takes the other, instead of
+		// the two marbling together inside a single body of water.
+		vec3 water = pool_glow;
+		if (pool_alt_mix > 0.0) {
+			float pick = smoothstep(0.42, 0.58, fbm(v_world.xz * 0.011 + 41.7));
+			water = mix(pool_glow, pool_glow_alt, pick * pool_alt_mix);
+		}
+		emit += water * pool_glow_strength * shore * (0.25 + 0.75 * depth) * ripple;
 	}
 
 	// The passability line. A severed trench must be unmistakable at arm's
@@ -205,6 +240,17 @@ void fragment() {
 	// The glow is fogged too — unexplored pools must not give the map away.
 	float seen = clamp(textureLod(fog_map, v_world.xz / field_size_m, 0.0).r, 0.0, 1.0);
 	base = mix(fog_tint, base, seen);
+
+	// Survey grid. Screen-space derivatives keep the line one pixel wide at any
+	// zoom, which is the whole reason it is drawn here and not as a texture —
+	// there is no texture in this project to draw it into.
+	if (grid_spacing_m > 0.0) {
+		vec2 g = v_world.xz / grid_spacing_m;
+		vec2 w = fwidth(g) * grid_width_px;
+		vec2 lines = abs(fract(g - 0.5) - 0.5) / max(w, vec2(0.0001));
+		float line = 1.0 - min(min(lines.x, lines.y), 1.0);
+		base = mix(base, grid_colour, line * grid_strength);
+	}
 
 	ALBEDO = base;
 	EMISSION = emit * seen;

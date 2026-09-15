@@ -50,9 +50,20 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 mesh = bpy.data.meshes.new("biodome")
 obj = bpy.data.objects.new("biodome", mesh)
 bpy.context.collection.objects.link(obj)
+VOID = meta.get("void_below", 0.0)
 verts = [(x, z, heights[z * CX + x] * HS) for z in range(CZ) for x in range(CX)]
-faces = [(z * CX + x, z * CX + x + 1, (z + 1) * CX + x + 1, (z + 1) * CX + x)
-         for z in range(CZ - 1) for x in range(CX - 1)]
+# The world edge. Godot's shader discards these fragments; here the faces are
+# simply never built, which gives the same silhouette and costs less to render.
+# A quad survives only if all four corners are real ground, so the islands come
+# out with the same ragged rim the game draws.
+faces = []
+for z in range(CZ - 1):
+    for x in range(CX - 1):
+        quad = (z * CX + x, z * CX + x + 1, (z + 1) * CX + x + 1, (z + 1) * CX + x)
+        if VOID > 0.0 and any(heights[i] < VOID for i in quad):
+            continue
+        faces.append(quad)
+print("PY: %d of %d quads are ground" % (len(faces), (CX - 1) * (CZ - 1)))
 mesh.from_pydata(verts, [], faces)
 mesh.update()
 mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
@@ -120,6 +131,38 @@ nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 mesh.materials.append(gmat)
 
+# --- the weather ------------------------------------------------------------
+# The peaks stand over a cloud deck, not over space. One plane with a noise
+# material: the game does the same thing in a fragment shader, and the point of
+# this render is the silhouette of the range against it.
+cl = meta.get("clouds")
+if cl:
+    bpy.ops.mesh.primitive_plane_add(size=cl["extent_m"] * 2.0)
+    deck = bpy.context.object
+    deck.name = "cloud_sea"
+    deck.location = (CX * 0.5, CZ * 0.5, cl["height_m"])
+    cmat = bpy.data.materials.new("cloud")
+    cmat.use_nodes = True
+    cnt = cmat.node_tree
+    cb = cnt.nodes["Principled BSDF"]
+    cb.inputs["Roughness"].default_value = 1.0
+    noise = cnt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = cl["scale"] * 900.0
+    noise.inputs["Detail"].default_value = 6.0
+    noise.inputs["Roughness"].default_value = 0.62
+    ramp = cnt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].position = max(0.0, cl["coverage"] - cl["softness"])
+    ramp.color_ramp.elements[0].color = rgb(cl["deep"])
+    ramp.color_ramp.elements[1].position = min(1.0, cl["coverage"] + cl["softness"])
+    ramp.color_ramp.elements[1].color = rgb(cl["lit"])
+    cnt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    cnt.links.new(ramp.outputs["Color"], cb.inputs["Base Color"])
+    # A little emission so the deck reads as bright weather lit from above
+    # rather than as a grey floor in shadow.
+    cnt.links.new(ramp.outputs["Color"], cb.inputs["Emission Color"])
+    cb.inputs["Emission Strength"].default_value = 0.30
+    deck.data.materials.append(cmat)
+
 # --- the dressing -----------------------------------------------------------
 # Imported once and linked, so 230 props cost 230 object headers and six
 # meshes rather than 230 copies of the geometry.
@@ -164,7 +207,7 @@ print("PY: placed %d props" % placed)
 # --- light it like the game -------------------------------------------------
 # One weak, low sun and a dark sky. Everything else in this image is alive.
 sun_data = bpy.data.lights.new("sun", 'SUN')
-sun_data.energy = 2.1
+sun_data.energy = 3.2
 sun_data.angle = math.radians(3.0)
 sun_data.color = (0.62, 0.78, 0.95)
 sun = bpy.data.objects.new("sun", sun_data)
@@ -176,7 +219,7 @@ bpy.context.scene.world = world
 world.use_nodes = True
 bg = world.node_tree.nodes["Background"]
 bg.inputs["Color"].default_value = (0.012, 0.045, 0.055, 1.0)
-bg.inputs["Strength"].default_value = 0.55
+bg.inputs["Strength"].default_value = 1.1
 
 sc = bpy.context.scene
 cycles_cpu(sc, 64)
@@ -204,6 +247,11 @@ def shoot(name, loc, look_at, res=(1280, 800), lens=38.0, ortho=None):
 
 
 land = meta["landing"]
+# Straight down, as the reference survey map is drawn. This is the view that
+# shows whether the ISLANDS read — which is the whole question this map change
+# was asking.
+shoot("survey", (CX * 0.5, CZ * 0.5 - 0.01, 200.0), (CX * 0.5, CZ * 0.5, 0.0),
+      res=(1400, 1050), ortho=CX * 1.05)
 # Eye level, looking down the pale path from just behind the landing site —
 # roughly the RTS camera the game uses, so this is what the player will see.
 shoot("path", (land[0] - 22.0, land[1] - 16.0, 26.0), (land[0] + 44.0, land[1] + 16.0, 2.0))

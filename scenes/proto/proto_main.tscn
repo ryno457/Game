@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scenes/proto/proto_main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/systems/terrain_view.gd" id="2_terrain"]
+[ext_resource type="Script" path="res://scripts/systems/mini_map.gd" id="3_minimap"]
 
 [node name="Proto" type="Node3D"]
 script = ExtResource("1_main")
@@ -30,81 +31,226 @@ far = 400.0
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
-[node name="Panel" type="VBoxContainer" parent="HUD"]
-offset_left = 14.0
-offset_top = 14.0
-offset_right = 700.0
-offset_bottom = 420.0
-theme_override_constants/separation = 10
+; Landscape layout, following the supplied mockup. Anchors only — no fixed
+; screen sizes — so the same tree works on a 2400x1080 phone and a tablet.
+;
+; Panels live on the EDGES and the battlefield keeps the middle. On a phone
+; that also keeps both thumbs off the part of the screen being looked at.
 
-[node name="Readout" type="Label" parent="HUD/Panel"]
+[node name="TopBar" type="PanelContainer" parent="HUD"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 96.0
+grow_horizontal = 2
+
+[node name="Row" type="HBoxContainer" parent="HUD/TopBar"]
 layout_mode = 2
-text = "…"
+theme_override_constants/separation = 26
+
+[node name="Mass" type="VBoxContainer" parent="HUD/TopBar/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(430, 0)
+theme_override_constants/separation = 2
+
+[node name="Label" type="Label" parent="HUD/TopBar/Row/Mass"]
+layout_mode = 2
+text = "MODULE MASS"
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.55, 0.95, 0.88, 1)
+
+[node name="Bar" type="ProgressBar" parent="HUD/TopBar/Row/Mass"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 16)
+show_percentage = false
+
+[node name="Seen" type="Label" parent="HUD/TopBar/Row/Mass"]
+layout_mode = 2
+text = "VISIBLE AREA"
+theme_override_font_sizes/font_size = 19
+theme_override_colors/font_color = Color(0.62, 0.78, 0.86, 1)
+
+[node name="Mode" type="Label" parent="HUD/TopBar/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "EXPLORE"
+theme_override_font_sizes/font_size = 26
+theme_override_colors/font_color = Color(0.65, 1, 0.92, 1)
+
+[node name="Tally" type="Label" parent="HUD/TopBar/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(430, 0)
+horizontal_alignment = 2
+vertical_alignment = 1
+text = "—"
+theme_override_font_sizes/font_size = 21
+theme_override_colors/font_color = Color(0.72, 0.86, 0.95, 1)
+
+[node name="Mini" type="Control" parent="HUD"]
+anchors_preset = 0
+offset_left = 26.0
+offset_top = 112.0
+offset_right = 326.0
+offset_bottom = 336.0
+script = ExtResource("3_minimap")
+
+[node name="Alert" type="VBoxContainer" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -420.0
+offset_top = 104.0
+offset_right = 420.0
+offset_bottom = 208.0
+grow_horizontal = 2
+theme_override_constants/separation = 6
+
+[node name="Line" type="Label" parent="HUD/Alert"]
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2
 theme_override_font_sizes/font_size = 23
-theme_override_colors/font_color = Color(0.81, 0.91, 1, 1)
+theme_override_colors/font_color = Color(1, 0.45, 0.42, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 8
 
-[node name="Toast" type="Label" parent="HUD/Panel"]
+[node name="Job" type="ProgressBar" parent="HUD/Alert"]
+visible = false
 layout_mode = 2
+custom_minimum_size = Vector2(0, 20)
+show_percentage = false
+
+[node name="Toast" type="Label" parent="HUD/Alert"]
+layout_mode = 2
+horizontal_alignment = 1
 autowrap_mode = 2
 theme_override_font_sizes/font_size = 21
 theme_override_colors/font_color = Color(1, 0.85, 0.45, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 8
 
-[node name="Perf" type="PanelContainer" parent="HUD"]
-visible = false
-anchors_preset = 1
+[node name="Side" type="VBoxContainer" parent="HUD"]
+anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -560.0
-offset_top = 14.0
-offset_right = -14.0
-offset_bottom = 470.0
+anchor_bottom = 1.0
+offset_left = -392.0
+offset_top = 112.0
+offset_right = -26.0
+offset_bottom = -132.0
 grow_horizontal = 0
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="Radar" type="PanelContainer" parent="HUD/Side"]
+layout_mode = 2
+
+[node name="Text" type="Label" parent="HUD/Side/Radar"]
+layout_mode = 2
+text = "RADAR"
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.55, 0.95, 0.88, 1)
+
+[node name="BuildScroll" type="ScrollContainer" parent="HUD/Side"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="Build" type="GridContainer" parent="HUD/Side/BuildScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 2
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
+
+[node name="Forge" type="PanelContainer" parent="HUD"]
+visible = false
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 26.0
+offset_top = -300.0
+offset_right = 470.0
+offset_bottom = -132.0
+grow_vertical = 0
+
+[node name="Col" type="VBoxContainer" parent="HUD/Forge"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="Label" parent="HUD/Forge/Col"]
+layout_mode = 2
+text = "REFORGE"
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(1, 0.86, 0.35, 1)
+
+[node name="Scroll" type="ScrollContainer" parent="HUD/Forge/Col"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 2
+vertical_scroll_mode = 0
+
+[node name="Row" type="HBoxContainer" parent="HUD/Forge/Col/Scroll"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Strip" type="PanelContainer" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -330.0
+offset_top = -104.0
+offset_right = 330.0
+offset_bottom = -26.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Text" type="Label" parent="HUD/Strip"]
+layout_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "MASS POOL"
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.72, 0.95, 1, 1)
+
+[node name="Target" type="PanelContainer" parent="HUD"]
+visible = false
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -392.0
+offset_top = -122.0
+offset_right = -26.0
+offset_bottom = -26.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="Text" type="Label" parent="HUD/Target"]
+layout_mode = 2
+text = "—"
+theme_override_font_sizes/font_size = 19
+theme_override_colors/font_color = Color(0.85, 0.92, 1, 1)
+
+[node name="Perf" type="PanelContainer" parent="HUD"]
+visible = false
+anchors_preset = 0
+offset_left = 26.0
+offset_top = 352.0
+offset_right = 600.0
+offset_bottom = 810.0
 
 [node name="Readout" type="Label" parent="HUD/Perf"]
 layout_mode = 2
 text = "…"
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 19
 theme_override_colors/font_color = Color(0.7, 1, 0.88, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 8
-
-[node name="ForgeScroll" type="ScrollContainer" parent="HUD"]
-visible = false
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 14.0
-offset_top = -232.0
-offset_right = -14.0
-offset_bottom = -136.0
-grow_horizontal = 2
-grow_vertical = 0
-horizontal_scroll_mode = 2
-vertical_scroll_mode = 0
-
-[node name="Forge" type="HBoxContainer" parent="HUD/ForgeScroll"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="BuildScroll" type="ScrollContainer" parent="HUD"]
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 14.0
-offset_top = -128.0
-offset_right = -14.0
-offset_bottom = -20.0
-grow_horizontal = 2
-grow_vertical = 0
-horizontal_scroll_mode = 2
-vertical_scroll_mode = 0
-
-[node name="Build" type="HBoxContainer" parent="HUD/BuildScroll"]
-layout_mode = 2
-theme_override_constants/separation = 10

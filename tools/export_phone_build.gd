@@ -127,16 +127,31 @@ HOW TO RUN IT
   4. Wait for the first import — a few hundred files, about a minute.
   5. Press Play. It opens straight into the prototype.
 
+THIS BUILD IS LANDSCAPE. Turn the phone sideways before you open it.
+
+WHAT YOU ARE LOOKING AT
+  The map is a HIGH MOUNTAIN RANGE seen from almost overhead: five plateaus
+  standing above a cloud deck, joined by narrow necks. Everything outside a
+  plateau is weather, not ground. The necks are nine or ten metres wide —
+  they are chokepoints on purpose.
+
+  Top bar      module mass and how much of the map you have uncovered
+  Top left     the corner map: fog, contacts, and where the camera is
+  Centre       alerts, and the bar for whatever the drone is freeing
+  Right        radar, then the build tiles (scrolls vertically)
+  Bottom left  the reforge panel, when machines are selected
+  Bottom right what the drone is working on
+
 WHAT TO DO
   Drag         pan the camera
   Tap ground   move the module
   Tap a machine    select it; tap more to add them to the selection
   Tap empty ground clears the selection
   TRENCH       toggle, then drag to dig. Digging costs no mass, only time.
-  Build bar    scrolls sideways. Name, role, mass cost.
-  Forge bar    appears above the build bar when something is selected.
-               It offers everything that pooled mass could become.
-               Two machines reach things one cannot.
+  Build tiles  right-hand column. Name, role, mass cost.
+  Reforge      bottom left, when something is selected. It offers everything
+               that pooled mass could become. Two machines reach things one
+               cannot.
   Tap a big debris piece  sends the drone to free it. THIS STARTS A FIGHT.
   QUALITY      cycles High -> Medium -> Low, and RESTARTS the timings.
 

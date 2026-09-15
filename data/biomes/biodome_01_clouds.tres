@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="CloudConfig" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/cloud_config.gd" id="1_gwdcj"]
+
+[resource]
+script = ExtResource("1_gwdcj")
+display_name = "Biodome 01"
+height_m = -14.08
+lit_colour = Color(0.8, 0.9, 0.99, 1)
+shadow_colour = Color(0.16, 0.26, 0.4, 1)
+deep_colour = Color(0.035, 0.07, 0.125, 1)
+horizon_colour = Color(0.26, 0.5, 0.6, 1)
+cloud_scale = 0.013
+coverage = 0.46
+softness = 0.28
+scroll_mps = 0.55
+relief = 0.6
+fade_start_m = 190.0
+fade_end_m = 430.0

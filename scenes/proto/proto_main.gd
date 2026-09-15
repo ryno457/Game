@@ -28,6 +28,7 @@ const MERGE_RULES := "res://data/gameplay/merge.tres"
 ## budget and Medium holds it, the cost was 4x MSAA; if Medium misses too, it
 ## is the terrain shader or the prop count. Two presets would only say "the
 ## expensive one is expensive".
+const CLOUDS := "res://data/biomes/biodome_01_clouds.tres"
 const QUALITY := ["res://data/gameplay/quality_high.tres",
 	"res://data/gameplay/quality_medium.tres",
 	"res://data/gameplay/quality_low.tres"]
@@ -45,13 +46,24 @@ const BUCKET_M := 48.0
 @onready var sun: DirectionalLight3D = $Sun
 @onready var world_env: WorldEnvironment = $WorldEnvironment
 @onready var camera: Camera3D = $CameraRig/Camera3D
-@onready var readout: Label = $HUD/Panel/Readout
-@onready var toast: Label = $HUD/Panel/Toast
-@onready var build_bar: HBoxContainer = $HUD/BuildScroll/Build
+@onready var mass_label: Label = $HUD/TopBar/Row/Mass/Label
+@onready var mass_bar: ProgressBar = $HUD/TopBar/Row/Mass/Bar
+@onready var seen_label: Label = $HUD/TopBar/Row/Mass/Seen
+@onready var mode_label: Label = $HUD/TopBar/Row/Mode
+@onready var tally_label: Label = $HUD/TopBar/Row/Tally
+@onready var mini: MiniMap = $HUD/Mini
+@onready var alert_label: Label = $HUD/Alert/Line
+@onready var job_bar: ProgressBar = $HUD/Alert/Job
+@onready var toast: Label = $HUD/Alert/Toast
+@onready var strip_label: Label = $HUD/Strip/Text
+@onready var radar_label: Label = $HUD/Side/Radar/Text
+@onready var target_panel: Control = $HUD/Target
+@onready var target_label: Label = $HUD/Target/Text
+@onready var build_bar: GridContainer = $HUD/Side/BuildScroll/Build
 @onready var perf_label: Label = $HUD/Perf/Readout
 @onready var perf_panel: Control = $HUD/Perf
-@onready var forge_panel: Control = $HUD/ForgeScroll
-@onready var forge_bar: HBoxContainer = $HUD/ForgeScroll/Forge
+@onready var forge_panel: Control = $HUD/Forge
+@onready var forge_bar: HBoxContainer = $HUD/Forge/Col/Scroll/Row
 
 var field: Heightfield
 var fog: FogOfWar
@@ -135,6 +147,10 @@ func _ready() -> void:
 	terrain.setup(field, fog, load(TERRAIN_SHADER))
 	palette = load(PALETTE)
 	terrain.apply_palette(palette)
+	# The weather under the map. Added before anything else so it is the first
+	# opaque thing behind the terrain in the depth sort.
+	add_child(CloudSea.build(load(CLOUDS)))
+	mini.bind(fog, Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m))
 
 	mass = MassPool.new(load(MASS_CFG))
 	mass.rejected.connect(func(why): _say(why))
@@ -362,15 +378,15 @@ func _instancer(mesh: Mesh, cap: int) -> MultiMeshInstance3D:
 	return mmi
 
 
-## Thumb-sized: the bar scrolls horizontally now that the machine catalogue
-## shares it with the legacy options, so a button is allowed to take real width
-## rather than being squeezed to fit everything on one screen.
-const BUTTON_MIN := Vector2(168.0, 88.0)
+## Thumb-sized tiles in the right-hand column, as in the mockup. The column
+## scrolls vertically, so the catalogue can grow without the tiles shrinking.
+## Two columns inside a 366-wide side panel, with a 10 px gutter.
+const BUTTON_MIN := Vector2(174.0, 92.0)
 
 
 func _build_menu() -> void:
 	var dig := Button.new()
-	dig.text = "TRENCH"
+	dig.text = "TRENCH\nfree"
 	dig.toggle_mode = true
 	dig.custom_minimum_size = BUTTON_MIN
 	dig.add_theme_font_size_override("font_size", 19)
@@ -1316,29 +1332,118 @@ func _sync_aliens() -> void:
 
 
 func _hud(delta: float) -> void:
-	var job := "idle"
-	match drone_state:
-		"outbound": job = "flying out"
-		"returning": job = "hauling %.0f" % drone_cargo
-		"working":
-			job = "freeing"
-			if _is_large_job(drone_target):
-				job = "freeing %.0f%%" % (free_progress / tune.large_free_s * 100.0)
-	readout.text = "\n".join([
-		"MASS   %.0f   (reserve %.0f)" % [mass.mass, mass.cfg.reserve_mass],
-		"MODULE x%.2f" % _module_scale,
-		"DRONE  %s" % job,
-		"BUILT  %d%s   HOSTILES %d   WRECKS %d"
-			% [built.size(), _assembly_note(), aliens.size(), wrecks.size()],
-		"FORGE  %s" % _forge_note(),
-		"SEEN   %.0f%%" % (fog.explored_fraction() * 100.0),
-		"ATTACK %s" % ("INCOMING" if waves.is_active() else "quiet"),
-		"MODE   %s" % ("TRENCH — drag to dig" if trenching else "move"),
-	])
+	# The mockup's layout: the module's mass along the top, the map in the
+	# corner, the radar and the build tiles down the right, what the drone is
+	# doing in the middle, and one strip along the bottom. Panels on the edges,
+	# battlefield in the middle — which on a phone also keeps both thumbs off
+	# the part of the screen being looked at.
+	mass_label.text = "MODULE MASS   %.0f / %.0f" % [mass.mass, mass.cfg.max_mass]
+	mass_bar.max_value = mass.cfg.max_mass
+	mass_bar.value = mass.mass
+	seen_label.text = "VISIBLE AREA   %.0f%%      MODULE x%.2f" \
+		% [fog.explored_fraction() * 100.0, _module_scale]
+
+	mode_label.text = "TRENCH — DRAG TO DIG" if trenching else "EXPLORE"
+	mode_label.add_theme_color_override("font_color",
+		Color(1.0, 0.78, 0.35) if trenching else Color(0.65, 1.0, 0.92))
+
+	tally_label.text = "BUILT %d%s      HOSTILES %d      WRECKS %d" \
+		% [built.size(), _assembly_note(), aliens.size(), wrecks.size()]
+
+	strip_label.text = "MASS POOL  %.0f        RESERVE  %.0f        FORGE  %s" \
+		% [mass.mass, mass.cfg.reserve_mass, _forge_note()]
+
+	# Radar: what the module can currently see, which is the thing the reveal
+	# radius on a Watcher is actually buying.
+	var reveal := 0
+	for u in built:
+		if u.spec.reveal_m > 0.0:
+			reveal += 1
+	radar_label.text = "RADAR\ncontacts %d    debris %d\n%d machines watching" \
+		% [aliens.size(), _loose_debris(), reveal]
+
+	_drone_panel()
+	_alert_line()
+
+	# One repaint a frame is cheap at this size, and the blips move every frame.
+	mini.blips = _blips()
+	mini.module_pos = module_pos
+	mini.view_centre = Vector2(rig.position.x, rig.position.z)
+	mini.view_radius = 34.0
+	mini.queue_redraw()
+
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		if _toast_t <= 0.0:
 			toast.text = ""
+
+
+## The target panel, bottom right: what the drone is on and how long it has.
+func _drone_panel() -> void:
+	if drone_target < 0 and drone_state == "idle":
+		target_panel.visible = false
+		return
+	target_panel.visible = true
+	var what := "wreck"
+	var left := 0.0
+	if drone_target >= 0:
+		var large := _is_large_job(drone_target)
+		what = "large debris" if large else "debris"
+		var need: float = tune.large_free_s if large else tune.small_free_s
+		left = maxf(0.0, need - free_progress)
+	match drone_state:
+		"outbound":
+			target_label.text = "TARGET  %s\nflying out" % what
+		"working":
+			target_label.text = "TARGET  %s\nfreeing  %.0f%%   %.0fs left" \
+				% [what, free_progress / maxf(0.01, left + free_progress) * 100.0, left]
+		"returning":
+			target_label.text = "HAULING  %.0f mass\nback to the module" % drone_cargo
+		_:
+			target_label.text = "DRONE  idle"
+
+
+## The alert line and the job bar, centre screen — the one place the player is
+## already looking when something goes wrong.
+func _alert_line() -> void:
+	if waves.is_active():
+		alert_label.text = "CRITICAL — freeing that piece has woken them. Hold."
+		job_bar.visible = _is_large_job(drone_target)
+		if job_bar.visible:
+			job_bar.max_value = tune.large_free_s
+			job_bar.value = free_progress
+	else:
+		alert_label.text = ""
+		job_bar.visible = false
+
+
+func _loose_debris() -> int:
+	var n := 0
+	for d in debris:
+		if not d.taken:
+			n += 1
+	return n
+
+
+## Everything the corner map draws. Deliberately plain dictionaries: the
+## minimap knows nothing about units, debris or wrecks — it draws dots.
+func _blips() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for d in debris:
+		if d.taken or not fog.level_at(d.pos) > 0.0:
+			continue
+		out.append({"pos": d.pos, "size": 3.2 if d.large else 2.0,
+			"colour": Color(1.0, 0.62, 0.28) if d.large else Color(0.85, 0.74, 0.42)})
+	for w in wrecks:
+		out.append({"pos": w.pos, "size": 2.4, "colour": Color(0.60, 0.62, 0.70)})
+	for u in built:
+		out.append({"pos": u.pos, "size": 2.6, "colour": u.spec.colour})
+	for a in aliens:
+		if fog.is_visible(a.pos):
+			out.append({"pos": a.pos, "size": 2.4, "colour": Color(1.0, 0.36, 0.45)})
+	out.append({"pos": drone_pos, "size": 2.6, "colour": Color(0.55, 0.85, 1.0)})
+	out.append({"pos": module_pos, "size": 5.0, "colour": Color(0.35, 1.0, 0.86)})
+	return out
 
 
 ## What the build queue is doing, for the one line of HUD it deserves.
@@ -1369,10 +1474,19 @@ func _say(text: String) -> void:
 	_toast_t = 3.0
 
 
+## Steep, but not straight down.
+##
+## The reference survey map is drawn flat overhead, and a camera that copies it
+## exactly would hide every silhouette in the game: the arches, the spires and
+## the machines all become circles. This sits about seventy degrees down, which
+## reads as the survey map while leaving the props something to be seen by.
+##
+## Landscape, so the useful axis is width: the camera sits further back and the
+## side panels take the edges rather than the battlefield.
 func _frame_camera() -> void:
-	camera.position = Vector3(0.0, 26.0, 22.0)
+	camera.position = Vector3(0.0, 48.0, 17.0)
 	camera.look_at(rig.global_position, Vector3.UP)
-	camera.fov = 62.0
+	camera.fov = 58.0
 
 
 # --- input -------------------------------------------------------------------
