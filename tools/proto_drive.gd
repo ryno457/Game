@@ -206,6 +206,42 @@ func _process(_delta: float) -> bool:
 	_ok("the module survives the fight it started", scene.mass.mass > 0.0,
 		"%.0f mass left (was %.0f when the piece came free)" % [scene.mass.mass, banked])
 
+	# --- presentation and instrumentation ------------------------------------
+	# Everything above drives step() only. This is the first thing that touches
+	# _present(): the scenery MultiMeshes, the fog cull, the convoy bodies and
+	# the frame probe. Headless has no renderer, but every one of these is a
+	# GDScript path that can throw, and a phone build that crashes on frame one
+	# is not something to discover on the phone.
+	_ok("the biodome grew", scene._scenery_total > 0,
+		"%d props on the map" % scene._scenery_total)
+	for i in 30:
+		scene._present(DT)
+	_ok("presentation runs", scene.probe.frames == 30,
+		"%d frames sampled" % scene.probe.frames)
+	_ok("scenery is culled to what has been explored",
+		scene._scenery_drawn > 0 and scene._scenery_drawn < scene._scenery_total,
+		"%d of %d drawn" % [scene._scenery_drawn, scene._scenery_total])
+
+	var before_units: int = scene.built.size()
+	scene._stress()
+	for i in 10:
+		scene.step(DT)
+		scene._present(DT)
+	_ok("the test load actually loads the frame",
+		scene.built.size() > before_units and scene.aliens.size() >= 60,
+		"%d machines, %d hostiles" % [scene.built.size(), scene.aliens.size()])
+	_ok("and it opens the map so the props are drawn",
+		scene._scenery_drawn > 0, "%d props drawn" % scene._scenery_drawn)
+
+	scene.perf_panel.visible = true
+	scene._perf_readout()
+	_ok("the frame-time card renders", scene.perf_label.text.contains("VERDICT"),
+		"%d characters" % scene.perf_label.text.length())
+	# Under the soak floor the card must say so rather than pass a verdict on
+	# forty frames of headless play.
+	_ok("no verdict before there is data", not scene.probe.verdict().ready,
+		"%.0fs of %.0fs" % [scene.probe.elapsed, FrameProbe.MIN_SOAK_S])
+
 	print("")
 	if _failed == 0:
 		print("LOOP TURNS — collect, grow, build, commit, hold, bank.")

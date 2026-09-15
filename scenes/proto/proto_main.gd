@@ -39,6 +39,8 @@ const BUCKET_M := 48.0
 @onready var readout: Label = $HUD/Panel/Readout
 @onready var toast: Label = $HUD/Panel/Toast
 @onready var build_bar: HBoxContainer = $HUD/BuildScroll/Build
+@onready var perf_label: Label = $HUD/Perf/Readout
+@onready var perf_panel: Control = $HUD/Perf
 @onready var forge_panel: Control = $HUD/ForgeScroll
 @onready var forge_bar: HBoxContainer = $HUD/ForgeScroll/Forge
 
@@ -88,6 +90,12 @@ var _module_scale := 1.0
 var _toast_t := 0.0
 var _fog_cd := 0.0
 var _scenery_dirty := true
+## Frame-time instrumentation. Always sampling, shown only when asked — the
+## numbers have to cover the whole session, not just the bit after the player
+## remembered to open the panel.
+var probe := FrameProbe.new()
+var _scenery_drawn := 0
+var _scenery_total := 0
 var _forge_sig := ""
 var trenching := false
 var _rng := RandomNumberGenerator.new()
@@ -141,6 +149,8 @@ func _ready() -> void:
 	module.scale = Vector3.ONE * _module_scale
 	rig.position = Vector3(module_pos.x, 0.0, module_pos.y)
 	_frame_camera()
+	probe.reset()
+	perf_panel.visible = false
 	_say("A module. A drone. Debris. Start there.")
 
 
@@ -261,6 +271,7 @@ func _dress(landing: Vector2) -> void:
 				if entry.casts_shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 			add_child(mmi)
+			_scenery_total += group.size()
 			_scenery.append({"mmi": mmi, "spots": group})
 
 
@@ -270,6 +281,7 @@ func _dress(landing: Vector2) -> void:
 ## on the map when you walk away, the way the ground under it does — it is only
 ## live contacts that vanish when nothing is watching.
 func _cull_scenery() -> void:
+	var drawn := 0
 	for group in _scenery:
 		var mmi: MultiMeshInstance3D = group.mmi
 		var n := 0
@@ -280,6 +292,8 @@ func _cull_scenery() -> void:
 			mmi.multimesh.set_instance_transform(n, tr)
 			n += 1
 		mmi.multimesh.visible_instance_count = n
+		drawn += n
+	_scenery_drawn = drawn
 
 
 func _make_instancers() -> void:
@@ -357,6 +371,27 @@ func _build_menu() -> void:
 		b.pressed.connect(_try_build.bind(opt))
 		build_bar.add_child(b)
 
+	# Instrumentation, last so the gameplay buttons come first. This is a test
+	# build; on a phone the only way to report a frame rate is to put it on the
+	# screen and let the tester photograph it.
+	var perf := Button.new()
+	perf.text = "PERF"
+	perf.toggle_mode = true
+	perf.custom_minimum_size = Vector2(110.0, BUTTON_MIN.y)
+	perf.add_theme_font_size_override("font_size", 18)
+	perf.toggled.connect(func(on):
+		perf_panel.visible = on
+		if on:
+			_perf_readout())
+	build_bar.add_child(perf)
+
+	var stress := Button.new()
+	stress.text = "TEST\nLOAD"
+	stress.custom_minimum_size = Vector2(110.0, BUTTON_MIN.y)
+	stress.add_theme_font_size_override("font_size", 18)
+	stress.pressed.connect(_stress)
+	build_bar.add_child(stress)
+
 
 ## The reforge bar. Appears only when something is selected, because a bar of
 ## dead buttons is worse than no bar on a phone.
@@ -416,6 +451,64 @@ func _refresh_forge_bar() -> void:
 	clear.add_theme_font_size_override("font_size", 18)
 	clear.pressed.connect(func(): selected.clear())
 	forge_bar.add_child(clear)
+
+
+## The frame-time card. See FrameProbe for why the criteria are fixed in code
+## rather than argued for after the first run on a device.
+func _perf_readout() -> void:
+	var lines := [
+		"FPS  %.0f   (%.1f ms)" % [probe.live_fps(), probe.live_ms()],
+		"p95  %.2f ms   mean %.2f" % [probe.session_p95(), probe.session_mean()],
+		"worst minute  %.2f ms" % probe.worst_minute_ms(),
+		"drift  x%.2f over %d min" % [probe.thermal_drift(), probe.minutes.size()],
+		"",
+		"draw %d   prims %.0fk   vram %.0f MB"
+			% [probe.draw_calls, probe.primitives / 1000.0, probe.video_mb],
+		"props %d of %d drawn   units %d   aliens %d"
+			% [_scenery_drawn, _scenery_total, built.size(), aliens.size()],
+		"soak %d:%02d" % [int(probe.elapsed) / 60, int(probe.elapsed) % 60],
+		"",
+	]
+	var v := probe.verdict()
+	if not v.ready:
+		lines.append("VERDICT — %s" % v.note)
+	else:
+		lines.append("VERDICT: %s" % ("PASS" if v.pass else "FAIL"))
+		for r in v.rows:
+			lines.append("  %s  %-16s %s"
+				% ["PASS" if r.pass else "FAIL", r.name, r.detail])
+	perf_label.text = "\n".join(lines)
+
+
+## Load the frame on purpose, so a worst case can be measured in a minute
+## instead of waited for.
+##
+## This INJECTS MASS FROM NOWHERE, which the conservation rule forbids — that
+## is why it says so on screen. It is instrumentation, not a game action, and
+## it is the only thing in the build that breaks that rule.
+func _stress() -> void:
+	var heaviest: BuildOption = null
+	for opt in options:
+		if heaviest == null or spec_for(opt).mass > spec_for(heaviest).mass:
+			heaviest = opt
+	if heaviest == null:
+		return
+	var want := 12
+	var cost := spec_for(heaviest).mass * want
+	mass.gain(cost)
+	for i in want:
+		var a := TAU * i / float(want)
+		_field(heaviest, spec_for(heaviest),
+			module_pos + Vector2(cos(a), sin(a)) * (7.0 + _module_scale))
+		mass.spend(spec_for(heaviest).mass)
+	_spawn_hostiles(60, 3.0)
+	fog.begin_frame()
+	for i in 24:
+		var a := TAU * i / 24.0
+		fog.reveal(module_pos + Vector2(cos(a), sin(a)) * 34.0, 22.0)
+	_scenery_dirty = true
+	_say("TEST LOAD — %d machines, 60 hostiles, %d mass injected from nowhere"
+		% [want, int(cost)])
 
 
 # --- the loop ----------------------------------------------------------------
@@ -1058,7 +1151,10 @@ func _present(delta: float) -> void:
 
 	terrain.upload()
 	fog.upload(delta)
+	probe.sample(delta)
 	_hud(delta)
+	if perf_panel.visible:
+		_perf_readout()
 
 
 ## Discs on the ground: amber under a selected machine, cyan at a rendezvous a

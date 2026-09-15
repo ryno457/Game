@@ -125,3 +125,53 @@ Two mistakes the first render caught that no headless check could have:
 - **The terrain still has its red debug line** at the impassable threshold. It
   is a readability aid, not art; `threshold_line_strength = 0` turns it off for
   screenshots.
+
+## Testing it on a phone
+
+```
+./tools/phone_build.sh
+```
+
+Four steps: assemble a self-contained project folder, import it *as its own
+project*, boot it for 240 frames of the real main scene, then zip it. The
+middle two are the point — assembling a folder is easy; proving it opens and
+runs before it reaches a phone is what saves a day-long round trip.
+
+**It is a project folder, not an APK.** This machine cannot build an APK at
+all: `dl.google.com` is blocked by the egress policy, so the Android SDK and
+apksigner are unreachable. The tester opens the folder in the Godot 4.7.2
+Android editor and presses play.
+
+`tools/export_phone_build.gd` leaves out `spikes/` (a second `project.godot`
+inside the first, which the phone would spend a minute importing for nothing),
+`tools/`, `docs/`, `tests/` and the old JS prototype, then checks that **every
+`res://` reference in every copied file still resolves** — 173 of them. That
+check exists because this project has already shipped a commit message claiming
+an export preset was included when `.gitignore` had quietly eaten it.
+
+### The frame-time card
+
+`PERF` on the build bar opens it. `FrameProbe` samples from the first frame
+whether the panel is open or not, because the numbers have to cover the whole
+session rather than the part after the tester remembered to look.
+
+Criteria, fixed in `frame_probe.gd` **before the build ever ran on a device**:
+
+| | budget | why |
+|---|---|---|
+| p95 frame time | ≤ 16.67 ms | 60fps |
+| worst full minute | ≤ 16.67 ms mean | the number a player feels in a long fight |
+| thermal drift | ≤ 1.25× | last minute against the first; a cold-phone number is not a number |
+
+No verdict is given under two minutes of play — a reading off thirty seconds of
+a cold device is worse than no reading.
+
+**Draw calls, primitives and VRAM are reported, not judged.** There is no
+defensible budget for them on this device that is not a guess, and inventing
+one would turn a diagnostic into a criterion nobody can argue with.
+
+`TEST LOAD` jams twelve of the heaviest machines and sixty hostiles onto the
+field and opens the fog, so the worst case can be measured in a minute rather
+than waited for. It injects mass from nowhere, which the conservation rule
+forbids — it says so on screen. It is the only thing in the build that breaks
+that rule, and it is instrumentation, not a game action.
