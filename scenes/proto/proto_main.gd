@@ -22,6 +22,15 @@ const LIGHT_CFG := "res://data/gameplay/lighting.tres"
 
 const MACHINE_RULES := "res://data/gameplay/machines.tres"
 const MERGE_RULES := "res://data/gameplay/merge.tres"
+## Two presets, so the phone test can MEASURE what the expensive one costs
+## instead of guessing. Not a settings menu — instrumentation.
+## Three rungs, not two, so a failure is DIAGNOSTIC. If High misses the frame
+## budget and Medium holds it, the cost was 4x MSAA; if Medium misses too, it
+## is the terrain shader or the prop count. Two presets would only say "the
+## expensive one is expensive".
+const QUALITY := ["res://data/gameplay/quality_high.tres",
+	"res://data/gameplay/quality_medium.tres",
+	"res://data/gameplay/quality_low.tres"]
 const PROTO_CFG := "res://data/gameplay/proto.tres"
 const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
 ## Scenery is bucketed into squares this big so the frustum can cull it. See
@@ -51,6 +60,9 @@ var waves: WaveDirector
 var options: Array[BuildOption] = []
 var rules: MachineRules
 var forge: MergeRules
+var palette: BiomePalette
+var quality: QualityConfig
+var _quality_slot := 0
 ## Resolved machine numbers, keyed by build-option id. Resolved once at load
 ## because a loadout is fixed: the parts a machine was built with are the parts
 ## it dies with. Everything in the sim reads these, never a part or a chassis.
@@ -121,7 +133,8 @@ func _ready() -> void:
 
 	fog = FogOfWar.new(Vector2i(cfg.cells_x, cfg.cells_z), cfg.cell_size_m)
 	terrain.setup(field, fog, load(TERRAIN_SHADER))
-	terrain.apply_palette(load(PALETTE))
+	palette = load(PALETTE)
+	terrain.apply_palette(palette)
 
 	mass = MassPool.new(load(MASS_CFG))
 	mass.rejected.connect(func(why): _say(why))
@@ -149,6 +162,9 @@ func _ready() -> void:
 	module.scale = Vector3.ONE * _module_scale
 	rig.position = Vector3(module_pos.x, 0.0, module_pos.y)
 	_frame_camera()
+	# After LightingRig, which is what makes the quality preset authoritative
+	# for the two settings they both touch.
+	_apply_quality(0)
 	probe.reset()
 	perf_panel.visible = false
 	_say("A module. A drone. Debris. Start there.")
@@ -385,6 +401,13 @@ func _build_menu() -> void:
 			_perf_readout())
 	build_bar.add_child(perf)
 
+	var qual := Button.new()
+	qual.text = "QUALITY"
+	qual.custom_minimum_size = Vector2(120.0, BUTTON_MIN.y)
+	qual.add_theme_font_size_override("font_size", 18)
+	qual.pressed.connect(_cycle_quality)
+	build_bar.add_child(qual)
+
 	var stress := Button.new()
 	stress.text = "TEST\nLOAD"
 	stress.custom_minimum_size = Vector2(110.0, BUTTON_MIN.y)
@@ -453,10 +476,30 @@ func _refresh_forge_bar() -> void:
 	forge_bar.add_child(clear)
 
 
+## Switch quality preset and START THE MEASUREMENT OVER.
+##
+## The reset is the point. A session that ran three minutes on High and two on
+## Low reports one blended p95 that describes neither, and the whole reason
+## both presets exist is to find out what High actually costs on the device.
+func _apply_quality(slot: int) -> void:
+	_quality_slot = slot % QUALITY.size()
+	quality = load(QUALITY[_quality_slot])
+	QualityRig.apply(quality, get_viewport(), terrain, palette)
+	probe.reset()
+
+
+func _cycle_quality() -> void:
+	_apply_quality(_quality_slot + 1)
+	_say("%s quality — frame timings restarted" % quality.display_name)
+
+
 ## The frame-time card. See FrameProbe for why the criteria are fixed in code
 ## rather than argued for after the first run on a device.
 func _perf_readout() -> void:
 	var lines := [
+		"QUALITY  %s   (msaa %s, scale %.2f, detail %.1f)"
+			% [quality.display_name, ["off", "2x", "4x", "8x"][quality.msaa_3d],
+				quality.render_scale, quality.terrain_detail],
 		"FPS  %.0f   (%.1f ms)" % [probe.live_fps(), probe.live_ms()],
 		"p95  %.2f ms   mean %.2f" % [probe.session_p95(), probe.session_mean()],
 		"worst minute  %.2f ms" % probe.worst_minute_ms(),

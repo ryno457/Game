@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="QualityConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/quality_config.gd" id="1_q"]
+
+[resource]
+script = ExtResource("1_q")
+display_name = "Medium"
+msaa_3d = 1
+screen_space_aa = 0
+render_scale = 1.0
+terrain_detail = 1.0
+shadow_atlas_size = 2048
+soft_shadow_quality = 1

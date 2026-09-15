@@ -175,3 +175,89 @@ field and opens the fog, so the worst case can be measured in a minute rather
 than waited for. It injects mass from nowhere, which the conservation rule
 forbids — it says so on screen. It is the only thing in the build that breaks
 that rule, and it is instrumentation, not a game action.
+
+## Surface quality
+
+**There are no textures in this project.** No image files, no UVs on any mesh —
+`tools/quality_check.gd` asserts that as its first check, so the day one is
+added, everything below stops claiming to be the whole story. "Higher quality"
+therefore cannot mean a bigger bitmap. It means three other things.
+
+### 1. Procedural surface in the terrain shader
+
+| | what it does |
+|---|---|
+| detail bump | one octave of noise, sampled twice for a gradient, perturbing the normal. Not an fbm — this runs over most of the screen and a full fbm here would cost more than everything else the fragment does put together. |
+| distance fade | past `detail_fade_m` the two extra taps are **skipped entirely**, so most of the screen never pays. It also stops distant ground shimmering. |
+| macro variation | one very low-frequency colour drift, so a hundred square metres of ground is not one flat material with grain on it. |
+| striation | horizontal bedding on steep faces. The cheapest thing that makes a cliff read as rock rather than a grey ramp. |
+
+Two bugs fixed on the way:
+
+- **The noise hash used `sin()`.** Fine on a desktop GPU; on mobile the compiler
+  is free to evaluate it at mediump, where `sin` of a large argument loses its
+  low bits and the "noise" collapses into repeating stripes. Replaced with a
+  pure multiply-add hash that is stable at any precision.
+- **Slope was measured in view space.** `NORMAL` in `fragment()` is view space
+  in Godot, so `n.y` was asking "does this face the camera's up", not "does
+  this face the sky". With a near-top-down RTS camera the two are close enough
+  that the cliff colouring looked right, which is exactly why it survived. The
+  world normal is now carried from the vertex stage as a varying.
+
+### 2. Baked ambient occlusion in the vertex channel
+
+`tools/blender/_ao.py` ray-casts each vertex against the prop's own mesh — 12
+directions from a golden-angle spiral, not a random generator, so rebuilding
+never changes the result — and writes `1 - occlusion` into `COLOR_0`. Costs no
+texture memory, needs no UVs, and survives MultiMesh instancing.
+
+Mean occlusion runs 20–31% per prop, and a bake that produced *no* occlusion
+fails the build, because a silently-empty bake looks exactly like a flat model.
+Glowing material slots are excluded: `COLOR_0` multiplies base colour, and a
+light source with occlusion baked into it reads as a dirty bulb.
+
+Rock is now **flat shaded**. Everything else grew, and grown things are smooth;
+a stone splinter with smoothed normals reads as a melted candle.
+
+**Godot's glTF importer gets this backwards on these assets.** It enabled
+`vertex_color_use_as_albedo` on the *emissive* slots — where the bake is
+deliberately white — and left it off on the solid ones, where all the occlusion
+is. `ModelLibrary` forces it on for every material, once per model, and
+`quality_check.gd` holds that fix in place because the failure mode is
+invisible: the model just looks flat.
+
+### 3. Three quality presets
+
+| | MSAA | render scale | terrain detail | shadow atlas |
+|---|---|---|---|---|
+| High | 4x | 1.00 | on | 2048 |
+| Medium | 2x | 1.00 | on | 2048 |
+| Low | off (FXAA) | 0.85 | off | 1024 |
+
+Antialiasing matters more here than in a textured game: untextured low-poly art
+is nothing *but* silhouette, and every arch strut and coral branch is a thin
+high-contrast edge against dark ground. On a tile-based mobile GPU MSAA
+resolves in tile memory, so it is cheaper here than the same setting on a
+desktop deferred renderer — but it is not free.
+
+**Medium exists to make a failure diagnostic.** It differs from High in exactly
+one dimension, so if High misses the frame budget and Medium holds it, the cost
+was the antialiasing; if Medium misses too, it is the shader or the prop count.
+Two presets would only have told us that the expensive one is expensive.
+
+`QualityRig` runs **after** `LightingRig` and both set the shadow atlas, so the
+preset wins — deliberately, because shadow cost is a device decision and
+everything else in `LightingConfig` is a look decision. That precedence is
+asserted in `quality_check.gd` rather than left as a comment.
+
+### What the Blender preview can and cannot show
+
+The preview renders the same heightfield, prop transforms and palette Godot
+writes, and now the same detail bump. It does **not** show MSAA, render scale,
+or the shader's macro variation — an attempt to add the last one lifted the
+ground's average brightness, and in Cycles the extra bounce washed out every
+prop standing on it, so the render came back paler than the game while claiming
+to represent it. A colour-balance change is not worth that lie.
+
+**So the antialiasing and the terrain detail are unverified until the phone
+build runs.** That is what the three presets are for.

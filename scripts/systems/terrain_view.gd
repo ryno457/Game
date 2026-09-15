@@ -56,6 +56,23 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("vein_scale", p.vein_scale)
 	_mat.set_shader_parameter("vein_sharpness", p.vein_sharpness)
 	_mat.set_shader_parameter("threshold_line_strength", p.threshold_line_strength)
+	_mat.set_shader_parameter("detail_strength", p.detail_strength)
+	_mat.set_shader_parameter("detail_scale", p.detail_scale)
+	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m)
+	_mat.set_shader_parameter("macro_strength", p.macro_strength)
+	_mat.set_shader_parameter("macro_scale", p.macro_scale)
+	_mat.set_shader_parameter("striation_strength", p.striation_strength)
+
+
+## Scale the per-fragment surface work without rebuilding the palette. The
+## quality preset drives this; zero turns the detail bump off, which is where
+## most of the fragment cost lives.
+func set_detail_scale_factor(factor: float, p: BiomePalette) -> void:
+	if _mat == null or p == null:
+		return
+	_mat.set_shader_parameter("detail_strength", p.detail_strength * factor)
+	_mat.set_shader_parameter("striation_strength", p.striation_strength * factor)
+	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m * maxf(0.35, factor))
 
 	_build_chunks()
 	upload()

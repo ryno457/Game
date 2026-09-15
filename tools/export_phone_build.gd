@@ -138,11 +138,25 @@ WHAT TO DO
                It offers everything that pooled mass could become.
                Two machines reach things one cannot.
   Tap a big debris piece  sends the drone to free it. THIS STARTS A FIGHT.
+  QUALITY      cycles High -> Medium -> Low, and RESTARTS the timings.
+
+QUALITY PRESETS
+  High    4x MSAA, full resolution, terrain surface detail on
+  Medium  2x MSAA, everything else identical to High
+  Low     no MSAA (FXAA instead), 85% resolution, no surface detail
+
+  Medium exists so a failure is diagnostic. If High misses 60fps and Medium
+  holds it, the cost was the antialiasing. If Medium misses too, it is the
+  terrain shader or the prop count.
+
+  Switching presets restarts the frame timings on purpose: a session that
+  ran three minutes on High and two on Low reports one blended number that
+  describes neither.
 
 WHAT I NEED BACK
-  Tap PERF (far right of the build bar) and play for at least two minutes,
-  then photograph the card. Before then it will say so rather than give a
-  verdict off thirty seconds of a cold phone.
+  Tap PERF (far right of the build bar) and play for at least two minutes
+  ON EACH PRESET, photographing the card each time. Under two minutes it
+  refuses to give a verdict rather than report a number off a cold phone.
 
   Tap TEST LOAD to jam twelve heavy machines and sixty hostiles onto the
   field at once and open the fog. That is the worst case, and it is the

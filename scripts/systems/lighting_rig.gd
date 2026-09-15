@@ -79,6 +79,13 @@ static func build_environment(cfg: LightingConfig) -> Environment:
 
 ## Project-wide quality knobs. These are RenderingServer settings, not scene
 ## properties, so they apply to whatever is rendering.
+##
+## QualityRig SETS THE SAME TWO and runs after this in the game, so in the game
+## the quality preset wins — deliberately, because shadow cost is a device
+## decision and everything else in LightingConfig is a look decision. These
+## stay here because Spike A has its own copy of this file and no QualityRig;
+## removing them would quietly drop the spike's shadow settings. The precedence
+## is asserted in tools/quality_check.gd rather than left as a comment.
 static func _project_quality(cfg: LightingConfig) -> void:
 	RenderingServer.directional_shadow_atlas_set_size(cfg.shadow_atlas_size, true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(

@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mathutils import Matrix, Vector
 from _bl import script_args
 import _organic as og
+from _ao import bake_vertex_ao
 
 argv = script_args()
 OUT = os.path.abspath(argv[0] if argv else "models")
@@ -135,7 +136,7 @@ class MB:
         return len(self.f)
 
 
-def make_object(name, mb, mats):
+def make_object(name, mb, mats, smooth=True):
     me = bpy.data.meshes.new(name + "_mesh")
     me.from_pydata(mb.v, [], mb.f)
     me.update()
@@ -143,10 +144,10 @@ def make_object(name, mb, mats):
         me.materials.append(m)
     for i, mi in enumerate(mb.m):
         me.polygons[i].material_index = mi
-    # Smooth shading everywhere: these are grown things, and flat-shaded tubes
-    # at seven sides read as pipes.
+    # Grown things are smooth — a flat-shaded tube at seven sides reads as a
+    # pipe. Rock is not a grown thing and passes smooth=False.
     for poly in me.polygons:
-        poly.use_smooth = True
+        poly.use_smooth = smooth
     ob = bpy.data.objects.new(name, me)
     bpy.context.collection.objects.link(ob)
     return ob
@@ -315,21 +316,38 @@ def build_spire(mats):
     return mb
 
 
+# name, builder, triangle budget, smooth-shaded, AO reach in metres
+#
+# Rock is FLAT shaded. Everything else grew, and grown things are smooth; a
+# stone splinter with smoothed normals reads as a melted candle, which is what
+# the first pass shipped.
 PROPS = [
-    ("flora_arch", build_arch, 1400),
-    ("flora_tendril", build_tendril, 620),
-    ("flora_coral", build_coral, 520),
-    ("flora_pods", build_pods, 420),
-    ("flora_brain", build_brain, 900),
-    ("rock_spire", build_spire, 200),
+    ("flora_arch", build_arch, 1400, True, 2.2),
+    ("flora_tendril", build_tendril, 620, True, 1.2),
+    ("flora_coral", build_coral, 520, True, 1.0),
+    ("flora_pods", build_pods, 420, True, 0.8),
+    ("flora_brain", build_brain, 900, True, 1.6),
+    ("rock_spire", build_spire, 200, False, 1.8),
 ]
+
+## Material slots left at full brightness by the AO bake. COLOR_0 multiplies
+## base colour, and a light source with occlusion baked into it reads as a
+## dirty bulb rather than a glowing one.
+GLOWING = (GLOW_T, GLOW_P, GLOW_A)
 
 
 # --- export + audit ---------------------------------------------------------
 def export_glb(path):
-    bpy.ops.export_scene.gltf(
-        filepath=path, export_format='GLB', export_apply=True,
-        export_yup=True, export_materials='EXPORT', use_selection=False)
+    # export_vertex_color='ACTIVE' forces COLOR_0 out even though no material
+    # node reads it. The default ('MATERIAL') exports vertex colours only when
+    # the shader graph uses them, and these materials deliberately do not —
+    # Godot applies COLOR_0 itself on import.
+    kwargs = dict(filepath=path, export_format='GLB', export_apply=True,
+                  export_yup=True, export_materials='EXPORT', use_selection=False)
+    try:
+        bpy.ops.export_scene.gltf(export_vertex_color='ACTIVE', **kwargs)
+    except TypeError:
+        bpy.ops.export_scene.gltf(**kwargs)
 
 
 def read_glb(path):
@@ -353,6 +371,8 @@ def audit(path, budget):
     meshes = doc.get("meshes", [])
     assert len(meshes) == 1, "%s: %d meshes, MultiMesh needs exactly 1" % (path, len(meshes))
 
+    colours = all("COLOR_0" in prim["attributes"]
+                  for prim in meshes[0]["primitives"])
     tris = 0
     lo = [float("inf")] * 3
     hi = [float("-inf")] * 3
@@ -372,7 +392,7 @@ def audit(path, budget):
 
     # glTF is Y-up: ground contact is min Y, not min Z.
     return {
-        "tris": tris, "budget": budget, "emissive": emissive,
+        "tris": tris, "budget": budget, "emissive": emissive, "colours": colours,
         "ground": lo[1], "size": tuple(hi[k] - lo[k] for k in range(3)),
         "surfaces": len(meshes[0]["primitives"]),
     }
@@ -381,20 +401,28 @@ def audit(path, budget):
 def main():
     print("SENTINEL — biodome dressing\n")
     rows, bad = [], 0
-    for name, fn, budget in PROPS:
+    for name, fn, budget, smooth, reach in PROPS:
         mats = new_scene()
         mb = fn(mats).ground()
-        make_object(name, mb, mats)
+        obj = make_object(name, mb, mats, smooth)
+        mean_occ = bake_vertex_ao(obj, rays=12, reach=reach,
+                                  unoccluded_materials=GLOWING)
         path = os.path.join(OUT, name + ".glb")
         export_glb(path)
         a = audit(path, budget)
-        ok = a["tris"] <= budget and a["emissive"] > 0 and abs(a["ground"]) < 0.02
+        a["occ"] = mean_occ
+        # A bake that produced no occlusion at all is a bake that silently did
+        # nothing — a wrong reach, a broken BVH, a mesh with no interior.
+        ok = (a["tris"] <= budget and a["emissive"] > 0 and abs(a["ground"]) < 0.02
+              and a["colours"] and mean_occ > 0.01)
         bad += 0 if ok else 1
         rows.append((name, a, ok))
-        print("  %s  %-14s %5d / %-5d tris  %d surf  %d emissive  "
-              "%.2f x %.2f x %.2f m  ground %+.3f"
+        print("  %s  %-14s %5d / %-5d tris  %d surf  %d emissive  %s  "
+              "AO %.0f%%  %.2f x %.2f x %.2f m  ground %+.3f"
               % ("ok  " if ok else "FAIL", name, a["tris"], budget, a["surfaces"],
-                 a["emissive"], a["size"][0], a["size"][1], a["size"][2], a["ground"]))
+                 a["emissive"], "COLOR_0" if a["colours"] else "NO COLOUR",
+                 mean_occ * 100.0, a["size"][0], a["size"][1], a["size"][2],
+                 a["ground"]))
 
     total = sum(r[1]["tris"] for r in rows)
     print("\n  %d props, %d triangles total" % (len(rows), total))

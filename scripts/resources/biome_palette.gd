@@ -32,6 +32,28 @@ extends Resource
 ## How tight the filaments are. Higher is a finer web.
 @export_range(1.0, 24.0) var vein_sharpness: float = 9.0
 
+@export_group("Surface detail")
+## There are no textures in this project — no image files, no UVs on any mesh —
+## so ground quality is procedural surface, not bitmap resolution. These are
+## the knobs for how much of it to pay for, and the quality preset overrides
+## `detail_strength` at runtime.
+##
+## Bump depth from a one-octave noise gradient. Zero skips the two extra taps
+## entirely, which is most of what a low preset saves.
+@export_range(0.0, 3.0) var detail_strength: float = 0.9
+## Cycles per metre. Around 2-3 reads as grit at the RTS camera height; much
+## finer than that is invisible and shimmers when the camera pans.
+@export var detail_scale: float = 2.6
+## Past this distance the bump fades out and stops being computed at all.
+@export var detail_fade_m: float = 55.0
+## One very low-frequency colour drift across the whole valley, so a hundred
+## square metres of ground is not a single flat material with grain on it.
+@export_range(0.0, 1.0) var macro_strength: float = 0.16
+@export var macro_scale: float = 0.018
+## Horizontal bedding on steep faces. The cheapest thing that makes a cliff
+## read as rock rather than as a grey ramp.
+@export_range(0.0, 1.0) var striation_strength: float = 0.30
+
 @export_group("Readability")
 ## The red line exactly at the impassable threshold. Grey-box readability aid,
 ## not art: set to 0 for screenshots, back to 0.85 to check a trench actually

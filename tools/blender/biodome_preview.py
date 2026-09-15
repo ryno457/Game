@@ -98,6 +98,26 @@ emis_attr = nt.nodes.new("ShaderNodeVertexColor")
 emis_attr.layer_name = "glow"
 nt.links.new(emis_attr.outputs["Color"], bsdf.inputs["Emission Color"])
 bsdf.inputs["Emission Strength"].default_value = 1.0
+
+# Surface detail, matching what the game's shader does per fragment: a bump
+# from one octave of noise, and a very low-frequency colour drift. Without
+# these the render shows smooth plastic ground and the game shows grit, and a
+# preview that flatters the game is worse than no preview.
+bump_noise = nt.nodes.new("ShaderNodeTexNoise")
+bump_noise.inputs["Scale"].default_value = 2.6      # cycles per metre
+bump_noise.inputs["Detail"].default_value = 1.0
+bump = nt.nodes.new("ShaderNodeBump")
+bump.inputs["Strength"].default_value = 0.28
+bump.inputs["Distance"].default_value = 0.06
+nt.links.new(bump_noise.outputs["Fac"], bump.inputs["Height"])
+nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+# No macro-variation node here. The game's shader does apply one, but an
+# OVERLAY mix against a mid-grey noise lifts the ground's average brightness,
+# and in Cycles that extra bounce washed out every prop standing on it — the
+# render came back paler than the game while claiming to represent it. The
+# bump above is representative; a colour-balance change is not worth the lie.
+
 mesh.materials.append(gmat)
 
 # --- the dressing -----------------------------------------------------------
@@ -115,6 +135,14 @@ for kind in meta["props"]:
     if not imported:
         continue
     src = imported[0]
+    # No vertex-colour surgery here. Blender's glTF importer ALREADY wires
+    # COLOR_0 into Base Color when the mesh carries it, through a link — so the
+    # Principled node's own default_value is left at white. An earlier version
+    # of this read that white default, multiplied it by the occlusion and
+    # replaced the link with the result, which threw away every prop's actual
+    # colour and rendered the whole biodome grey. The importer has it right;
+    # leave it alone. (Godot is the one that needs the fix, in ModelLibrary,
+    # because ITS importer enables vertex colour on the wrong materials.)
     for o in set(bpy.data.objects) - before:
         o.hide_render = True
     for row in kind["at"]:

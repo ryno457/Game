@@ -15,6 +15,14 @@ extends RefCounted
 ##    individual nodes also buy animated sub-parts for free. Only large static
 ##    crowds (debris) stay instanced. That line is the whole reason unit counts
 ##    behave the way Spike A measured.
+##
+## 3. VERTEX COLOURS. The assets carry baked ambient occlusion in COLOR_0 —
+##    this project has no textures, so the vertex channel is where surface
+##    detail lives. Godot's glTF importer decides per material whether to
+##    honour it, and on these assets it decided WRONG: it enabled vertex
+##    colour on the emissive slots (where the bake is deliberately white) and
+##    left it off on the solid ones (where all the occlusion is). Forced on
+##    here for every material, once, rather than fought per asset.
 
 const DIR := "res://models/"
 
@@ -30,8 +38,34 @@ func load_model(model_name: String) -> PackedScene:
 		push_warning("model missing: %s" % path)
 		return null
 	var packed: PackedScene = load(path)
+	_apply_vertex_colours(packed)
 	_scenes[model_name] = packed
 	return packed
+
+
+## Turn on vertex-colour albedo for every material in a model.
+##
+## Mutates the imported mesh resources, which are shared and cached, so this
+## runs once per model on first load and every instance after it — node-spawned
+## or MultiMesh — gets the baked occlusion. See the class comment for why the
+## importer cannot be trusted to do it.
+##
+## Returns how many materials it had to change, which is the number worth
+## logging if this ever looks like it did nothing.
+static func _apply_vertex_colours(packed: PackedScene) -> int:
+	var probe: Node = packed.instantiate()
+	var changed := 0
+	for node in probe.find_children("*", "MeshInstance3D", true, false):
+		var m: Mesh = (node as MeshInstance3D).mesh
+		if m == null or (m.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR) == 0:
+			continue
+		for i in m.get_surface_count():
+			var mat := m.surface_get_material(i) as StandardMaterial3D
+			if mat != null and not mat.vertex_color_use_as_albedo:
+				mat.vertex_color_use_as_albedo = true
+				changed += 1
+	probe.free()
+	return changed
 
 
 ## Instance a model, grounded, optionally keeping only one named subtree.
