@@ -34,3 +34,9 @@ pointing/emulate_touch_from_mouse=true
 renderer/rendering_method="mobile"
 renderer/rendering_method.mobile="mobile"
 textures/vram_compression/import_etc2_astc=true
+; Debanding. The terrain's shading is now continuous gradients over large
+; areas, which is exactly the case an 8-bit swapchain quantises into visible
+; contours. This adds a dither at the end of tonemap and is supported on the
+; Mobile renderer. It fixes PRECISION banding only — it would have done
+; nothing about the posterisation that used to be authored into the shader.
+anti_aliasing/quality/use_debanding=true
