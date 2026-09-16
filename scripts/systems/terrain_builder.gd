@@ -48,8 +48,60 @@ static func _apply(hf: Heightfield, op: Dictionary) -> void:
 		"band":
 			_rect(hf, Rect2(op.x0, op.z0, op.x1 - op.x0, op.z1 - op.z0),
 				op.level, float(op.get("edge", 4.0)))
+		"polygon":
+			# A traced outline, filled. Discs cannot follow a silhouette that
+			# was drawn by hand — you end up approximating a coastline with
+			# circles and it reads as a row of bubbles. This takes the points
+			# straight off the reference.
+			_polygon(hf, op.points, op.level, float(op.get("edge", 5.0)),
+				float(op.get("strength", 1.0)))
 		_:
 			push_warning("TerrainBuilder: unknown op '%s'" % op.get("op", ""))
+
+
+## Distance from every cell to the three things the shading ramps off.
+##
+## Packed as one RGB8 texture, one byte per channel:
+##   R  distance to the EDGE of the mass (where the ground runs out)
+##   G  distance to the nearest ROOT STRAND
+##   B  distance to the nearest WATERLINE
+##
+## This is the input that makes painted gradients possible at all. Almost every
+## gradient in the reference is a distance rather than a height: ground darkens
+## as it nears the edge, lightens away from a strand, pales toward a shoreline.
+## Two places at the same height shade differently depending on how far they are
+## from a feature, and a height ramp simply cannot say that — which is why the
+## banded version looks flat.
+##
+## Baked at load. The fields change when the player digs, but only near the dig,
+## and a full transform is ~57 ms so a local rebake is the shape of that fix.
+static func bake_fields(hf: Heightfield, void_below: float,
+		range_m: float = 20.0) -> PackedByteArray:
+	var cfg := hf.cfg
+	var n := cfg.cells_x * cfg.cells_z
+
+	var edge := PackedByteArray()
+	var strand := PackedByteArray()
+	var shore := PackedByteArray()
+	edge.resize(n)
+	strand.resize(n)
+	shore.resize(n)
+	for i in n:
+		edge[i] = 1 if hf.heights[i] < void_below else 0
+		strand[i] = 1 if hf.material_id[i] == GroundMaterials.VINE else 0
+		shore[i] = 1 if hf.water[i] > 0.05 else 0
+
+	var d_edge := DistanceField.compute(edge, cfg.cells_x, cfg.cells_z, range_m)
+	var d_strand := DistanceField.compute(strand, cfg.cells_x, cfg.cells_z, range_m)
+	var d_shore := DistanceField.compute(shore, cfg.cells_x, cfg.cells_z, range_m)
+
+	var out := PackedByteArray()
+	out.resize(n * 3)
+	for i in n:
+		out[i * 3] = int(clampf(d_edge[i] / range_m, 0.0, 1.0) * 255.0)
+		out[i * 3 + 1] = int(clampf(d_strand[i] / range_m, 0.0, 1.0) * 255.0)
+		out[i * 3 + 2] = int(clampf(d_shore[i] / range_m, 0.0, 1.0) * 255.0)
+	return out
 
 
 ## Decide what every cell is MADE OF, from the finished heightfield.
@@ -173,6 +225,48 @@ static func _slope(hf: Heightfield, x: int, z: int) -> float:
 	var dx := (hf.heights[z * cfg.cells_x + xl] - hf.heights[z * cfg.cells_x + xr]) * sy
 	var dz := (hf.heights[zd * cfg.cells_x + x] - hf.heights[zu * cfg.cells_x + x]) * sy
 	return 1.0 - clampf(Vector3(dx, 2.0, dz).normalized().y, 0.0, 1.0)
+
+
+## Fill a closed polygon, with a soft shoulder outside it.
+##
+## Inside the outline the ground is pulled to `level`. Outside, it falls off
+## over `edge` metres, so the mass has a cliff shoulder rather than a wall — the
+## same profile a disc's cosine falloff gives, but following a drawn shape.
+##
+## Brute force against every segment: about thirty segments over sixteen
+## thousand cells is half a million distance tests, which is nothing at build
+## time and saves needing a polygon rasteriser.
+static func _polygon(hf: Heightfield, points: Array, level: float,
+		edge: float, strength: float) -> void:
+	var cfg := hf.cfg
+	var poly := PackedVector2Array()
+	for p in points:
+		poly.append(p)
+	for z in cfg.cells_z:
+		for x in cfg.cells_x:
+			var p := Vector2(x, z)
+			var d := _dist_to_poly(poly, p)
+			var inside := Geometry2D.is_point_in_polygon(p, poly)
+			# Inside: full strength. Outside: fade over `edge`.
+			var f := 1.0 if inside else clampf(1.0 - d / maxf(0.001, edge), 0.0, 1.0)
+			if f <= 0.0:
+				continue
+			# Squared, to match the shoulder shape the disc ops produce.
+			var i := z * cfg.cells_x + x
+			hf.heights[i] = lerpf(hf.heights[i], level,
+				clampf(strength * f * f, 0.0, 1.0))
+
+
+static func _dist_to_poly(poly: PackedVector2Array, p: Vector2) -> float:
+	var best := 1.0e9
+	for i in poly.size():
+		var a := poly[i]
+		var b := poly[(i + 1) % poly.size()]
+		var ab := b - a
+		var t := 0.0 if ab.length_squared() < 0.0001 \
+			else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+		best = minf(best, p.distance_to(a + ab * t))
+	return best
 
 
 ## Paint the water mask over a disc, feathered at the rim so a shoreline fades

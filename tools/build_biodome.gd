@@ -23,94 +23,90 @@ const CLOUDS_OUT := "res://data/biomes/biodome_01_clouds.tres"
 const TERRAIN_CFG := "res://data/terrain/biodome_01.tres"
 
 ## Where the module comes down. Everything else is authored around it.
-const LANDING := Vector2(30.0, 36.0)
-## The far side of the mass. There is a walkable route the whole way, and that
-## is checked with a real flow field rather than by eye.
-const GOAL := Vector2(118.0, 82.0)
-
-## Ground below this is not drawn at all. Between it and `impassable_below`
-## (0.26) sits a rim of real-but-unwalkable ground — the cliff edge the mass
-## falls away over, which is what stops the outline looking like a cut-out.
-const VOID_BELOW := 0.16
-
-## ONE CONTINUOUS LANDMASS, not an archipelago.
+## TRACED FROM THE REFERENCE, not approximated.
 ##
-## The earlier version made five separate islands over cloud and it was simply a
-## misread of the reference. The reference is a single connected mass shaped
-## like an HOURGLASS — two broad lobes left and right joined at a central waist
-## — with space cutting into it from the top and bottom middle and the corners
-## rounded away. Everything inside the outline is ground.
+## The outline below is the red line drawn over the reference image, read off in
+## normalised map coordinates and converted here. Discs cannot follow a
+## silhouette somebody drew by hand — approximating a coastline with circles
+## reads as a row of bubbles — so the mass is a POLYGON fill and the lobes sit
+## on top of it.
 ##
-## These discs are the base plate. Their union is the mass; the overlaps are
-## what make the outline lobed rather than circular.
-## 0.50, not 0.455. A disc's cosine-squared falloff means the union of two
-## discs sags between them, and at 0.455 the sag across the waist landed
-## BETWEEN void_below and impassable_below — drawn ground that nothing could
-## walk on, which cut the map in half while still looking continuous. The
-## connectivity check caught it; nothing else would have.
+## Everything in this block is positioned as a fraction of the map frame, which
+## is how it was measured off the image. Change the map size and it still lands
+## in the right place.
+const OUTLINE_UV := [
+	Vector2(0.030, 0.420), Vector2(0.020, 0.300), Vector2(0.065, 0.110),
+	Vector2(0.170, 0.030), Vector2(0.265, 0.045), Vector2(0.315, 0.095),
+	# THE TOP NOTCH. Traced with five points, not one: a single vertex makes a
+	# narrow V that the polygon's own shoulder fills straight back in, and the
+	# first pass came out as a shallow dent instead of a bay. It runs from
+	# about u 0.36 to 0.62 and bottoms out near u 0.44.
+	Vector2(0.360, 0.160), Vector2(0.400, 0.245), Vector2(0.440, 0.272),
+	Vector2(0.490, 0.215), Vector2(0.545, 0.145), Vector2(0.605, 0.080),
+	Vector2(0.700, 0.070), Vector2(0.800, 0.115), Vector2(0.875, 0.195),
+	Vector2(0.930, 0.325), Vector2(0.948, 0.480), Vector2(0.922, 0.625),
+	Vector2(0.880, 0.750), Vector2(0.818, 0.850), Vector2(0.730, 0.912),
+	Vector2(0.630, 0.942), Vector2(0.540, 0.920),
+	# THE BOTTOM NOTCH, offset west of the top one — which is what makes the
+	# waist run diagonally rather than straight across.
+	Vector2(0.478, 0.868), Vector2(0.437, 0.812), Vector2(0.400, 0.778),
+	Vector2(0.362, 0.818), Vector2(0.318, 0.872),
+	Vector2(0.255, 0.912), Vector2(0.168, 0.920), Vector2(0.088, 0.868),
+	Vector2(0.048, 0.758), Vector2(0.030, 0.600),
+]
+
 const PLATE_LEVEL := 0.50
-## Anything under this is a channel between lobes rather than a lobe top. Sits
-## midway between the 0.50 plate and the lowest lobe median of about 0.57.
+## Anything under this is a channel between lobes rather than a lobe top.
 const CHANNEL_BELOW := 0.545
 ## How thin the channel strands are. Higher is thinner.
 const WEB := 0.84
-const PLATE := [
-	[Vector2(30, 40), 30.0],
-	[Vector2(30, 76), 27.0],
-	[Vector2(18, 58), 20.0],
-	# The waist, overlapping generously. Spacing these at roughly the radius
-	# is what keeps the sag between them above the walkable threshold.
-	[Vector2(46, 58), 19.0],
-	[Vector2(60, 58), 19.0],
-	[Vector2(74, 57), 19.0],
-	[Vector2(88, 57), 19.0],
-	[Vector2(102, 58), 19.0],
-	# The lower middle, either side of the bottom bay. Without these the plate
-	# has a hole under the (56, 74) lobe and that lobe ends up sitting LOWER
-	# than the channels it is supposed to stand above.
-	[Vector2(52, 74), 18.0],
-	[Vector2(96, 76), 18.0],
-	[Vector2(114, 38), 29.0],
-	[Vector2(116, 80), 27.0],
-	[Vector2(132, 58), 20.0],
+## Ground below this is not drawn at all.
+const VOID_BELOW := 0.16
+
+## The two plateaus circled on the reference, and the rest of the lobe layout
+## read off the same image. u, v, radius in metres, top height.
+const LOBE_UV := [
+	# CIRCLED: the upper-left plateau, the one with the bridge on it. This is
+	# where the module comes down.
+	[Vector2(0.300, 0.190), 17.0, 0.74],
+	# CIRCLED: the lower-right plateau. The far end of the path.
+	[Vector2(0.700, 0.620), 18.0, 0.72],
+	[Vector2(0.150, 0.500), 14.0, 0.67],
+	[Vector2(0.300, 0.620), 15.0, 0.68],
+	[Vector2(0.720, 0.280), 16.0, 0.70],
+	[Vector2(0.880, 0.450), 14.0, 0.66],
+	[Vector2(0.800, 0.810), 15.0, 0.68],
+	[Vector2(0.170, 0.790), 13.0, 0.67],
 ]
 
-## Pieces cut back OUT of it, down past the world edge. This is the other half
-## of the shape: the reference's outline is defined as much by what has been
-## bitten out of it as by what was laid down.
-const CUTS := [
-	[Vector2(72, 2), 24.0],       # the bay that comes down from the top
-	[Vector2(74, 112), 22.0],     # and the one that comes up from the bottom
-	[Vector2(4, 4), 18.0],
-	[Vector2(146, 4), 18.0],
-	[Vector2(4, 108), 18.0],
-	[Vector2(146, 108), 18.0],
-	[Vector2(64, 24), 10.0],      # smaller nibbles, so the edge is not smooth
-	[Vector2(86, 92), 9.0],
-	[Vector2(2, 34), 9.0],
-	[Vector2(148, 78), 9.0],
+## THE OPEN AREA IN THE MIDDLE, which is water. The reference has the cave and
+## its two glowing pools here; the note was to make the whole middle open water.
+const WATER_UV := Vector2(0.535, 0.510)
+const WATER_R := 15.0
+
+## THE PATH from the top plateau to the bottom one, routed around the west side
+## of the water and along under it — the way the reference's ground runs.
+const PATH_UV := [
+	Vector2(0.300, 0.190), Vector2(0.322, 0.300), Vector2(0.345, 0.420),
+	Vector2(0.362, 0.530), Vector2(0.390, 0.640), Vector2(0.455, 0.720),
+	Vector2(0.560, 0.762), Vector2(0.650, 0.706), Vector2(0.700, 0.620),
 ]
 
-## The raised lobes on top of the plate. THESE are the "different heights" —
-## plateau tops, with the plate showing between them as lower channels.
-## Levels are measured against a 0.50 plate, and the small lobes had to come
-## UP: at 0.59-0.61 with a 0.88 strength they resolved to barely three
-## hundredths above the channel, which is not a height difference anyone would
-## see. A lobe has to clear the plate by about a tenth to read as raised.
-const LOBES := [
-	[Vector2(30, 34), 17.0, 0.72],
-	[Vector2(26, 76), 16.0, 0.68],
-	[Vector2(110, 34), 17.0, 0.73],
-	[Vector2(118, 82), 16.0, 0.67],
-	[Vector2(56, 74), 13.0, 0.65],
-	[Vector2(98, 42), 13.0, 0.66],
-	[Vector2(126, 58), 14.0, 0.66],
-	[Vector2(16, 56), 14.0, 0.66],
-]
+var _uv_scale := Vector2(150.0, 112.0)
 
-## The alcove at the waist: a hollow holding the two glowing pools, exactly as
-## the reference has it at the centre of the map.
-const ALCOVE := Vector2(68.0, 52.0)
+
+## Map-frame fraction to metres. Everything above is measured off the image in
+## fractions, so this is the one place the map's size enters.
+func _uv(p: Vector2) -> Vector2:
+	return Vector2(p.x * _uv_scale.x, p.y * _uv_scale.y)
+
+
+func _landing() -> Vector2:
+	return _uv(LOBE_UV[0][0])
+
+
+func _goal() -> Vector2:
+	return _uv(LOBE_UV[1][0])
 
 var _failed := 0
 
@@ -169,82 +165,82 @@ func _map() -> TerrainMap:
 	m.display_name = "Biodome 01 — the cloud shelf"
 	m.terrain = load(TERRAIN_CFG)
 	m.noise_seed = 20260916
-	# The base still sits below the world edge, so the DEFAULT state of a cell
-	# is "no ground". The difference from the archipelago version is what gets
-	# raised: one connected plate, not five separate peaks.
 	m.base_level = 0.055
 	m.amplitude = 0.10
 	m.octaves = [Vector2(0.045, 0.58), Vector2(0.125, 0.30), Vector2(0.29, 0.12)]
-	m.spawn = LANDING
-	m.goal = GOAL
+	m.spawn = _landing()
+	m.goal = _goal()
 
 	var ops: Array[Dictionary] = []
 
-	# 1. THE PLATE. One union of overlapping discs, all at the same level, so
-	# the result is a single connected mass with a lobed outline rather than a
-	# ring of separate hills.
-	for d in PLATE:
-		var c: Vector2 = d[0]
-		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": d[1], "level": PLATE_LEVEL, "strength": 0.97})
+	# 1. THE MASS, as one polygon traced off the reference. One op, not fifteen
+	# discs — and the notches top and bottom come for free because they are part
+	# of the outline rather than something bitten out afterwards.
+	var poly := []
+	for uv in OUTLINE_UV:
+		poly.append(_uv(uv))
+	# TWO passes over the same outline, and the pair is what makes a cliff.
+	#
+	# One pass gives a single shoulder, and its width is a straight trade
+	# against how sharply the notches cut: tight enough for crisp bays left the
+	# drawn-but-unwalkable rim at 3% and it stopped reading as a cliff.
+	#
+	# So: a wide shallow LEDGE first, holding at rim height well past the
+	# outline, then the plate raised on top of it with a tight shoulder. The
+	# band between them is the cliff face, and the bays stay sharp.
+	ops.append({"op": "polygon", "points": poly,
+		"level": 0.215, "edge": 11.0, "strength": 1.0})
+	ops.append({"op": "polygon", "points": poly,
+		"level": PLATE_LEVEL, "edge": 3.0, "strength": 0.98})
 
-	# 2. THE CUTS, pushed back down past the world edge. Half the shape of the
-	# reference is what has been bitten out of the outline, not what was laid
-	# down — the bays top and bottom centre are most of why it reads as one
-	# organic mass and not as a blob.
-	for d in CUTS:
-		var c: Vector2 = d[0]
-		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": d[1], "level": 0.02, "strength": 1.0})
+	# 2. THE PATH, before the lobes so the lobes sit on top of where it lands.
+	# Raised just above the plate, so it reads as a route rather than a wall,
+	# and wide enough for a convoy.
+	var path := []
+	for uv in PATH_UV:
+		path.append(_uv(uv))
+	_run(ops, path, 6.0, 0.575, 0.85, 2.0)
 
-	# 3. THE LOBES — the "different heights". Raised plateaus ON the plate, so
-	# the plate shows between them as lower channels. That is where the root
-	# mat lives in the reference: down in the gaps, not over the tops.
-	for d in LOBES:
-		var c: Vector2 = d[0]
+	# 3. THE LOBES — the "different heights". Raised on the plate, so the plate
+	# shows between them as lower channels where the root mat lives.
+	for d in LOBE_UV:
+		var c := _uv(d[0])
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
 			"r": d[1], "level": d[2], "strength": 0.93})
-	# Flat tops, so a lobe is a plateau with a rim rather than a dome.
-	for d in LOBES:
-		var c: Vector2 = d[0]
+	for d in LOBE_UV:
+		var c := _uv(d[0])
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
 			"r": float(d[1]) * 0.66, "level": float(d[2]) - 0.02, "strength": 0.86})
 
-	# 4. Ridges at a few rims, where the reference shows exposed rock.
-	for r in [[Vector2(14, 26), 8.0, 0.88], [Vector2(122, 22), 8.0, 0.89],
-			[Vector2(134, 94), 8.0, 0.86], [Vector2(12, 92), 7.0, 0.87]]:
-		var c: Vector2 = r[0]
+	# 4. Exposed rock at a few rims, as the reference shows.
+	for r in [[Vector2(0.09, 0.22), 8.0, 0.88], [Vector2(0.86, 0.18), 8.0, 0.89],
+			[Vector2(0.90, 0.86), 8.0, 0.86], [Vector2(0.10, 0.84), 7.0, 0.87]]:
+		var c := _uv(r[0])
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
 			"r": r[1], "level": r[2], "strength": 0.78})
 
-	# 5. THE ALCOVE at the waist, and the two pools in it. Banked wide and
-	# shallow first, then cut narrow inside, so there is a shoreline to stand
-	# on rather than a kerb.
-	ops.append({"op": "plateau", "x": ALCOVE.x, "z": ALCOVE.y,
-		"r": 15.0, "level": 0.335, "strength": 0.72})
-	for b in [[ALCOVE + Vector2(-5.0, -1.0), 5.0, 0.17],
-			[ALCOVE + Vector2(6.5, 2.0), 4.5, 0.16]]:
-		var c: Vector2 = b[0]
-		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": float(b[1]) + 4.0, "level": 0.30, "strength": 0.60})
-		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": b[1], "level": b[2], "strength": 0.95, "water": true})
+	# 5. THE OPEN MIDDLE, as water. Banked wide and shallow first, then cut
+	# deep inside, so there is a shoreline to stand on rather than a kerb — and
+	# so the path down the west side of it stays walkable.
+	var wc := _uv(WATER_UV)
+	ops.append({"op": "plateau", "x": wc.x, "z": wc.y,
+		"r": WATER_R + 7.0, "level": 0.355, "strength": 0.70})
+	ops.append({"op": "plateau", "x": wc.x, "z": wc.y,
+		"r": WATER_R, "level": 0.155, "strength": 0.95, "water": true})
 
-	# 6. A few more basins out on the lobes, so the pools are not all in one
-	# place. Same bank-then-cut.
-	# Off the lobe centres, as the reference has them — a pond sits in a hollow
-	# toward one side of a plateau, not dead in the middle of it.
-	for b in [[Vector2(22, 28), 5.0, 0.19], [Vector2(117, 26), 4.5, 0.18],
-			[Vector2(124, 90), 4.5, 0.19]]:
-		var c: Vector2 = b[0]
+	# 6. Smaller pools out on the lobes, so the water is not all in one place.
+	for b in [[Vector2(0.155, 0.255), 5.0, 0.19], [Vector2(0.780, 0.230), 4.5, 0.18],
+			[Vector2(0.840, 0.800), 4.5, 0.19]]:
+		var c := _uv(b[0])
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
 			"r": float(b[1]) + 4.5, "level": 0.32, "strength": 0.62})
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
 			"r": b[1], "level": b[2], "strength": 0.95, "water": true})
 
-	# 7. The landing clearing: flat, dry, buildable, clear of the rim.
-	ops.append({"op": "plateau", "x": LANDING.x, "z": LANDING.y,
-		"r": 10.0, "level": 0.60, "strength": 0.90})
+	# 7. The landing clearing, on the upper-left circled plateau.
+	var land := _landing()
+	ops.append({"op": "plateau", "x": land.x, "z": land.y,
+		"r": 10.0, "level": 0.62, "strength": 0.90})
 	m.ops = ops
 	return m
 
@@ -443,11 +439,16 @@ func _dressing() -> BiomeDressing:
 		# op takes six hundredths off every island centre, so almost nothing
 		# outside the four ridge stamps was ever above 0.60.
 		_entry("rock_spire", 35, 0.52, 1.00, 0.85, 2.4, 0.85, 2.10, 0.85, 9, 14.0),
-		# The rim. These are the roots that hold the islands together.
-		_entry("flora_tendril", 130, 0.180, 0.42, 0.62, 2.2, 1.00, 2.20, 0.55,
-			16, 14.0, false),
-		_entry("flora_coral", 80, 0.185, 0.40, 0.55, 1.8, 0.95, 1.85, 0.35,
-			14, 12.0, false),
+		# The roots. Banded 0.18-0.56 so they cover the cliff rim AND the
+		# channels between the lobes — which is where the reference puts them.
+		# Banded to the rim alone there was only 1457 legal square metres and
+		# the scatter could place 98 of 130.
+		_entry("flora_tendril", 140, 0.180, 0.56, 0.62, 2.2, 1.00, 2.20, 0.55,
+			18, 15.0, false),
+		# Coral stays at the waterlines and the rim, as it does in the
+		# reference — it is a shoreline thing, not a channel thing.
+		_entry("flora_coral", 55, 0.185, 0.40, 0.55, 1.8, 0.95, 1.85, 0.35,
+			12, 12.0, false),
 		# Clutter last, into whatever is left.
 		_entry("flora_pods", 150, 0.180, 0.80, 0.58, 1.5, 0.85, 1.60, 0.55,
 			18, 10.0, false),
@@ -477,22 +478,30 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 
 	_ok("the map is the size it says", total == 150 * 112,
 		"%d x %d m" % [cfg.cells_x, cfg.cells_z])
-	# Peaks over cloud, not a continent with puddles. Too much ground and the
-	# islands stop reading as islands; too little and there is nowhere to play.
-	_ok("most of the world is cloud", drawn > total * 0.22 and drawn < total * 0.62,
+	# These bounds were written for an archipelago and the archipelago was a
+	# misreading. The reference is mostly LAND: void appears only around the
+	# outline and in the two notches. The lower bound still guards against the
+	# map filling the frame edge to edge, which would lose the silhouette
+	# entirely — and the silhouette itself is checked directly further down.
+	_ok("there is void around the outline",
+		drawn > total * 0.55 and drawn < total * 0.88,
 		"%.1f%% is ground" % pct.call(drawn))
 	_ok("and the ground is mostly walkable", walkable > drawn * 0.55,
 		"%.1f%% of the map, %.1f%% of the ground"
 			% [pct.call(walkable), 100.0 * walkable / maxi(1, drawn)])
 	# The rim is what stops an island looking like a cut-out: real ground you
 	# can see but not stand on, between the walkable top and the drop.
-	_ok("every island has a cliff rim", rim > total * 0.04,
+	# The rim is the cliff the mass falls away over. It comes from the polygon's
+	# shoulder, so it is directly traded against how sharply the notches cut:
+	# tightening the shoulder to 3.5 m to keep the bays crisp thinned the rim to
+	# 3% and it stopped reading as a cliff at all.
+	_ok("the mass has a cliff rim", rim > total * 0.04,
 		"%.1f%% drawn but unwalkable" % pct.call(rim))
 
 	# The landing site.
-	_ok("the landing site is on ground", field.is_passable(LANDING),
-		"height %.2f at %.0f, %.0f" % [field.height_at(LANDING), LANDING.x, LANDING.y])
-	var slope_here := Dressing.slope_at(field, LANDING)
+	_ok("the landing site is on ground", field.is_passable(_landing()),
+		"height %.2f at %.0f, %.0f" % [field.height_at(_landing()), _landing().x, _landing().y])
+	var slope_here := Dressing.slope_at(field, _landing())
 	_ok("and flat enough to build on", slope_here < 0.12, "slope %.3f" % slope_here)
 
 	# THE CHECK THAT MATTERS. The islands are only a design if you can actually
@@ -500,7 +509,7 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	# half of the map unreachable, and nothing else here would notice.
 	print("\nis it ONE landmass")
 	var ff := FlowField.new(cfg)
-	var ms := ff.build(field.heights, Vector2i(int(GOAL.x), int(GOAL.y)))
+	var ms := ff.build(field.heights, Vector2i(int(_goal().x), int(_goal().y)))
 
 	# The correction that prompted this rebuild: the reference is one connected
 	# mass with pieces cut out, not an archipelago. So the test is CONNECTEDNESS
@@ -528,27 +537,73 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 		_print_ascii(field)
 
 	var lobes_ok := 0
-	for d in LOBES:
-		var c: Vector2 = d[0]
+	for d in LOBE_UV:
+		# _uv, not d[0]. The lobe table is in map-frame FRACTIONS — testing
+		# (0.30, 0.19) as if it were metres asks about a cell in the far corner
+		# and every lobe came back unreachable.
+		var c := _uv(d[0])
 		if ff.is_reachable(int(c.x), int(c.y)):
 			lobes_ok += 1
-	_ok("every lobe is reachable", lobes_ok == LOBES.size(),
-		"%d of %d" % [lobes_ok, LOBES.size()])
+	_ok("every lobe is reachable", lobes_ok == LOBE_UV.size(),
+		"%d of %d" % [lobes_ok, LOBE_UV.size()])
 	_ok("the landing site can reach the far side",
-		ff.is_reachable(int(LANDING.x), int(LANDING.y)),
-		"cost %.0f" % ff.cost_at_cell(int(LANDING.x), int(LANDING.y)))
+		ff.is_reachable(int(_landing().x), int(_landing().y)),
+		"cost %.0f" % ff.cost_at_cell(int(_landing().x), int(_landing().y)))
 
-	# The cuts have to actually cut, or the outline is a rounded rectangle and
-	# none of the reference's shape survives.
-	var cut_open := 0
-	for d in CUTS:
-		var c: Vector2 = d[0]
-		var p := Vector2(clampf(c.x, 1.0, cfg.cells_x - 2.0),
-			clampf(c.y, 1.0, cfg.cells_z - 2.0))
-		if field.height_at(p) < VOID_BELOW:
-			cut_open += 1
-	_ok("the bays are cut through to the void", cut_open == CUTS.size(),
-		"%d of %d" % [cut_open, CUTS.size()])
+	# THE SILHOUETTE. The outline was traced off the reference, so the test is
+	# whether the ground actually follows it: a point nudged inward from each
+	# traced vertex must be ground, and one nudged outward must be void. That
+	# is a much stronger claim than "some bays exist" — it checks the shape.
+	var poly := PackedVector2Array()
+	for uv in OUTLINE_UV:
+		poly.append(_uv(uv))
+	var centre := Vector2.ZERO
+	for p2 in poly:
+		centre += p2
+	centre /= float(poly.size())
+
+	var inside_ok := 0
+	var outside_ok := 0
+	for p2 in poly:
+		var inward: Vector2 = p2 + (centre - p2).normalized() * 7.0
+		var outward: Vector2 = p2 - (centre - p2).normalized() * 7.0
+		if field.height_at(inward) >= VOID_BELOW:
+			inside_ok += 1
+		outward.x = clampf(outward.x, 0.0, cfg.cells_x - 1.0)
+		outward.y = clampf(outward.y, 0.0, cfg.cells_z - 1.0)
+		if field.height_at(outward) < VOID_BELOW:
+			outside_ok += 1
+	_ok("the mass fills the traced outline", inside_ok >= poly.size() - 1,
+		"%d of %d vertices have ground just inside them" % [inside_ok, poly.size()])
+	_ok("and stops at it", outside_ok >= poly.size() - 4,
+		"%d of %d have void just outside" % [outside_ok, poly.size()])
+
+	# The two circled plateaus, and the path between them. This is the thing
+	# that was asked for by name, so it is checked by name.
+	var top := _landing()
+	var bottom := _goal()
+	_ok("the two circled plateaus are ground",
+		field.is_passable(top) and field.is_passable(bottom),
+		"top %.2f, bottom %.2f" % [field.height_at(top), field.height_at(bottom)])
+	var path_blocked := 0
+	var path_steps := 0
+	for i in PATH_UV.size() - 1:
+		var pa := _uv(PATH_UV[i])
+		var pb := _uv(PATH_UV[i + 1])
+		var n := maxi(1, int(pa.distance_to(pb)))
+		for k in n + 1:
+			path_steps += 1
+			if not field.is_passable(pa.lerp(pb, float(k) / n)):
+				path_blocked += 1
+	_ok("the path connects top to bottom", path_blocked == 0,
+		"%d of %d metres walkable" % [path_steps - path_blocked, path_steps])
+
+	# The middle is open water, which is the other thing asked for by name.
+	var wc := _uv(WATER_UV)
+	_ok("the middle is water", field.height_at(wc) < cfg.impassable_below
+			and field.water[int(wc.y) * cfg.cells_x + int(wc.x)] > 0.5,
+		"height %.2f, water mask %.2f"
+			% [field.height_at(wc), field.water[int(wc.y) * cfg.cells_x + int(wc.x)]])
 
 	# And the lobes have to sit ABOVE the channels between them, or "different
 	# heights" is a claim the map does not make.
@@ -560,8 +615,8 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	# land on one cell.
 	var lowest_lobe := 1.0
 	var lowest_name := ""
-	for d in LOBES:
-		var c: Vector2 = d[0]
+	for d in LOBE_UV:
+		var c := _uv(d[0])
 		var r: float = float(d[1]) * 0.6
 		var samples := PackedFloat32Array()
 		for z in range(int(c.y - r), int(c.y + r) + 1):
@@ -605,7 +660,7 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 			% [mats.size(), GroundMaterials.COUNT])
 
 	print("\nthe dressing")
-	var placed := Dressing.place(field, plan, LANDING)
+	var placed := Dressing.place(field, plan, _landing())
 	var got := 0
 	var short := PackedStringArray()
 	for e in plan.entries:
@@ -632,7 +687,7 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	for model in placed:
 		for t in placed[model]:
 			var p := Vector2(t.origin.x, t.origin.z)
-			if p.distance_to(LANDING) < plan.landing_clear_m:
+			if p.distance_to(_landing()) < plan.landing_clear_m:
 				on_landing += 1
 			var h := field.height_at(p)
 			if h < VOID_BELOW:
@@ -643,12 +698,15 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 		"%.0f m clear" % plan.landing_clear_m)
 	_ok("nothing is left hanging in the cloud", floating == 0,
 		"%d below the world edge" % floating)
-	# The roots ARE the island edges in the reference, so a bare rim means the
-	# banding is wrong even though every other check passes.
-	_ok("the rims are rooted", rimmed > 40,
+	# A bare rim means the banding is wrong even when every other check passes,
+	# so this floor stays — but it moved from 40 to 25 when the roots stopped
+	# being rim-only. They now cover the channels between the lobes as well,
+	# which is where the reference puts them, so a smaller share of the same
+	# props lands on the rim. The floor is about the rim not being EMPTY.
+	_ok("the rims are rooted", rimmed > 25,
 		"%d props on the cliff edge" % rimmed)
 
-	var again := Dressing.place(TerrainBuilder.build(map), plan, LANDING)
+	var again := Dressing.place(TerrainBuilder.build(map), plan, _landing())
 	var same := true
 	for model in placed:
 		if placed[model].size() != again[model].size():
@@ -706,7 +764,7 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		wet.store_float(w)
 	wet.close()
 
-	var placed := Dressing.place(field, plan, LANDING)
+	var placed := Dressing.place(field, plan, _landing())
 	var props := []
 	for model in placed:
 		var rows := []
@@ -730,7 +788,7 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		"cells_x": cfg.cells_x, "cells_z": cfg.cells_z,
 		"height_scale_m": cfg.height_scale_m,
 		"impassable_below": cfg.impassable_below, "rough_below": cfg.rough_below,
-		"landing": [LANDING.x, LANDING.y],
+		"landing": [_landing().x, _landing().y],
 		"void_below": VOID_BELOW,
 		"grid_spacing_m": pal.grid_spacing_m,
 		"clouds": {
