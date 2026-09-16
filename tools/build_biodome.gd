@@ -390,7 +390,15 @@ func _palette() -> BiomePalette:
 	# one colour and the next one over is the other.
 	p.pool_glow_alt = Color(0.78, 0.30, 0.96)
 	p.pool_alt_mix = 0.85
-	p.pool_glow_strength = 2.6
+	# Under 2.0 after the linear conversion, and that is a hard engine limit,
+	# not taste. The Mobile colour buffer is A2B10G10R10_UNORM with a luminance
+	# multiplier of 2.0 — the renderer's own comment says 'our scene is limited
+	# to a maximum of 2.0'. pool_glow linearises to green 0.89; at strength 2.6
+	# and a ripple up to 1.15 that reached 2.66 and CLIPPED before tonemapping.
+	# A clipped channel cannot desaturate toward white, which is exactly why
+	# the pools read as hard saturated cyan where the reference's brightest
+	# pixels are a pale #bfefe1.
+	p.pool_glow_strength = 1.8
 	p.vein_glow = Color(0.28, 0.93, 0.66)
 	# Global multiplier now; WHERE the web grows is decided per material, and
 	# only the root mat has a real value. Back up from 0.20 because it is no
@@ -407,6 +415,13 @@ func _palette() -> BiomePalette:
 	p.vein_strength = 0.34
 	p.vein_scale = 0.016
 	p.vein_sharpness = 3.4
+	# The glow lifts the ground around it. Measured in the reference: ground
+	# beside a pool reads luma 0.297 against 0.19 for the same ground away
+	# from one, so the lift is real but small.
+	p.bio_pool_gain = 0.28
+	p.bio_pool_reach_m = 5.0
+	p.bio_root_gain = 0.45
+	p.bio_root_reach_m = 1.6
 	# Left ON. It is a readability aid and this is still a grey-box slice —
 	# turn it to 0 for a screenshot, not for a playtest.
 	# Painterly. Tuned for the overhead camera: strokes about a metre long
@@ -459,6 +474,17 @@ func _palette() -> BiomePalette:
 	p.tube_radius_m = 0.55
 	p.tube_blend = 0.80
 	_painted_light(p)
+	# SURFACE DETAIL. detail_fade_m was 55, and the camera looks at ground from
+	# 48.7 m (nearest on screen) to 72.4 m. The fade is
+	# 1 - smoothstep(fade*0.45, fade, d), so at 55 it ran the detail path at 11%
+	# strength at the CLOSEST point the camera ever sees, 5% at screen centre,
+	# and zero across the top 80% of the frame. The knob had been set without
+	# reference to the camera's actual depth range, and it switched off the
+	# whole fine-detail path everywhere it mattered.
+	p.detail_fade_m = 150.0
+	p.detail_scale = 1.4
+	p.detail_strength = 0.5
+	p.detail_albedo = 0.30
 	p.threshold_line_strength = 0.85
 	# Below this nothing is drawn and the cloud deck shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.

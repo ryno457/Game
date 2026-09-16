@@ -92,6 +92,23 @@ uniform float curv_gain = 0.0;
 // Physical range the baked wide-curvature channel was companded over. Must
 // match TerrainBuilder.CURV_RANGE or every crease reads at the wrong depth.
 uniform float curv_range = 3.0;
+
+// BIOLUMINESCENT BOUNCE.
+//
+// In the reference the glow is the dominant light source: ground beside a
+// pool measures luma 0.297 against 0.19 for the same ground far from one.
+// Godot Mobile has no global illumination worth a Mali-G68's time and an
+// emissive material does not light its neighbours, so that lift has to be
+// faked — and it comes out FREE here, because the two distance fields it
+// needs are already fetched for the tube and the shoreline. No new bake, no
+// new tap, about eight ALU.
+//
+// It modulates by the surface's own albedo, because that is what a real
+// bounce does: rock beside a teal pool goes teal, moss goes green-teal.
+uniform float bio_pool_gain = 0.0;
+uniform float bio_pool_reach_m = 6.0;
+uniform float bio_root_gain = 0.0;
+uniform float bio_root_reach_m = 2.5;
 uniform float crease_ink = 0.0;
 uniform float ridge_gain = 0.0;
 uniform vec3 ridge_tint : source_color = vec3(0.80, 0.93, 0.78);
@@ -201,6 +218,17 @@ uniform sampler2D brush_tex : filter_linear_mipmap, repeat_enable;
 // UVs on any mesh — so "higher quality ground" means more procedural surface,
 // not a bigger bitmap. These are the knobs for how much of it to pay for.
 uniform float detail_strength = 0.0;    // bump depth; 0 skips the work entirely
+// How much the same detail field shifts the COLOUR, not the normal.
+//
+// Measured: detail_strength 0.9 tilts the normal about 7 degrees, which under
+// this camera and this light moves the shaded value by about +/-13% — and
+// only where detail_fade is non-zero. An albedo multiply is one instruction,
+// works on every fragment regardless of facing, is untouched by the
+// terminator, and is where the reference's contrast actually lives. The build
+// carries MORE fine-scale chroma than the references already while carrying a
+// third of their fine LUMA: colour wobble with no value structure, which
+// reads as a dirty flat.
+uniform float detail_albedo = 0.0;
 uniform float detail_scale = 2.6;       // cycles per metre
 uniform float detail_fade_m = 55.0;     // past this, flat — and cheaper
 uniform float macro_scale = 0.018;      // broad colour drift across the valley
@@ -225,6 +253,7 @@ varying vec3 v_normal_w;
 varying float v_shade;   // AO * cast shadow, already weighted
 varying float v_curv;    // signed: negative convex, positive concave
 varying float v_seen;    // fog of war, so light() can respect it too
+varying float v_detail;  // fine surface detail, as a VALUE shift
 
 
 float sample_h(vec2 world_xz) {
@@ -365,11 +394,19 @@ void fragment() {
 	// are skipped entirely, so most of the screen never pays for them. The
 	// other reason is that per-pixel bump on distant ground is pure shimmer.
 	float detail_fade = 0.0;
-	if (detail_strength > 0.0) {
+	v_detail = 0.0;
+	if (detail_strength > 0.0 || detail_albedo > 0.0) {
 		float d = length(v_world - CAMERA_POSITION_WORLD);
 		detail_fade = 1.0 - smoothstep(detail_fade_m * 0.45, detail_fade_m, d);
 		if (detail_fade > 0.003) {
-			n = detail_normal(v_world.xz, n, detail_fade);
+			if (detail_strength > 0.0) {
+				n = detail_normal(v_world.xz, n, detail_fade);
+			}
+			// The same field, in the domain that survives this camera.
+			if (detail_albedo > 0.0) {
+				v_detail = (vnoise(v_world.xz * detail_scale) - 0.5)
+					* detail_albedo * detail_fade;
+			}
 		}
 	}
 	// Material is decided before the strokes, because rock takes shorter,
@@ -490,7 +527,7 @@ void fragment() {
 	}
 
 	// Lay the stroke down as a value shift.
-	base *= 1.0 + stroke_tone;
+	base *= 1.0 + stroke_tone + v_detail;
 
 	// --- distance gradients --------------------------------------------------
 	// Three ramps off one texture fetch. Each is an exponential shoulder rather
@@ -614,6 +651,16 @@ void fragment() {
 	// term instead, because a custom light() bypasses the engine's own AO path.
 	AO = ao;
 	AO_LIGHT_AFFECT = 0.0;
+	// The bioluminescent lift. After the fog, because unexplored ground must
+	// not be given away by the glow of something the player has not found.
+	if (bio_pool_gain > 0.0 || bio_root_gain > 0.0) {
+		vec3 bio = pool_glow * bio_pool_gain
+			* exp(-dist.b / max(0.01, bio_pool_reach_m))
+		+ vein_glow * bio_root_gain
+			* exp(-max(dist.g, 0.0) / max(0.01, bio_root_reach_m));
+		// * ao so the bounce does not climb out of a crevice it cannot reach.
+		emit += base * bio * ao;
+	}
 	EMISSION = emit * seen;
 	// Back to view space, which is what the fragment stage wants written.
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);

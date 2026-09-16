@@ -83,6 +83,13 @@ extends Resource
 @export var vein_scale: float = 0.055
 ## How tight the filaments are. Higher is a finer web.
 @export_range(1.0, 24.0) var vein_sharpness: float = 9.0
+## How much the bioluminescence appears to LIGHT the ground around it.
+## Free: the distance fields these ramp off are already fetched for the tube
+## and the shoreline, so this costs no extra texture tap.
+@export_range(0.0, 2.0) var bio_pool_gain: float = 0.0
+@export var bio_pool_reach_m: float = 6.0
+@export_range(0.0, 2.0) var bio_root_gain: float = 0.0
+@export var bio_root_reach_m: float = 2.5
 
 @export_group("Surface detail")
 ## There are no textures in this project — no image files, no UVs on any mesh —
@@ -93,6 +100,9 @@ extends Resource
 ## Bump depth from a one-octave noise gradient. Zero skips the two extra taps
 ## entirely, which is most of what a low preset saves.
 @export_range(0.0, 3.0) var detail_strength: float = 0.9
+## The same detail field as a COLOUR shift rather than a normal tilt. This is
+## the one that reaches the screen at a top-down camera; the bump barely does.
+@export_range(0.0, 1.0) var detail_albedo: float = 0.0
 ## Cycles per metre. Around 2-3 reads as grit at the RTS camera height; much
 ## finer than that is invisible and shimmers when the camera pans.
 @export var detail_scale: float = 2.6
