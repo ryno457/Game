@@ -7,16 +7,16 @@
 script = ExtResource("1_yywnl")
 id = &"MOSS"
 display_name = "Moss flat"
-colour = Color(0.235, 0.405, 0.32, 1)
-colour_alt = Color(0.32, 0.48, 0.375, 1)
+colour = Color(0.114, 0.224, 0.251, 1)
+colour_alt = Color(0.188, 0.341, 0.369, 1)
 roughness = 0.88
 
 [sub_resource type="Resource" id="Resource_o5cs5"]
 script = ExtResource("1_yywnl")
 id = &"ROCK"
 display_name = "Bare rock"
-colour = Color(0.235, 0.27, 0.31, 1)
-colour_alt = Color(0.33, 0.365, 0.405, 1)
+colour = Color(0.224, 0.282, 0.259, 1)
+colour_alt = Color(0.31, 0.372, 0.345, 1)
 roughness = 0.94
 stroke_scale_mult = 1.9
 
@@ -24,8 +24,8 @@ stroke_scale_mult = 1.9
 script = ExtResource("1_yywnl")
 id = &"SEDIMENT"
 display_name = "Sediment"
-colour = Color(0.52, 0.575, 0.52, 1)
-colour_alt = Color(0.62, 0.66, 0.6, 1)
+colour = Color(0.31, 0.518, 0.533, 1)
+colour_alt = Color(0.42, 0.647, 0.659, 1)
 roughness = 0.8
 vein_strength = 0.05
 stroke_scale_mult = 0.75
@@ -33,9 +33,9 @@ stroke_scale_mult = 0.75
 [sub_resource type="Resource" id="Resource_sgg00"]
 script = ExtResource("1_yywnl")
 id = &"LOAM"
-display_name = "Loam"
-colour = Color(0.245, 0.215, 0.15, 1)
-colour_alt = Color(0.31, 0.275, 0.19, 1)
+display_name = "Deep ground"
+colour = Color(0.067, 0.169, 0.188, 1)
+colour_alt = Color(0.114, 0.224, 0.251, 1)
 roughness = 0.9
 vein_strength = 0.08
 stroke_scale_mult = 1.15
@@ -44,14 +44,14 @@ stroke_scale_mult = 1.15
 script = ExtResource("1_yywnl")
 id = &"VINE"
 display_name = "Root mat"
-colour = Color(0.085, 0.175, 0.145, 1)
-colour_alt = Color(0.13, 0.245, 0.185, 1)
+colour = Color(0.031, 0.098, 0.122, 1)
+colour_alt = Color(0.067, 0.169, 0.188, 1)
 vein_strength = 1.35
 stroke_scale_mult = 0.85
 
 [sub_resource type="Gradient" id="Gradient_wnwf4"]
-offsets = PackedFloat32Array(0, 0.22, 0.55, 0.85, 1)
-colors = PackedColorArray(0.1, 0.13, 0.26, 1, 0.13, 0.3, 0.34, 1, 0.52, 0.58, 0.54, 1, 0.88, 0.89, 0.8, 1, 1, 0.98, 0.9, 1)
+offsets = PackedFloat32Array(0, 0.14, 0.29, 0.43, 0.57, 0.71, 0.86, 1)
+colors = PackedColorArray(0.22, 0.35, 0.41, 1, 0.47, 0.61, 0.63, 1, 0.81, 0.81, 0.84, 1, 1, 1, 1, 1, 1.33, 1.23, 1.24, 1, 1.81, 1.53, 1.46, 1, 2.2, 1.86, 1.79, 1, 2.98, 2.33, 2.21, 1)
 
 [resource]
 script = ExtResource("2_4ecwt")

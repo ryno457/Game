@@ -172,9 +172,14 @@ func _ramp_texture(p: BiomePalette) -> Texture2D:
 	var t := GradientTexture1D.new()
 	t.gradient = p.tone_ramp
 	t.width = RAMP_WIDTH
-	# The ramp is authored in the same space the shader works in. Letting Godot
-	# treat it as sRGB would bend the hue path, which is the whole point of it.
-	t.use_hdr = false
+	# HDR, and it is not optional now. The ramp is built from the reference's own
+	# value ramp normalised so its commonest value is unity, which puts the
+	# bright end at 2.98 — an 8-bit gradient texture would clamp every stop past
+	# the middle to 1.0 and flatten the top half of the ramp into one value.
+	#
+	# It also means the ramp is authored in the shader's own linear space rather
+	# than sRGB, which is what the hue path needs.
+	t.use_hdr = true
 	return t
 
 

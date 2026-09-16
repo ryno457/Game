@@ -315,26 +315,55 @@ func _material(id: int, mname: String, col: Color, alt: Color,
 
 
 func _materials() -> Array[GroundMaterial]:
+	# SAMPLED FROM THE REFERENCE, not invented.
+	#
+	# A k-means over docs/reference/01-vtt-cavern-map.jpg returns its ten
+	# dominant colours, and the result corrected an assumption I had been
+	# working from. The reference ground is NOT a variety of hues. It is one
+	# teal family in a very wide VALUE ramp:
+	#
+	#   08191f  10.0%  luma 0.086  sat 0.74     <- the darkest, and the MOST saturated
+	#   112b30  10.7%       0.148      0.64
+	#   1d3940  18.7%       0.203      0.54
+	#   24474c  18.6%       0.252      0.52
+	#   30575e  12.5%       0.311      0.49
+	#   416c6f  11.6%       0.387      0.41
+	#   4f8488   6.3%       0.475      0.42
+	#   6ba5a8   2.9%       0.599      0.36     <- the lightest, and the LEAST saturated
+	#
+	# Two things follow, and both were wrong here before.
+	#
+	# The hue variety in the reference comes from small ACCENTS — coral, fungus,
+	# the odd violet mass — which are far too small a share to appear in a top
+	# ten at all. Spreading the ground materials across green, brown and grey,
+	# as the old palette did, is not what the reference does; it reads as mud.
+	#
+	# And a 7x value range within one hue is the thing actually doing the work.
+	# The old palette spanned 0.23 to 0.58 in luma, under half of that.
 	var out: Array[GroundMaterial] = []
 	out.resize(GroundMaterials.COUNT)
-	# Open moss flats — most of every plateau top, and deliberately CLEAR of the
-	# glowing web. This slot is the answer to "not all the ground is vines".
+	# Open flats — most of every plateau top. The reference's single commonest
+	# pair of values, which is what most of the ground should be.
 	out[GroundMaterials.MOSS] = _material(GroundMaterials.MOSS, "Moss flat",
-		Color(0.235, 0.405, 0.320), Color(0.320, 0.480, 0.375), 0.88, 0.0, 1.0)
-	# Bare rock: steep faces and ridge tops. Shorter, choppier marks.
+		Color(0.114, 0.224, 0.251), Color(0.188, 0.341, 0.369), 0.88, 0.0, 1.0)
+	# Bare rock: steep faces and ridge tops. The greyest thing the reference
+	# has — 394842, the one sample under 0.25 saturation.
 	out[GroundMaterials.ROCK] = _material(GroundMaterials.ROCK, "Bare rock",
-		Color(0.235, 0.270, 0.310), Color(0.330, 0.365, 0.405), 0.94, 0.0, 1.9)
-	# Pale sediment at every waterline — the lightest thing on the map after the
-	# ridges, which is what makes the basins read from above.
+		Color(0.224, 0.282, 0.259), Color(0.310, 0.372, 0.345), 0.94, 0.0, 1.9)
+	# Pale sediment at every waterline, and the LIGHTEST thing on the map. Note
+	# it tops out at 0.60 luma, not at white: nothing in the reference is white,
+	# which is exactly what the old near-white sediment got wrong.
 	out[GroundMaterials.SEDIMENT] = _material(GroundMaterials.SEDIMENT, "Sediment",
-		Color(0.520, 0.575, 0.520), Color(0.620, 0.660, 0.600), 0.80, 0.05, 0.75)
-	# Darker soil in broad patches, so the flats are not one colour.
-	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Loam",
-		Color(0.245, 0.215, 0.150), Color(0.310, 0.275, 0.190), 0.90, 0.08, 1.15)
+		Color(0.310, 0.518, 0.533), Color(0.420, 0.647, 0.659), 0.80, 0.05, 0.75)
+	# The deep shadowed ground between features — the reference's dark end, and
+	# the most saturated slot, because that is the painter's rule the samples
+	# show plainly: darker is MORE saturated, not less.
+	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Deep ground",
+		Color(0.067, 0.169, 0.188), Color(0.114, 0.224, 0.251), 0.90, 0.08, 1.15)
 	# The root mat. The ONLY slot with a real vein strength, so the filament web
 	# rings each plateau instead of covering it.
 	out[GroundMaterials.VINE] = _material(GroundMaterials.VINE, "Root mat",
-		Color(0.085, 0.175, 0.145), Color(0.130, 0.245, 0.185), 0.85, 1.35, 0.85)
+		Color(0.031, 0.098, 0.122), Color(0.067, 0.169, 0.188), 0.85, 1.35, 0.85)
 	return out
 
 
@@ -464,17 +493,35 @@ func _painted_light(p: BiomePalette) -> void:
 	# shadow, and it is the whole difference between this and a grey multiply.
 	# It does not read as a band because the stops either side interpolate
 	# straight through it.
+	# THE RAMP IS THE REFERENCE'S OWN VALUE RAMP, normalised.
+	#
+	# Each stop is one of the sampled teals divided component-wise by the
+	# commonest one (24474c), so the middle of the ramp is unity and the ends
+	# carry the reference's actual hue and saturation path. Two properties fall
+	# out of the measurement rather than out of taste:
+	#
+	#   - The top is 2.98/2.33/2.21, which is WARM — red climbs fastest. The
+	#     shadows come out cool and the highlights warm without anyone choosing
+	#     that; it is what the samples do.
+	#   - Saturation falls as value rises, 0.74 down to 0.36, which is the
+	#     painter's rule for an occlusion shadow stated as data.
+	#
+	# The old ramp ended at a near-white 1.00/0.98/0.90. NOTHING in the
+	# reference is white — its lightest dominant colour is 0.60 luma — and that
+	# single stop is most of why the build measured 30% of frame in the light
+	# third against the reference's 3%.
 	var g := Gradient.new()
-	g.offsets = PackedFloat32Array([0.00, 0.22, 0.55, 0.85, 1.00])
+	g.offsets = PackedFloat32Array([0.00, 0.14, 0.29, 0.43, 0.57, 0.71, 0.86, 1.00])
 	g.colors = PackedColorArray([
-		Color(0.10, 0.13, 0.26),   # deep, cool, desaturated
-		Color(0.13, 0.30, 0.34),   # the occlusion band: darker AND more saturated
-		Color(0.52, 0.58, 0.54),   # neutral mid
-		Color(0.88, 0.89, 0.80),   # warm, slightly desaturated
-		Color(1.00, 0.98, 0.90),   # near-white warm highlight
+		Color(0.22, 0.35, 0.41),   # 08191f, the deepest shadow
+		Color(0.47, 0.61, 0.63),   # 112b30
+		Color(0.81, 0.81, 0.84),   # 1d3940
+		Color(1.00, 1.00, 1.00),   # 24474c, the commonest value: unity
+		Color(1.33, 1.23, 1.24),   # 30575e
+		Color(1.81, 1.53, 1.46),   # 416c6f
+		Color(2.20, 1.86, 1.79),   # 4f8488
+		Color(2.98, 2.33, 2.21),   # 6ba5a8, the brightest the reference goes
 	])
-	# Linear, not constant: constant would reintroduce exactly the banding this
-	# whole change exists to remove.
 	g.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_LINEAR
 	p.tone_ramp = g
 	p.tone_ramp_strength = 1.0
