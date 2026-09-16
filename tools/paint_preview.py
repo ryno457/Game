@@ -41,6 +41,14 @@ heights = np.fromfile(os.path.join(DATA, "biodome_01.r32"),
 _mpath = os.path.join(DATA, "biodome_01_mat.u8")
 matmap = (np.fromfile(_mpath, dtype=np.uint8).reshape(CZ, CX)
           if os.path.exists(_mpath) else np.zeros((CZ, CX), np.uint8))
+_fpath = os.path.join(DATA, "biodome_01_fields.u8")
+fields = (np.fromfile(_fpath, dtype=np.uint8).reshape(CZ, CX, 3).astype(np.float32) / 255.0
+          if os.path.exists(_fpath) else np.zeros((CZ, CX, 3), np.float32))
+_spath = os.path.join(DATA, "biodome_01_shade.u8")
+shade = (np.fromfile(_spath, dtype=np.uint8).reshape(CZ, CX, 3).astype(np.float32) / 255.0
+         if os.path.exists(_spath) else
+         np.stack([np.ones((CZ, CX), np.float32), np.ones((CZ, CX), np.float32),
+                   np.full((CZ, CX), 0.5, np.float32)], -1))
 _wpath = os.path.join(DATA, "biodome_01_water.r32")
 water = (np.fromfile(_wpath, dtype="<f4").reshape(CZ, CX)
          if os.path.exists(_wpath) else np.zeros_like(heights))
@@ -127,6 +135,34 @@ def sample_brush(u, v):
             + BRUSH[y1, x0] * (1 - fx) * fy + BRUSH[y1, x1] * fx * fy)
 
 
+def sample_fields(wx, wz):
+    """Bilinear, matching the shader's filter_linear on field_map.
+
+    Nearest was wrong here in a way that mattered: the tube shading takes a
+    central difference of this channel, and a nearest sample makes that
+    difference zero inside a cell and a cliff at the boundary — a staircase
+    crest the game will not have.
+    """
+    x = np.clip(wx, 0, CX - 1.001)
+    z = np.clip(wz, 0, CZ - 1.001)
+    x0, z0 = np.floor(x).astype(int), np.floor(z).astype(int)
+    x1, z1 = np.minimum(x0 + 1, CX - 1), np.minimum(z0 + 1, CZ - 1)
+    fx, fz = (x - x0)[..., None], (z - z0)[..., None]
+    return (fields[z0, x0] * (1 - fx) * (1 - fz) + fields[z0, x1] * fx * (1 - fz)
+            + fields[z1, x0] * (1 - fx) * fz + fields[z1, x1] * fx * fz)
+
+
+def sample_shade(wx, wz):
+    """R = AO, G = cast shadow, B = wide curvature. Bilinear, as the shader."""
+    x = np.clip(wx, 0, CX - 1.001)
+    z = np.clip(wz, 0, CZ - 1.001)
+    x0, z0 = np.floor(x).astype(int), np.floor(z).astype(int)
+    x1, z1 = np.minimum(x0 + 1, CX - 1), np.minimum(z0 + 1, CZ - 1)
+    fx, fz = (x - x0)[..., None], (z - z0)[..., None]
+    return (shade[z0, x0] * (1 - fx) * (1 - fz) + shade[z0, x1] * fx * (1 - fz)
+            + shade[z1, x0] * (1 - fx) * fz + shade[z1, x1] * fx * fz)
+
+
 def sample_mat(wx, wz):
     x = np.clip(wx, 0, CX - 1.001).astype(int)
     z = np.clip(wz, 0, CZ - 1.001).astype(int)
@@ -158,8 +194,8 @@ def render(paint):
     # Material. Nearest lookup with a jittered sample position, exactly as the
     # shader does it: a blurred lookup would return an index halfway between
     # rock and moss, which is not a material.
-    jx = fbm(wx * 0.33, wz * 0.33) - 0.5
-    jz = fbm(wx * 0.33 + 9.13, wz * 0.33 + 9.13) - 0.5
+    jx = fbm(wx * JSCALE, wz * JSCALE) - 0.5
+    jz = fbm(wx * JSCALE + 9.13, wz * JSCALE + 9.13) - 0.5
     mi = np.clip(sample_mat(wx + jx * JITTER, wz + jz * JITTER), 0, 4)
     blend = np.clip(fbm(wx * 0.22, wz * 0.22), 0, 1)[..., None]
     base = MAT_COL[mi] + (MAT_ALT[mi] - MAT_COL[mi]) * blend
@@ -226,24 +262,75 @@ def render(paint):
 
     base = base * (1.0 + tone)[..., None]
 
+    # Distance gradients — exponential shoulders off the baked fields. This is
+    # the part that replaces posterised bands with smooth falloff.
+    dist = sample_fields(wx, wz) * P["field_range_m"]
+    if P["edge_shade"] > 0:
+        base = base * (1.0 - np.exp(-dist[..., 0] / max(0.01, P["edge_falloff_m"]))
+                       * P["edge_shade"])[..., None]
+    if P["strand_shade"] > 0:
+        base = base * (1.0 - np.exp(-dist[..., 1] / max(0.01, P["strand_falloff_m"]))
+                       * P["strand_shade"])[..., None]
+    if P["shore_pale"] > 0:
+        t = (np.exp(-dist[..., 2] / max(0.01, P["shore_falloff_m"]))
+             * P["shore_pale"])[..., None]
+        base = base + (base * 1.35 + 0.06 - base) * t
+
+    # Root strands as rounded tubes. In the reference a root is not a green
+    # line painted on the floor, it is a tube: lit along its crest, shadowed at
+    # its base. That is a normal, not a colour, so it goes in before the light.
+    if P["tube_radius_m"] > 0.0:
+        dg = dist[..., 1]
+        inside = dg < P["tube_radius_m"]
+        tt = np.clip(dg / max(1e-4, P["tube_radius_m"]), 0, 1)
+        crest = np.sqrt(np.maximum(0.0, 1.0 - tt * tt))
+        gx = (sample_fields(wx + 1.0, wz)[..., 1]
+              - sample_fields(wx - 1.0, wz)[..., 1])
+        gz = (sample_fields(wx, wz + 1.0)[..., 1]
+              - sample_fields(wx, wz - 1.0)[..., 1])
+        away = np.stack([gx, gz], -1)
+        glen = np.linalg.norm(away, axis=-1, keepdims=True)
+        away = np.where(glen > 1e-4, away / np.maximum(glen, 1e-9), 0.0)
+        tube_n = normalize(np.stack([away[..., 0] * tt,
+                                     np.maximum(crest, 0.08),
+                                     away[..., 1] * tt], -1))
+        k = (P["tube_blend"] * crest * inside)[..., None]
+        n = normalize(n + (tube_n - n) * k)
+        slope = 1.0 - np.clip(n[..., 1], 0.0, 1.0)
+
+    # --- painted light: AO, cast shadow, curvature -------------------------
+    sh = sample_shade(wx, wz)
+    ao = 1.0 + (sh[..., 0] - 1.0) * L["ao_strength"]
+    cast_shadow = 1.0 + (sh[..., 1] - 1.0) * L["shadow_strength"]
+    wide = sh[..., 2] * 2.0 - 1.0
+    lap = (sample_h(wx - 1.0, wz) + sample_h(wx + 1.0, wz)
+           + sample_h(wx, wz - 1.0) + sample_h(wx, wz + 1.0) - 4.0 * h)
+    fine = np.clip(lap * HS * L["curv_gain"], -1.0, 1.0)
+    curv = np.clip(wide * 0.65 + fine * 0.45, -1.0, 1.0)
+    crease = np.maximum(curv, 0.0)
+    base = base * (1.0 - crease * crease * L["crease_ink"])[..., None]
+    v_shade = (1.0 + (ao - 1.0) * L["ao_light_affect"]) * cast_shadow
+
     if P["paint_quantise"] > 1.0 and paint > 0.0:
         base = np.floor(base * P["paint_quantise"] + 0.5) / P["paint_quantise"]
 
-    # light(): banded lambert
-    ndl = np.clip(np.sum(n * SUN[None, None, :], -1), 0, 1)
-    lit = ndl
-    if paint > 0.0 and P["paint_bands"] > 1.0:
-        scaled = ndl * P["paint_bands"]
-        step_i = np.floor(scaled)
-        frac_v = scaled - step_i
-        sm = np.clip((frac_v - 0.35) / 0.3, 0, 1)
-        sm = sm * sm * (3 - 2 * sm)
-        banded = (step_i + sm) / P["paint_bands"]
-        lit = ndl + (banded - ndl) * paint
-        seam = 1.0 - np.abs(frac_v - 0.5) * 2.0
-        lit = lit * (1.0 - seam ** 8 * P["edge_ink"] * paint)
+    # light(): the gradient map. Half-Lambert into a 1D ramp, biased by
+    # curvature, exactly as terrain_lit.gdshader does it.
+    ndl_raw = np.sum(n * SUN[None, None, :], -1)
+    t = np.clip(ndl_raw * 0.5 + 0.5, 0, 1) ** L["terminator_k"]
+    t = t * v_shade
+    t = np.clip(t + np.maximum(-curv, 0.0) * 0.15
+                - np.maximum(curv, 0.0) * 0.25, 0, 1)
+    tone = ramp_lookup(t)
+    tone = np.stack([t, t, t], -1) + (tone - np.stack([t, t, t], -1)) \
+        * L["tone_ramp_strength"]
 
-    out = base * (lit[..., None] * SUN_E + AMBIENT) + emit
+    out = base * tone * SUN_E + base * AMBIENT * ao[..., None] + emit
+    if L["ridge_gain"] > 0.0:
+        ridge = np.maximum(-curv, 0.0)
+        out = out + RIDGE_TINT[None, None, :] * (
+            ridge * ridge * L["ridge_gain"]
+            * np.maximum(ndl_raw, 0.0) * v_shade)[..., None]
     # grid
     if P["grid_spacing_m"] > 0.0:
         g = np.stack([wx, wz], -1) / P["grid_spacing_m"]
@@ -265,7 +352,6 @@ MAT_COL = np.stack([rgb(m["colour"]) for m in MATS])
 MAT_ALT = np.stack([rgb(m["colour_alt"]) for m in MATS])
 MAT_VEIN = np.array([m["vein"] for m in MATS])
 MAT_STROKE = np.array([m["stroke"] for m in MATS])
-JITTER = 1.8
 INK = meta["paint"].get("ink_strength", 0.0)
 INK_COL = rgb(meta["paint"].get("ink_colour", "050d0f"))
 INK_SIL = meta["paint"].get("ink_silhouette", 0.02)
@@ -276,26 +362,75 @@ PAL_ALT = meta["surface"]["pool_alt_mix"]
 
 # Sun and ambient stand in for the lighting rig. Approximate, and the only part
 # of this that is not the shader's own arithmetic.
-SUN = np.array([0.42, 0.80, -0.43])
-SUN = SUN / np.linalg.norm(SUN)
-SUN_E, AMBIENT = 1.45, 0.34
+# SUN comes from the palette's own two angles, below, so the preview's
+# highlights land where the baked cast shadows say they should. SUN_E and
+# AMBIENT stand in for the lighting rig and are the only numbers on this page
+# that are not the shader's or the bake's own.
+SUN_E, AMBIENT = 1.30, 0.30
 
 # Read from the export, not duplicated. An earlier version kept its own copy of
 # every number and they had drifted apart within the hour, which makes the
 # preview worse than useless — it disagrees with the game while claiming not to.
 _p = meta["paint"]
 _s = meta["surface"]
+# Read, not duplicated. This one WAS duplicated and had drifted: the shader had
+# been retuned and the preview was still jittering at the old amplitude, which
+# is the exact failure this file's header warns about.
+JITTER = _s.get("material_jitter_m", 1.8)
+JSCALE = _s.get("material_jitter_scale", 1.1)
 P = dict(stroke_scale=_p["stroke_scale"], stroke_stretch=_p["stroke_stretch"],
-         stroke_depth=_p["stroke_depth"], paint_bands=_p["bands"],
-         paint_quantise=_p["quantise"], edge_ink=_p["edge_ink"],
+         stroke_depth=_p["stroke_depth"],
+         paint_quantise=_p["quantise"],
          paint_tone=_p["tone"], canvas_grain=_p.get("canvas_grain", 0.0),
          macro_scale=_s["macro_scale"], macro_strength=_s["macro_strength"],
          striation_strength=_s["striation"], vein_scale=_s["vein_scale"],
          vein_sharpness=_s["vein_sharpness"], vein_strength=_s["vein_strength"],
          pool_glow_strength=_s["pool_glow_strength"],
          grid_spacing_m=meta.get("grid_spacing_m", 0.0),
-         grid_strength=_s["grid_strength"])
+         grid_strength=_s["grid_strength"],
+         field_range_m=_p.get("field_range_m", 20.0),
+         edge_shade=_p.get("edge_shade", 0.0),
+         edge_falloff_m=_p.get("edge_falloff_m", 9.0),
+         strand_shade=_p.get("strand_shade", 0.0),
+         strand_falloff_m=_p.get("strand_falloff_m", 3.0),
+         shore_pale=_p.get("shore_pale", 0.0),
+         shore_falloff_m=_p.get("shore_falloff_m", 7.0),
+         tube_radius_m=_p.get("tube_radius_m", 0.0),
+         tube_blend=_p.get("tube_blend", 0.8))
 PAINT_ON = _p["strength"]
+
+# The shading model. Kept separate from P because it is a model, not a palette.
+_l = meta.get("light", {})
+L = dict(terminator_k=_l.get("terminator_k", 1.0),
+         tone_ramp_strength=_l.get("tone_ramp_strength", 0.0),
+         ao_strength=_l.get("ao_strength", 0.0),
+         ao_light_affect=_l.get("ao_light_affect", 0.0),
+         shadow_strength=_l.get("shadow_strength", 0.0),
+         curv_gain=_l.get("curv_gain", 0.0),
+         crease_ink=_l.get("crease_ink", 0.0),
+         ridge_gain=_l.get("ridge_gain", 0.0))
+RIDGE_TINT = rgb(_l.get("ridge_tint", "ffffff"))
+
+# The sun, from the same two angles the bake used — so the preview's highlights
+# land where the baked cast shadows say they should. Azimuth is clockwise from
+# -Z, matching TerrainBuilder.bake_shade.
+_az = math.radians(_l.get("sun_azimuth_deg", -50.0))
+_el = math.radians(_l.get("sun_elevation_deg", 58.0))
+SUN = np.array([math.sin(_az) * math.cos(_el), math.sin(_el),
+                -math.cos(_az) * math.cos(_el)])
+SUN = SUN / np.linalg.norm(SUN)
+
+# The gradient map, rebuilt from the exported stops. GradientTexture1D is a
+# piecewise-linear interpolation of the stops, and np.interp is the same thing.
+_ramp_off = np.array(_l.get("ramp_offsets", [0.0, 1.0]), np.float32)
+_ramp_col = np.stack([rgb(c) for c in _l.get("ramp_colours", ["000000", "ffffff"])]) \
+    if _l.get("ramp_colours") else np.stack([rgb("000000"), rgb("ffffff")])
+
+
+def ramp_lookup(t):
+    """Sample the tone ramp. Linear between stops, clamped at the ends."""
+    return np.stack([np.interp(t, _ramp_off, _ramp_col[:, i]) for i in range(3)], -1)
+
 
 load_brush()
 if BRUSH is None:

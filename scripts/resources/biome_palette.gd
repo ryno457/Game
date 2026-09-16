@@ -18,6 +18,10 @@ extends Resource
 ## How far the material lookup is jittered by noise. This is what turns the
 ## cell grid into a torn organic border rather than a staircase.
 @export var material_jitter_m: float = 1.8
+## Cycles per metre of the jitter noise. Must be FASTER than one cell or the
+## borders keep their staircase: the whole point is that two fragments inside
+## the same cell land in different slots.
+@export var material_jitter_scale: float = 1.1
 
 @export_group("Bands")
 ## Below `impassable_below` the ground is not a hole, it is standing liquid.
@@ -45,6 +49,12 @@ extends Resource
 ## How thin the channel strands are. Higher is thinner — this is the knob that
 ## decides how much of the map is root mat versus open ground.
 @export_range(0.5, 0.98) var channel_web_threshold: float = 0.82
+## How WIDE a root strand is, in metres. Separate from the threshold above, and
+## the reason the strands stopped reading as scribble: the threshold picks WHICH
+## contour the strands follow, this picks how thick the ribbon around it is.
+## Thresholding alone gave a band whose width varied with the local noise
+## gradient, which is a filigree rather than a root.
+@export var channel_strand_width_m: float = 5.0
 
 @export_group("Survey grid")
 ## Metres between grid lines. Zero is off. A readability aid for judging
@@ -96,6 +106,97 @@ extends Resource
 ## read as rock rather than as a grey ramp.
 @export_range(0.0, 1.0) var striation_strength: float = 0.30
 
+@export_group("Distance gradients")
+## Ramps off the baked distance fields. THIS is what replaces posterised bands
+## with gradients: almost every gradient in the reference is a distance, not a
+## height, and two places at the same height shade differently depending how far
+## they are from a feature.
+##
+## Metres the fields are normalised over. Must match what bake_fields used.
+@export var field_range_m: float = 20.0
+## Ground darkens as it nears the drop — the soft contact shadow a painted map
+## puts around every raised shape.
+@export_range(0.0, 1.0) var edge_shade: float = 0.38
+@export var edge_falloff_m: float = 9.0
+## And beside every root strand, which is what makes a strand read as a raised
+## tube rather than a green line drawn on the floor.
+@export_range(0.0, 1.0) var strand_shade: float = 0.30
+@export var strand_falloff_m: float = 3.0
+## Bleaching toward a waterline.
+@export_range(0.0, 1.0) var shore_pale: float = 0.45
+@export var shore_falloff_m: float = 7.0
+## Root strands shaded as rounded TUBES, straight out of the distance field: at
+## distance d from a strand a circular cross-section of radius r rises by
+## sqrt(r^2-d^2) and its normal tilts away by d/r. Lit crest, shadowed base, no
+## geometry and no normal map. Zero disables it.
+@export var tube_radius_m: float = 1.6
+@export_range(0.0, 1.0) var tube_blend: float = 0.80
+
+@export_group("Painted light")
+## The shading model, replacing posterised Lambert.
+##
+## A painted top-down map gets its form from three separate dark things and one
+## colour rule, and the banded version had none of them:
+##
+##  1. AO — omnidirectional contact darkening where ground meets anything
+##     raised. Without it a plateau floats above the plate it sits on.
+##  2. A DIRECTIONAL cast shadow, which is the cue that says where the light is.
+##  3. CURVATURE — a bright line along every convex crest and a dark one in
+##     every concave crease. This is what makes a root read as a tube and a
+##     trench read as dug.
+##  4. Shadows are a HUE PATH, not a value ramp. Into shadow, colour goes
+##     darker, cooler, and MORE SATURATED in the crease. That is a gradient
+##     map, and it is why this is a ramp texture rather than a multiply.
+##
+## The first two are baked per cell by TerrainBuilder.bake_shade because they
+## cost ~50 taps each; the third runs live because it costs four.
+
+## Where the sun is. Upper-left and high is the illustration convention, and it
+## is also a performance decision: shadow length is height * cot(elevation), and
+## a low sun means re-baking a large neighbourhood for every shovel-load.
+@export_range(-180.0, 180.0) var sun_azimuth_deg: float = -50.0
+@export_range(10.0, 89.0) var sun_elevation_deg: float = 58.0
+
+## The gradient map. Sampled by the light term, so a single scalar illumination
+## value picks a COLOUR rather than a brightness. Author it like a painter:
+## cool and dark at 0, a darker-but-MORE-SATURATED occlusion band near 0.2,
+## neutral through the middle, warm and pale at 1. The saturation bump is the
+## stop that sells it, and it is invisible as a band because its neighbours
+## interpolate through it.
+##
+## Null falls back to plain half-Lambert, which is the grey-box look.
+@export var tone_ramp: Gradient
+@export_range(0.0, 1.0) var tone_ramp_strength: float = 1.0
+## Pushes the terminator. Above 1 widens the lit side, below 1 the shadow side.
+@export_range(0.25, 4.0) var terminator_k: float = 1.5
+
+## Ambient occlusion, baked by a horizon sweep.
+## The reach is the sensitive number: at 2-3 cells it is a crease and reads as
+## dirt, at 6-10 m it is the broad airbrushed darkening the reference has.
+@export var ao_reach_m: float = 8.0
+@export_range(0.0, 1.0) var ao_strength: float = 0.85
+## How much the AO darkens DIRECT light as well as ambient. A painter darkens
+## the contact regardless of where the sun is, so this is not zero.
+@export_range(0.0, 1.0) var ao_light_affect: float = 0.55
+
+## The cast shadow, marched back along the sun azimuth.
+@export var shadow_reach_m: float = 14.0
+## Penumbra width in metres — the paint program's Size slider.
+@export var shadow_softness_m: float = 2.2
+@export_range(0.0, 1.0) var shadow_strength: float = 0.70
+
+## Curvature. `curv_wide_m` is the spacing of the baked broad Laplacian;
+## the fine one is always one cell and runs live in the shader.
+@export var curv_wide_m: float = 3.0
+@export var curv_gain: float = 5.0
+## Dark line in every concave crease — where a root meets the ground, where a
+## trench floor meets its wall. This is the ink that replaces the band seams.
+@export_range(0.0, 1.0) var crease_ink: float = 0.45
+## Bright line along every convex crest. Gated by the lit side, so a crest in
+## shadow does not glow.
+@export_range(0.0, 2.0) var ridge_gain: float = 0.55
+@export var ridge_tint: Color = Color(0.80, 0.93, 0.78)
+
 @export_group("Painterly")
 ## Brush strokes at material level rather than a Kuwahara post-process. See the
 ## shader for why: Godot's compositor is only half-supported on the Mobile
@@ -104,9 +205,6 @@ extends Resource
 ##
 ## Master knob. Zero skips every part of it, including the extra taps.
 @export_range(0.0, 1.0) var paint_strength: float = 0.0
-## Steps in the light ramp. A painter mixes a handful of values and reuses
-## them; four to six reads as painted, two reads as toon.
-@export_range(2.0, 12.0) var paint_bands: float = 5.0
 ## Strokes per metre, and how long each one is against how wide. The stretch is
 ## what turns round noise into brush marks.
 @export var stroke_scale: float = 1.1
@@ -115,9 +213,6 @@ extends Resource
 ## Posterise the albedo into this many steps. Zero is off. Smooth gradients are
 ## the giveaway that a surface was computed rather than mixed.
 @export var paint_quantise: float = 0.0
-## Darkening where two light bands meet — what a brush leaves when one value is
-## laid down next to another.
-@export_range(0.0, 1.0) var edge_ink: float = 0.0
 ## How far a stroke shifts the colour. This is the half that makes flat ground
 ## read as painted: bending the normal only shows through the light, and under
 ## a high sun a plateau top has the same N·L everywhere.

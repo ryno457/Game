@@ -7,8 +7,8 @@
 script = ExtResource("1_yywnl")
 id = &"MOSS"
 display_name = "Moss flat"
-colour = Color(0.255, 0.4, 0.335, 1)
-colour_alt = Color(0.33, 0.47, 0.395, 1)
+colour = Color(0.235, 0.405, 0.32, 1)
+colour_alt = Color(0.32, 0.48, 0.375, 1)
 roughness = 0.88
 
 [sub_resource type="Resource" id="Resource_o5cs5"]
@@ -34,10 +34,10 @@ stroke_scale_mult = 0.75
 script = ExtResource("1_yywnl")
 id = &"LOAM"
 display_name = "Loam"
-colour = Color(0.15, 0.235, 0.23, 1)
-colour_alt = Color(0.205, 0.3, 0.28, 1)
+colour = Color(0.245, 0.215, 0.15, 1)
+colour_alt = Color(0.31, 0.275, 0.19, 1)
 roughness = 0.9
-vein_strength = 0.1
+vein_strength = 0.08
 stroke_scale_mult = 1.15
 
 [sub_resource type="Resource" id="Resource_l3g72"]
@@ -48,6 +48,10 @@ colour = Color(0.085, 0.175, 0.145, 1)
 colour_alt = Color(0.13, 0.245, 0.185, 1)
 vein_strength = 1.35
 stroke_scale_mult = 0.85
+
+[sub_resource type="Gradient" id="Gradient_wnwf4"]
+offsets = PackedFloat32Array(0, 0.22, 0.55, 0.85, 1)
+colors = PackedColorArray(0.1, 0.13, 0.26, 1, 0.13, 0.3, 0.34, 1, 0.52, 0.58, 0.54, 1, 0.88, 0.89, 0.8, 1, 1, 0.98, 0.9, 1)
 
 [resource]
 script = ExtResource("2_4ecwt")
@@ -70,14 +74,25 @@ pool_glow_strength = 2.6
 pool_glow_alt = Color(0.78, 0.3, 0.96, 1)
 pool_alt_mix = 0.85
 vein_glow = Color(0.28, 0.93, 0.66, 1)
-vein_scale = 0.052
-vein_sharpness = 10.0
+vein_strength = 0.34
+vein_scale = 0.016
+vein_sharpness = 3.4
+edge_shade = 0.42
+strand_shade = 0.34
+shore_pale = 0.5
+tube_radius_m = 1.8
+sun_elevation_deg = 42.0
+tone_ramp = SubResource("Gradient_wnwf4")
+terminator_k = 1.45
+shadow_strength = 0.65
+curv_gain = 3.2
+crease_ink = 0.38
+ridge_gain = 0.26
+ridge_tint = Color(0.78, 0.94, 0.8, 1)
 paint_strength = 0.85
 stroke_scale = 0.22
 stroke_stretch = 5.0
 stroke_depth = 0.62
-paint_quantise = 14.0
-edge_ink = 0.45
 paint_tone = 0.55
 ink_colour = Color(0.02, 0.052, 0.058, 1)
 ink_strength = 0.55

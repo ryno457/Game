@@ -58,8 +58,17 @@ const OUTLINE_UV := [
 const PLATE_LEVEL := 0.50
 ## Anything under this is a channel between lobes rather than a lobe top.
 const CHANNEL_BELOW := 0.545
-## How thin the channel strands are. Higher is thinner.
+## WHICH contour of the root-web noise the strands follow. Any level in 0..1
+## gives a connected set of curves; near the top of the range they are sparser.
 const WEB := 0.84
+## And how thick the ribbon around that contour is, in metres. This is the one
+## that decides whether the roots read as roots. At the noise-threshold width it
+## replaced, the strands varied from a hair to a blob across the same map.
+const STRAND_W := 5.0
+## Spline samples per traced outline segment. Four is enough that no straight
+## run survives at the overhead camera; the polygon distance test is brute force
+## over every segment, so this is a direct multiplier on that cost.
+const OUTLINE_SUBDIV := 4
 ## Ground below this is not drawn at all.
 const VOID_BELOW := 0.16
 
@@ -99,6 +108,40 @@ var _uv_scale := Vector2(150.0, 112.0)
 ## fractions, so this is the one place the map's size enters.
 func _uv(p: Vector2) -> Vector2:
 	return Vector2(p.x * _uv_scale.x, p.y * _uv_scale.y)
+
+
+## The traced silhouette, resampled through a closed Catmull-Rom spline.
+##
+## The 33 traced points are where the reference's outline CHANGES DIRECTION, not
+## where it is. Joining them with straight lines drew a 33-gon: from overhead
+## the long runs down the west and east sides read as ruler-drawn, which no
+## hand-painted map ever does. A spline through the same points keeps every
+## feature the trace captured — both notches, the shoulders, the bays — and puts
+## a continuous curve between them.
+##
+## Catmull-Rom rather than Bezier because it passes THROUGH its control points.
+## A Bezier would pull the curve off the trace, and the trace is the thing being
+## matched.
+func _outline() -> Array:
+	var pts := PackedVector2Array()
+	for uv in OUTLINE_UV:
+		pts.append(_uv(uv))
+	var n := pts.size()
+	var out := []
+	for i in n:
+		var p0 := pts[(i - 1 + n) % n]
+		var p1 := pts[i]
+		var p2 := pts[(i + 1) % n]
+		var p3 := pts[(i + 2) % n]
+		for k in OUTLINE_SUBDIV:
+			var t := float(k) / float(OUTLINE_SUBDIV)
+			var t2 := t * t
+			var t3 := t2 * t
+			out.append(0.5 * ((2.0 * p1)
+				+ (-p0 + p2) * t
+				+ (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+				+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3))
+	return out
 
 
 func _landing() -> Vector2:
@@ -176,9 +219,7 @@ func _map() -> TerrainMap:
 	# 1. THE MASS, as one polygon traced off the reference. One op, not fifteen
 	# discs — and the notches top and bottom come for free because they are part
 	# of the outline rather than something bitten out afterwards.
-	var poly := []
-	for uv in OUTLINE_UV:
-		poly.append(_uv(uv))
+	var poly := _outline()
 	# TWO passes over the same outline, and the pair is what makes a cliff.
 	#
 	# One pass gives a single shoulder, and its width is a straight trade
@@ -271,7 +312,7 @@ func _materials() -> Array[GroundMaterial]:
 	# Open moss flats — most of every plateau top, and deliberately CLEAR of the
 	# glowing web. This slot is the answer to "not all the ground is vines".
 	out[GroundMaterials.MOSS] = _material(GroundMaterials.MOSS, "Moss flat",
-		Color(0.255, 0.400, 0.335), Color(0.330, 0.470, 0.395), 0.88, 0.0, 1.0)
+		Color(0.235, 0.405, 0.320), Color(0.320, 0.480, 0.375), 0.88, 0.0, 1.0)
 	# Bare rock: steep faces and ridge tops. Shorter, choppier marks.
 	out[GroundMaterials.ROCK] = _material(GroundMaterials.ROCK, "Bare rock",
 		Color(0.235, 0.270, 0.310), Color(0.330, 0.365, 0.405), 0.94, 0.0, 1.9)
@@ -281,7 +322,7 @@ func _materials() -> Array[GroundMaterial]:
 		Color(0.520, 0.575, 0.520), Color(0.620, 0.660, 0.600), 0.80, 0.05, 0.75)
 	# Darker soil in broad patches, so the flats are not one colour.
 	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Loam",
-		Color(0.150, 0.235, 0.230), Color(0.205, 0.300, 0.280), 0.90, 0.10, 1.15)
+		Color(0.245, 0.215, 0.150), Color(0.310, 0.275, 0.190), 0.90, 0.08, 1.15)
 	# The root mat. The ONLY slot with a real vein strength, so the filament web
 	# rings each plateau instead of covering it.
 	out[GroundMaterials.VINE] = _material(GroundMaterials.VINE, "Root mat",
@@ -316,15 +357,25 @@ func _palette() -> BiomePalette:
 	# only the root mat has a real value. Back up from 0.20 because it is no
 	# longer competing with the brush marks across the whole map — it only
 	# appears on the rims.
-	p.vein_strength = 0.55
-	p.vein_scale = 0.052
-	p.vein_sharpness = 10.0
+	# The bioluminescent filaments. Turned down hard from 0.55 / 0.052 / 10.0.
+	#
+	# At that scale the shader's `world * vein_scale * 10` put a filament every
+	# 1.9 metres and `sharpness` 10 made each one a hairline, so the root mat
+	# came out wearing a glowing hairnet — the thing that read as scribble in
+	# every preview, and which I had twice misdiagnosed as the root strands
+	# themselves. The strands were always clean ribbons; the net was on top of
+	# them. A few broad filaments per ribbon is what the reference shows.
+	p.vein_strength = 0.34
+	p.vein_scale = 0.016
+	p.vein_sharpness = 3.4
 	# Left ON. It is a readability aid and this is still a grey-box slice —
 	# turn it to 0 for a screenshot, not for a playtest.
 	# Painterly. Tuned for the overhead camera: strokes about a metre long
 	# running along the contours, five value steps, and a light posterise.
 	p.paint_strength = 0.85
-	p.paint_bands = 5.0
+	# SMOOTH, not banded. One value here is the whole art-direction note: at 5
+	# the light ramp is quantised into steps and that is the "banded" look that
+	# was rejected. At or below 1 the shader skips quantisation entirely.
 	# SIZE MATTERS MORE THAN ANYTHING ELSE HERE. The first pass used a scale of
 	# 1.15 with a stretch of 7.5, which makes a stroke about 90 cm long and 12 cm
 	# across — under a pixel wide from the RTS camera, so every mark aliased
@@ -334,8 +385,10 @@ func _palette() -> BiomePalette:
 	p.stroke_scale = 0.22
 	p.stroke_stretch = 5.0
 	p.stroke_depth = 0.62
-	p.paint_quantise = 14.0
-	p.edge_ink = 0.45
+	# Posterise OFF. It fought the distance gradients — a handful of mixed
+	# values is a good description of albedo in a painting and a bad one for a
+	# surface that also has to carry smooth falloffs.
+	p.paint_quantise = 0.0
 	p.paint_tone = 0.55
 	p.canvas_grain = 0.10
 	# Ink. The reference has linework around every shape; this is depth-only
@@ -349,18 +402,96 @@ func _palette() -> BiomePalette:
 	p.ink_crease = 0.0060
 	p.ink_thickness_px = 1.4
 	p.ink_fade_m = 150.0
+	# The distance gradients. These carry the painted look now.
+	p.field_range_m = 20.0
+	p.edge_shade = 0.42
+	p.edge_falloff_m = 9.0
+	p.strand_shade = 0.34
+	p.strand_falloff_m = 3.0
+	p.shore_pale = 0.50
+	p.shore_falloff_m = 7.0
+	p.tube_radius_m = 1.8
+	p.tube_blend = 0.80
+	_painted_light(p)
 	p.threshold_line_strength = 0.85
 	# Below this nothing is drawn and the cloud deck shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.
 	p.void_below = VOID_BELOW
 	p.channel_below = CHANNEL_BELOW
 	p.channel_web_threshold = WEB
+	p.channel_strand_width_m = STRAND_W
 	# The survey grid from the reference. Ten metres reads as a useful ruler
 	# from the overhead camera without turning the ground into graph paper.
 	p.grid_spacing_m = 10.0
 	p.grid_colour = Color(0.55, 0.88, 0.95)
 	p.grid_strength = 0.13
 	return p
+
+
+## The shading model: where the light comes from, and what colour its shadows
+## are. Split out of _palette() because it is a model rather than a palette —
+## these numbers decide how SHAPE reads, not what colour anything is.
+func _painted_light(p: BiomePalette) -> void:
+	# Upper-left and high. Upper-left is the illustration convention and has
+	# been since 15th-century cartography; high is also a performance decision,
+	# since shadow length is height * cot(elevation) and a long shadow means a
+	# large re-bake neighbourhood for every shovel-load.
+	p.sun_azimuth_deg = -50.0
+	# 58 was too high for THIS terrain to cast anything: the lobes are gentle
+	# domes a couple of metres proud of the plate, and at 58 degrees their own
+	# slope never out-climbs the sun ray, so the cast-shadow channel was a no-op
+	# and the AO was doing all the work. 42 still keeps shadows short enough that
+	# the re-bake neighbourhood stays small.
+	p.sun_elevation_deg = 42.0
+
+	# THE GRADIENT MAP. Five stops, authored the way a painter mixes a shadow
+	# rather than the way a renderer computes one.
+	#
+	# The stop at 0.22 is the one that does the work: it is DARKER than its
+	# neighbours and MORE SATURATED. That is the painter's rule for an occlusion
+	# shadow, and it is the whole difference between this and a grey multiply.
+	# It does not read as a band because the stops either side interpolate
+	# straight through it.
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.00, 0.22, 0.55, 0.85, 1.00])
+	g.colors = PackedColorArray([
+		Color(0.10, 0.13, 0.26),   # deep, cool, desaturated
+		Color(0.13, 0.30, 0.34),   # the occlusion band: darker AND more saturated
+		Color(0.52, 0.58, 0.54),   # neutral mid
+		Color(0.88, 0.89, 0.80),   # warm, slightly desaturated
+		Color(1.00, 0.98, 0.90),   # near-white warm highlight
+	])
+	# Linear, not constant: constant would reintroduce exactly the banding this
+	# whole change exists to remove.
+	g.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_LINEAR
+	p.tone_ramp = g
+	p.tone_ramp_strength = 1.0
+	p.terminator_k = 1.45
+
+	# AO. The reach is the sensitive number: at a couple of cells it reads as
+	# dirt in a crease, at 8 m it is the broad airbrushed darkening that makes a
+	# plateau sit ON the plate instead of floating above it.
+	p.ao_reach_m = 8.0
+	p.ao_strength = 0.85
+	p.ao_light_affect = 0.55
+
+	# The cast shadow. Reach is roughly the longest shadow the tallest feature
+	# can throw at this sun elevation; softness is the paint program's Size.
+	p.shadow_reach_m = 14.0
+	p.shadow_softness_m = 2.2
+	p.shadow_strength = 0.65
+
+	# Curvature: the lit crest and the dark crease. This is what replaces the
+	# band-seam ink, which had nowhere to live once the bands went.
+	p.curv_wide_m = 3.0
+	# Turned down from 5.0 / 0.45 / 0.55. At those values every lobe wore a
+	# bright ring where its dome meets the plate — correct behaviour (that IS
+	# a convex crest) but at an intensity that reads as a glow rather than as
+	# a lit edge. Curvature is a line, not a lighting effect.
+	p.curv_gain = 3.2
+	p.crease_ink = 0.38
+	p.ridge_gain = 0.26
+	p.ridge_tint = Color(0.78, 0.94, 0.80)
 
 
 ## The weather under the map. Height is in world metres: the terrain's lowest
@@ -461,7 +592,8 @@ func _dressing() -> BiomeDressing:
 func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	print("\nthe range")
 	var field := TerrainBuilder.build(map)
-	var mats := TerrainBuilder.classify_materials(field, VOID_BELOW, CHANNEL_BELOW, WEB)
+	var mats := TerrainBuilder.classify_materials(field, VOID_BELOW, CHANNEL_BELOW, WEB,
+		2.5, 3.0, STRAND_W)
 	var cfg := field.cfg
 	var total := cfg.cells_x * cfg.cells_z
 	var drawn := 0
@@ -754,10 +886,25 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		raw.store_float(h)
 	raw.close()
 
-	TerrainBuilder.classify_materials(field, VOID_BELOW, CHANNEL_BELOW, WEB)
+	TerrainBuilder.classify_materials(field, VOID_BELOW, CHANNEL_BELOW, WEB,
+		2.5, 3.0, STRAND_W)
 	var mat := FileAccess.open(OUT + "/biodome_01_mat.u8", FileAccess.WRITE)
 	mat.store_buffer(field.material_id)
 	mat.close()
+
+	var fld := FileAccess.open(OUT + "/biodome_01_fields.u8", FileAccess.WRITE)
+	fld.store_buffer(TerrainBuilder.bake_fields(field, VOID_BELOW, 20.0))
+	fld.close()
+
+	# AO, cast shadow and wide curvature, so the preview shades from the SAME
+	# bake the game gets rather than approximating it.
+	var shd := FileAccess.open(OUT + "/biodome_01_shade.u8", FileAccess.WRITE)
+	var t0 := Time.get_ticks_msec()
+	shd.store_buffer(TerrainBuilder.bake_shade(field, _palette()))
+	var shade_ms := Time.get_ticks_msec() - t0
+	shd.close()
+	print("  baked   shade map in %d ms  (%d cells)"
+		% [shade_ms, map.terrain.cells_x * map.terrain.cells_z])
 
 	var wet := FileAccess.open(OUT + "/biodome_01_water.r32", FileAccess.WRITE)
 	for w in field.water:
@@ -803,14 +950,37 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		# Exported so tools/paint_preview.py reads the SAME numbers the shader
 		# gets. It used to keep its own copy and they drifted within an hour.
 		"paint": {
-			"strength": pal.paint_strength, "bands": pal.paint_bands,
+			"strength": pal.paint_strength,
 			"stroke_scale": pal.stroke_scale, "stroke_stretch": pal.stroke_stretch,
 			"stroke_depth": pal.stroke_depth, "quantise": pal.paint_quantise,
-			"edge_ink": pal.edge_ink, "tone": pal.paint_tone,
+			"tone": pal.paint_tone,
 			"canvas_grain": pal.canvas_grain,
 			"ink_strength": pal.ink_strength,
 			"ink_colour": pal.ink_colour.to_html(false),
 			"ink_silhouette": pal.ink_silhouette, "ink_crease": pal.ink_crease,
+			"field_range_m": pal.field_range_m,
+			"edge_shade": pal.edge_shade, "edge_falloff_m": pal.edge_falloff_m,
+			"strand_shade": pal.strand_shade, "strand_falloff_m": pal.strand_falloff_m,
+			"shore_pale": pal.shore_pale, "shore_falloff_m": pal.shore_falloff_m,
+			"tube_radius_m": pal.tube_radius_m, "tube_blend": pal.tube_blend,
+		},
+		"light": {
+			"sun_azimuth_deg": pal.sun_azimuth_deg,
+			"sun_elevation_deg": pal.sun_elevation_deg,
+			"terminator_k": pal.terminator_k,
+			"tone_ramp_strength": pal.tone_ramp_strength,
+			"ramp_offsets": Array(pal.tone_ramp.offsets) if pal.tone_ramp else [],
+			"ramp_colours": (Array(pal.tone_ramp.colors).map(
+				func(c: Color) -> String: return c.to_html(false))
+				if pal.tone_ramp else []),
+			"ao_reach_m": pal.ao_reach_m, "ao_strength": pal.ao_strength,
+			"ao_light_affect": pal.ao_light_affect,
+			"shadow_reach_m": pal.shadow_reach_m,
+			"shadow_softness_m": pal.shadow_softness_m,
+			"shadow_strength": pal.shadow_strength,
+			"curv_wide_m": pal.curv_wide_m, "curv_gain": pal.curv_gain,
+			"crease_ink": pal.crease_ink, "ridge_gain": pal.ridge_gain,
+			"ridge_tint": pal.ridge_tint.to_html(false),
 		},
 		"surface": {
 			"macro_scale": pal.macro_scale, "macro_strength": pal.macro_strength,
@@ -818,6 +988,8 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 			"vein_sharpness": pal.vein_sharpness, "vein_strength": pal.vein_strength,
 			"pool_glow_strength": pal.pool_glow_strength,
 			"pool_alt_mix": pal.pool_alt_mix, "grid_strength": pal.grid_strength,
+			"material_jitter_m": pal.material_jitter_m,
+			"material_jitter_scale": pal.material_jitter_scale,
 		},
 		"materials": _material_json(),
 		"palette": {

@@ -25,12 +25,88 @@ uniform sampler2D water_map : filter_linear, repeat_disable;
 // organic by jittering the SAMPLE POSITION with noise instead, which keeps
 // every sample a real slot and gives the hard painterly edge the reference has.
 uniform sampler2D material_map : filter_nearest, repeat_disable;
+
+// DISTANCE TO THE THINGS THE SHADING RAMPS OFF. R edge, G root strand, B
+// waterline, each normalised over `field_range_m`.
+//
+// This is the change that replaces posterised bands with gradients. Almost
+// every gradient in the reference is a DISTANCE, not a height: ground darkens
+// as it nears the edge of the mass, lightens away from a strand, pales toward
+// a shoreline. Two places at the same height shade differently depending how
+// far they are from a feature, and a height ramp cannot say that at all — which
+// is exactly why the banded version reads flat.
+//
+// A distance field is smooth by construction: it changes by about one per cell,
+// so every ramp built on it is continuous. filter_linear, unlike the material
+// map, because here a value halfway between two cells is a real distance.
+uniform sampler2D field_map : filter_linear, repeat_disable;
+uniform float field_range_m = 20.0;
+uniform float edge_shade = 0.0;      // darkening as ground nears the drop
+uniform float edge_falloff_m = 9.0;
+uniform float strand_shade = 0.0;    // contact shadow beside a root strand
+uniform float strand_falloff_m = 3.0;
+uniform float shore_pale = 0.0;      // bleaching toward a waterline
+uniform float shore_falloff_m = 7.0;
+
+// ROOT STRANDS AS ROUNDED TUBES.
+//
+// In the reference a root is not a green line painted on the floor — it is a
+// tube, lit along its crest and shadowed at its base. That reads as geometry
+// without being geometry, and it is the single biggest thing separating the
+// reference's roots from a scribble.
+//
+// The trick is that a distance field already describes a tube. Take a circular
+// cross-section of radius `tube_radius_m`: at distance d from the strand the
+// surface rises by sqrt(r^2 - d^2), and its normal tilts away from the centre
+// by exactly d/r. So the shading normal comes out of the field with no extra
+// geometry, no normal map, and no mesh — two texture taps for the gradient.
+uniform float tube_radius_m = 0.0;   // 0 disables the whole thing
+uniform float tube_blend = 0.8;
+// --- PAINTED LIGHT -----------------------------------------------------------
+// The three shape cues a painted map is built from, and the colour rule that
+// ties them together. See BiomePalette's "Painted light" group for the why.
+//
+// R = ambient occlusion, G = cast shadow, B = wide curvature (0.5 is flat).
+// One fetch for all three, because each costs ~50 taps to compute and a phone
+// cannot pay that per fragment: AO alone at 2.4 Mpix would be 120M taps a
+// frame. TerrainBuilder.bake_shade pays it once per CELL instead.
+uniform sampler2D shade_map : filter_linear, repeat_disable;
+uniform float ao_strength = 0.0;        // 0 skips the whole painted-light path
+uniform float ao_light_affect = 0.55;
+uniform float shadow_strength = 0.0;
+
+// The gradient map. A single scalar illumination value picks a COLOUR here,
+// not a brightness — which is the difference between a shadow that is just
+// darker and one that is darker, cooler and more saturated the way a painter
+// mixes it. 256x1, filter_linear, so the output has no steps anywhere.
+uniform sampler2D tone_ramp : filter_linear, repeat_disable;
+uniform float tone_ramp_strength = 0.0;
+uniform float terminator_k = 1.5;
+
+// Curvature. The FINE scale runs live from four height taps, because it is the
+// cheapest thing in this shader and because running it live means a trench dug
+// this frame gets its highlighted lip and its dark inner crease this frame —
+// which is the specific fix for "trenches read as cosmetic dents".
+uniform float curv_gain = 0.0;
+uniform float crease_ink = 0.0;
+uniform float ridge_gain = 0.0;
+uniform vec3 ridge_tint : source_color = vec3(0.80, 0.93, 0.78);
+
 uniform vec3 mat_colour[5] : source_color;
 uniform vec3 mat_colour_alt[5] : source_color;
 uniform float mat_rough[5];
 uniform float mat_vein[5];
 uniform float mat_stroke[5];
 uniform float material_jitter_m = 1.8;
+// How FAST the jitter noise varies, in cycles per metre.
+//
+// This matters more than the amplitude and it was wrong. At 0.33 the jitter
+// wavelength is three metres — three times the cell size — so the border wobbled
+// as a whole while every individual cell still showed as a square step. The
+// jitter has to vary faster than one cell for neighbouring fragments inside the
+// same cell to land in different slots, which is what dissolves the staircase
+// into a torn edge.
+uniform float material_jitter_scale = 1.1;
 uniform vec2 field_size_m = vec2(150.0, 112.0);
 uniform float height_scale_m = 12.0;
 uniform float texel_m = 1.0;
@@ -97,12 +173,10 @@ uniform float grid_width_px = 1.4;
 // run along the contour the way a painter's would, rather than in a fixed
 // screen direction. That is the single thing that stops it reading as noise.
 uniform float paint_strength = 0.0;     // master; 0 skips all of it
-uniform float paint_bands = 4.0;        // steps in the light ramp
 uniform float stroke_scale = 1.1;       // strokes per metre
 uniform float stroke_stretch = 7.0;     // how long a stroke is vs how wide
 uniform float stroke_depth = 0.60;      // how hard the stroke bends the normal
 uniform float paint_quantise = 0.0;     // albedo posterise steps; 0 is off
-uniform float edge_ink = 0.0;           // darkening where the bands meet
 uniform float paint_tone = 0.0;         // how much a stroke shifts the COLOUR
 uniform float canvas_grain = 0.0;       // the weave under the paint
 
@@ -137,6 +211,13 @@ varying vec3 v_world;
 // Carrying the world normal explicitly makes the slope test mean what it says,
 // and gives the detail bump a frame to be perturbed in.
 varying vec3 v_normal_w;
+// Carried from fragment() into light(). Godot allows a varying to be written in
+// the fragment stage and read in the light stage, which is the only way to get
+// the baked AO, the cast shadow and the live curvature into the tone ramp —
+// light() cannot fetch them itself and has no access to fragment locals.
+varying float v_shade;   // AO * cast shadow, already weighted
+varying float v_curv;    // signed: negative convex, positive concave
+
 
 float sample_h(vec2 world_xz) {
 	return textureLod(height_map, world_xz / field_size_m, 0.0).r;
@@ -285,7 +366,8 @@ void fragment() {
 	}
 	// Material is decided before the strokes, because rock takes shorter,
 	// choppier marks than moss and the stroke size comes from the slot.
-	vec2 jit0 = vec2(fbm(v_world.xz * 0.33), fbm(v_world.xz * 0.33 + 9.13)) - 0.5;
+	vec2 jit0 = vec2(fbm(v_world.xz * material_jitter_scale),
+		fbm(v_world.xz * material_jitter_scale + 9.13)) - 0.5;
 	int mid0 = clamp(int(textureLod(material_map,
 		(v_world.xz + jit0 * material_jitter_m) / field_size_m, 0.0).r * 255.0 + 0.5), 0, 4);
 	float stroke_tone = 0.0;
@@ -296,7 +378,8 @@ void fragment() {
 
 	// Which material this is. The jitter is two noise taps, and it is what
 	// turns a cell grid into a torn organic border.
-	vec2 jit = vec2(fbm(v_world.xz * 0.33), fbm(v_world.xz * 0.33 + 9.13)) - 0.5;
+	vec2 jit = vec2(fbm(v_world.xz * material_jitter_scale),
+		fbm(v_world.xz * material_jitter_scale + 9.13)) - 0.5;
 	vec2 muv = (v_world.xz + jit * material_jitter_m) / field_size_m;
 	int mid = int(textureLod(material_map, muv, 0.0).r * 255.0 + 0.5);
 	mid = clamp(mid, 0, 4);
@@ -397,17 +480,107 @@ void fragment() {
 		base = mix(base, grid_colour, line * grid_strength);
 	}
 
-	// Lay the stroke down as a value shift before posterising, so the marks
-	// land ON the steps rather than being flattened away by them.
+	// Lay the stroke down as a value shift.
 	base *= 1.0 + stroke_tone;
 
-	// Posterise. A painter mixes a handful of values and reuses them; smooth
-	// gradients are the giveaway that a surface was computed rather than mixed.
+	// --- distance gradients --------------------------------------------------
+	// Three ramps off one texture fetch. Each is an exponential shoulder rather
+	// than a linear one, because contact darkening in a painted map falls off
+	// fast near the feature and long after it — a linear ramp reads as a fog.
+	vec3 dist = textureLod(field_map, v_world.xz / field_size_m, 0.0).rgb
+		* field_range_m;
+
+	if (edge_shade > 0.0) {
+		float t = exp(-dist.r / max(0.01, edge_falloff_m));
+		base *= 1.0 - t * edge_shade;
+	}
+	if (strand_shade > 0.0) {
+		float t = exp(-dist.g / max(0.01, strand_falloff_m));
+		base *= 1.0 - t * strand_shade;
+	}
+	if (shore_pale > 0.0) {
+		float t = exp(-dist.b / max(0.01, shore_falloff_m));
+		base = mix(base, base * 1.35 + 0.06, t * shore_pale);
+	}
+
+	// --- root strands as rounded tubes --------------------------------------
+	if (tube_radius_m > 0.0 && dist.g < tube_radius_m) {
+		// Height of a circular cross-section: 1 at the crest, 0 at the base.
+		float t = dist.g / tube_radius_m;
+		float crest = sqrt(max(0.0, 1.0 - t * t));
+
+		// Which way is "away from the strand". Two taps rather than screen
+		// derivatives: dFdx/dFdy would be screen space, which only matches
+		// world x/z near the middle of a top-down view and skews at the edges.
+		float e = 1.0;
+		vec2 uv_e = vec2(e, 0.0) / field_size_m;
+		vec2 uv_n = vec2(0.0, e) / field_size_m;
+		vec2 c = v_world.xz / field_size_m;
+		float gx = textureLod(field_map, c + uv_e, 0.0).g
+			- textureLod(field_map, c - uv_e, 0.0).g;
+		float gz = textureLod(field_map, c + uv_n, 0.0).g
+			- textureLod(field_map, c - uv_n, 0.0).g;
+		vec2 away = vec2(gx, gz);
+		float glen = length(away);
+		away = glen > 0.0001 ? away / glen : vec2(0.0);
+
+		// The tube's own normal, blended in by how close to the crest we are —
+		// so it fades out at the base instead of ending in a seam.
+		vec3 tube_n = normalize(vec3(away.x * t, max(crest, 0.08), away.y * t));
+		n = normalize(mix(n, tube_n, tube_blend * crest));
+	}
+
+	// --- painted light: AO, cast shadow, curvature ---------------------------
+	// One fetch, three cues. See the uniform block for why they are baked.
+	float ao = 1.0;
+	float curv = 0.0;
+	if (ao_strength > 0.0 || shadow_strength > 0.0 || curv_gain > 0.0) {
+		vec3 sh = textureLod(shade_map, v_world.xz / field_size_m, 0.0).rgb;
+		ao = mix(1.0, sh.r, ao_strength);
+		float cast_shadow = mix(1.0, sh.g, shadow_strength);
+
+		// Curvature at two scales. The wide one is baked (it needs a few cells
+		// of reach); the fine one is four taps here, so a trench dug this frame
+		// gets its lip and its crease this frame with nothing to re-bake.
+		float wide = sh.b * 2.0 - 1.0;
+		float e = texel_m;
+		float lap = sample_h(v_world.xz - vec2(e, 0.0))
+			+ sample_h(v_world.xz + vec2(e, 0.0))
+			+ sample_h(v_world.xz - vec2(0.0, e))
+			+ sample_h(v_world.xz + vec2(0.0, e))
+			- 4.0 * v_h;
+		float fine = clamp(lap * height_scale_m / e * curv_gain, -1.0, 1.0);
+		// Broad first, crisp on top — the order an airbrushed highlight is laid
+		// down. Positive is concave, negative is convex.
+		curv = clamp(wide * 0.65 + fine * 0.45, -1.0, 1.0);
+
+		// The crease line goes in the PIGMENT, not the light: a painter puts a
+		// dark mark where a form meets the ground and it is there whichever way
+		// the sun points. Squared so it stays a line and does not grey the flat.
+		float crease = max(curv, 0.0);
+		base *= 1.0 - crease * crease * crease_ink;
+
+		v_shade = mix(1.0, ao, ao_light_affect) * cast_shadow;
+		v_curv = curv;
+	} else {
+		v_shade = 1.0;
+		v_curv = 0.0;
+	}
+
+	// Posterise is OFF by default now. It was the banding: a painter mixing a
+	// handful of values is a good description of ALBEDO in a painting and a bad
+	// one for a surface that also has to carry distance gradients, and the two
+	// fight. Kept as a knob rather than deleted because at a low setting it
+	// still helps the flats read as mixed rather than computed.
 	if (paint_quantise > 1.0) {
 		base = floor(base * paint_quantise + 0.5) / paint_quantise;
 	}
 
 	ALBEDO = base;
+	// AO darkens AMBIENT; ao_light_affect is folded into v_shade for the direct
+	// term instead, because a custom light() bypasses the engine's own AO path.
+	AO = ao;
+	AO_LIGHT_AFFECT = 0.0;
 	EMISSION = emit * seen;
 	// Back to view space, which is what the fragment stage wants written.
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
@@ -425,29 +598,58 @@ void fragment() {
 }
 
 
-// Banded diffuse — the painted look lives here as much as in the strokes.
+// The diffuse model. This is where the painted look mostly lives.
 //
-// Defining light() overrides the render_mode diffuse model, so at
-// paint_strength 0 this is plain Lambert rather than Burley. That is a real
-// (small) change to the unpainted look and is why the knob is not free.
+// It used to posterise N*L into steps. That WAS the banding — it was authored,
+// not an artefact of precision, which is why turning on debanding would never
+// have fixed it. What replaces it is a gradient map: reduce the light to one
+// scalar, and use that scalar to look up a COLOUR rather than a brightness.
+//
+// Three things make that read as paint rather than as Lambert:
+//
+//  - HALF-LAMBERT. Clamping N*L at zero crushes everything past the terminator
+//    to flat black, which reads as a hard band even with no quantisation at
+//    all. Remapping to 0..1 across the whole sphere keeps the shadow side alive
+//    the way a painter's fill light does.
+//  - The RAMP's hue path. Into shadow the ramp goes darker, cooler and MORE
+//    saturated, which is what a painter mixes and what plain Lambert cannot do
+//    at any number of steps.
+//  - CURVATURE biases the lookup rather than being added as a separate grey.
+//    So a crest slides up the ramp into the warm end and a crease slides down
+//    into the saturated end, and both inherit the hue path for free.
+//
+// Defining light() overrides the render_mode diffuse model, so this is the
+// model or Lambert, never Burley.
 void light() {
-	float ndl = clamp(dot(normalize(NORMAL), LIGHT), 0.0, 1.0);
-	float banded = ndl;
-	if (paint_strength > 0.0 && paint_bands > 1.0) {
-		// Quantise, but keep a soft edge inside each step so the terminator is
-		// a painted edge rather than a jagged one.
-		float scaled = ndl * paint_bands;
-		float step_i = floor(scaled);
-		float frac_v = fract(scaled);
-		banded = (step_i + smoothstep(0.35, 0.65, frac_v)) / paint_bands;
-		banded = mix(ndl, banded, paint_strength);
+	float ndl = dot(normalize(NORMAL), LIGHT);
 
-		// Ink: darken the seam where two bands meet, which is what a brush
-		// leaves when one value is laid next to another.
-		if (edge_ink > 0.0) {
-			float seam = 1.0 - abs(frac_v - 0.5) * 2.0;
-			banded *= 1.0 - pow(seam, 8.0) * edge_ink * paint_strength;
+	if (tone_ramp_strength > 0.0) {
+		// Half-Lambert: 0..1 across the whole sphere, no clamp at the
+		// terminator. pow() then pushes the terminator where the art wants it.
+		float t = pow(clamp(ndl * 0.5 + 0.5, 0.0, 1.0), terminator_k);
+		t *= ATTENUATION * v_shade;
+		// A crest reads lit, a crease reads occluded, regardless of facing.
+		t = clamp(t + max(-v_curv, 0.0) * 0.15 - max(v_curv, 0.0) * 0.25,
+			0.0, 1.0);
+
+		vec3 tone = texture(tone_ramp, vec2(t, 0.5)).rgb;
+		tone = mix(vec3(t), tone, tone_ramp_strength);
+		DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * tone;
+
+		// The bright line along a convex crest, gated by the LIT side so a
+		// crest in shadow does not glow. This is the other half of what makes
+		// a root read as a rounded tube and a fresh trench read as dug.
+		if (ridge_gain > 0.0) {
+			float ridge = max(-v_curv, 0.0);
+			DIFFUSE_LIGHT += ridge_tint * ridge * ridge * ridge_gain
+				* max(ndl, 0.0) * ATTENUATION * v_shade * LIGHT_COLOR;
 		}
+	} else {
+		// No ramp configured: plain Lambert, still carrying the shape cues.
+		// This is the grey-box fallback, so a palette with nothing set still
+		// reads sanely. (if/else rather than an early return: Godot rejects a
+		// bare `return` in these stage functions.)
+		DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION
+			* clamp(ndl, 0.0, 1.0) * v_shade;
 	}
-	DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * banded;
 }

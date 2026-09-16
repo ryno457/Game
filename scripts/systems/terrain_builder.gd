@@ -7,6 +7,19 @@ extends RefCounted
 ## That is what lets a test map be a stable fixture rather than a moving
 ## target, and what makes "seed + diff" a viable save format.
 
+# Sampling density for bake_shade(). These are ALGORITHM parameters, not art:
+# they buy accuracy, not a look, and the art-facing reach and gain knobs live in
+# BiomePalette where the project rule puts them. Raise AO_DIRS to 16 if a still
+# frame ever shows an eight-fold star around a lone spire; the cost is linear.
+const AO_DIRS := 8
+const AO_STEPS := 6
+const SHADOW_STEPS := 12
+# Distant blockers cast fainter shadows. This is the 1/(1+t*k) term that makes
+# a near rock's shadow crisp and a far ridge's shadow a faint wash, which is
+# what an area light does and what a paint program's Size slider approximates.
+const SHADOW_DISTANCE_FADE := 0.06
+
+
 static func build(map: TerrainMap) -> Heightfield:
 	var cfg := map.terrain
 	var hf := Heightfield.new(cfg)
@@ -125,7 +138,8 @@ static func bake_fields(hf: Heightfield, void_below: float,
 static func classify_materials(hf: Heightfield, void_below: float,
 		channel_below: float = 0.0,
 		web_threshold: float = 0.82,
-		rim_m: float = 2.5, shore_m: float = 3.0) -> Dictionary:
+		rim_m: float = 2.5, shore_m: float = 3.0,
+		strand_w_m: float = 5.0) -> Dictionary:
 	var cfg := hf.cfg
 	var w := cfg.cells_x
 	var h := cfg.cells_z
@@ -175,15 +189,22 @@ static func classify_materials(hf: Heightfield, void_below: float,
 			# root mat on 77% of the map — the opposite of the note that
 			# started this, which was that not all the ground should be vines.
 			#
-			# A ridged fold of value noise gives strands a few metres wide that
-			# branch and rejoin, which is what the reference actually shows.
+			# Strands are a BAND AROUND A CONTOUR of a ridged noise fold, and
+			# the band is measured in METRES, which is the whole trick.
+			#
+			# Thresholding the noise value directly — `ridge > 0.84` — was the
+			# first attempt and it came out as scribble. The reason is that a
+			# value threshold gives a band whose width is (value - threshold)
+			# divided by the local GRADIENT, and that gradient varies by an
+			# order of magnitude across the field: where the noise is steep the
+			# strand is a hair, where it is flat the strand is a blob. Dividing
+			# by the gradient cancels exactly that, so every strand comes out
+			# the same width no matter where it lands — a root ribbon rather
+			# than a contour line.
 			var in_channel := false
-			if channel_below > 0.0 and height < channel_below:
-				var n := _vnoise(x * 0.058, z * 0.058, 4421)
-				var strand := 1.0 - absf(n * 2.0 - 1.0)
-				# Higher is narrower. 0.60 left the mat on half the map; the
-				# strands have to be genuinely thin for open ground to win.
-				in_channel = strand > web_threshold
+			if channel_below > 0.0 and height < channel_below and strand_w_m > 0.0:
+				var d := _ridge_dist(x, z, web_threshold)
+				in_channel = d < strand_w_m * 0.5 / maxf(0.01, cfg.cell_size_m)
 			if (near_edge[i] == 1 or in_channel) and hf.water[i] <= 0.05:
 				id = GroundMaterials.VINE
 			hf.material_id[i] = id
@@ -338,3 +359,191 @@ static func _vnoise(x: float, y: float, seed_v: int) -> float:
 static func _hash(a: int, b: int, seed_v: int) -> float:
 	var n: float = sin(a * 127.1 + b * 311.7 + seed_v * 0.013) * 43758.5453
 	return n - floor(n)
+
+
+## Bake the three SHAPE cues the painted look needs, into one RGB8 texture.
+##
+## R = ambient occlusion, G = cast shadow, B = wide-scale curvature.
+##
+## Why these three and why baked. A painted top-down map gets its form from
+## three separate dark things, and the shader currently has none of them:
+##
+##   - OMNIDIRECTIONAL contact darkening where ground meets anything raised.
+##     That is AO, and it is what stops a plateau floating above the plate.
+##   - A DIRECTIONAL offset cast shadow, which is what tells the eye where the
+##     light is. Photoshop's Drop Shadow layer style, as maths.
+##   - CURVATURE, which is what makes a root read as a rounded tube rather than
+##     a stripe, and a trench read as dug rather than as a dark patch.
+##
+## AO and the cast shadow are the expensive ones: a horizon sweep is ~40 taps
+## per cell and the shadow march another 12, which is nothing per cell and
+## ruinous per fragment (2.4 Mpix x 52 taps, every frame, on a phone with no
+## measured headroom). So they are computed ONCE per cell here and read back as
+## a single texture fetch in the shader.
+##
+## All three are derived from the live heightfield, so a dug trench gets correct
+## AO, a correct cast shadow and a correct dug-looking rim the moment its chunk
+## re-bakes. Nothing here is an offline bake against a "final" shape.
+##
+## Two things to know before wiring this to deformation:
+##  - The dirty set must be DILATED by the AO reach and by the shadow length. A
+##    crater darkens ground several metres outside itself.
+##  - Godot 4 cannot update part of a texture (Zylann's heightmap plugin carries
+##    the same note), so this must be one texture PER CHUNK. One biodome-wide
+##    texture would mean re-uploading the whole map for every shovel-load.
+static func bake_shade(hf: Heightfield, p: BiomePalette) -> PackedByteArray:
+	var cfg := hf.cfg
+	var w := cfg.cells_x
+	var h := cfg.cells_z
+	var hs := cfg.height_scale_m
+	var tm := maxf(0.01, cfg.cell_size_m)
+	var heights := hf.heights
+
+	var out := PackedByteArray()
+	out.resize(w * h * 3)
+
+	# --- the sun, in heightmap space ----------------------------------------
+	# Azimuth is measured clockwise from -Z (north on the minimap), so the
+	# reference's upper-left light is azimuth -45 with a high elevation.
+	var az := deg_to_rad(p.sun_azimuth_deg)
+	var el := deg_to_rad(maxf(5.0, p.sun_elevation_deg))
+	var ldir := Vector2(sin(az), -cos(az))
+	# tan of the elevation, in HEIGHT UNITS per metre: the ray climbs this fast.
+	var ltan := tan(el) / hs
+
+	# --- AO sweep directions ------------------------------------------------
+	# Eight azimuths, not sixteen. The visual difference at this reach is small
+	# and the cost is linear in the count; sixteen is what to raise it to if a
+	# still frame ever shows the eight-fold star.
+	var dirs := PackedVector2Array()
+	for i in AO_DIRS:
+		var a := TAU * float(i) / float(AO_DIRS)
+		dirs.append(Vector2(cos(a), sin(a)))
+
+	# Step radii, geometric so a few steps reach a long way. r0 is one cell.
+	var radii := PackedFloat32Array()
+	var r := tm
+	var reach := maxf(tm, p.ao_reach_m)
+	while r <= reach and radii.size() < AO_STEPS:
+		radii.append(r)
+		r *= 1.5
+	if radii.is_empty():
+		radii.append(tm)
+
+	var shadow_radii := PackedFloat32Array()
+	r = tm
+	var s_reach := maxf(tm, p.shadow_reach_m)
+	while r <= s_reach and shadow_radii.size() < SHADOW_STEPS:
+		shadow_radii.append(r)
+		r *= 1.35
+	if shadow_radii.is_empty():
+		shadow_radii.append(tm)
+
+	var soft := maxf(0.01, p.shadow_softness_m) / hs
+	var curv_px := maxi(1, int(round(maxf(tm, p.curv_wide_m) / tm)))
+
+	for z in h:
+		for x in w:
+			var i := z * w + x
+			var hc := heights[i]
+
+			# --- AO: how much of the sky this cell can see ------------------
+			# For each azimuth, find the highest horizon angle anything in that
+			# direction subtends, then weight by sin^2 for a cosine hemisphere.
+			var occ := 0.0
+			for d in dirs:
+				var tan_h := 0.0
+				for rr in radii:
+					var sx := x + d.x * rr / tm
+					var sz := z + d.y * rr / tm
+					var hsamp := _h_at(heights, w, h, sx, sz, hc)
+					tan_h = maxf(tan_h, (hsamp - hc) * hs / rr)
+				var sin_h := tan_h / sqrt(1.0 + tan_h * tan_h)
+				occ += sin_h * sin_h
+			var ao := clampf(1.0 - occ / float(dirs.size()), 0.0, 1.0)
+
+			# --- cast shadow: march back along the light --------------------
+			# max(), not sum: it keeps the penumbra ramp monotonic, so the
+			# shadow edge is a clean gradient with no ringing from the steps.
+			var blocked := 0.0
+			for rr in shadow_radii:
+				# TOWARD the sun. This was a minus, marching away from it, so
+				# nothing on the map was ever shadowed — and nothing on screen
+				# said so, because the AO ring around every raised thing already
+				# looks like a shadow. tools/shade_check.gd is what found it.
+				var sx2 := x + ldir.x * rr / tm
+				var sz2 := z + ldir.y * rr / tm
+				var hsamp2 := _h_at(heights, w, h, sx2, sz2, hc)
+				# Height the sun ray has reached by here. Anything above it
+				# blocks, and by how much decides how dark.
+				var need := hc + ltan * rr
+				var far := 1.0 / (1.0 + rr * SHADOW_DISTANCE_FADE)
+				blocked = maxf(blocked, far * (hsamp2 - need) / soft)
+			var shadow := clampf(1.0 - clampf(blocked, 0.0, 1.0), 0.0, 1.0)
+
+			# --- wide curvature ---------------------------------------------
+			# Discrete Laplacian at a few cells' spacing. Negative is convex (a
+			# crest), positive is concave (a crease). Stored biased so 0.5 is
+			# flat, because the texture is unsigned.
+			var lap := (_h_at(heights, w, h, x - curv_px, z, hc)
+				+ _h_at(heights, w, h, x + curv_px, z, hc)
+				+ _h_at(heights, w, h, x, z - curv_px, hc)
+				+ _h_at(heights, w, h, x, z + curv_px, hc)
+				- 4.0 * hc)
+			var curv := clampf(lap * hs / (float(curv_px) * tm) * p.curv_gain,
+				-1.0, 1.0)
+
+			out[i * 3] = int(ao * 255.0)
+			out[i * 3 + 1] = int(shadow * 255.0)
+			out[i * 3 + 2] = int((curv * 0.5 + 0.5) * 255.0)
+	return out
+
+
+## Bilinear height lookup in cell coordinates, clamped at the border.
+##
+## `outside` is returned for samples off the map rather than the clamped edge
+## height: clamping makes the map's own border behave like an infinite ridge or
+## an infinite plain depending which way it leans, and both show up as a bright
+## or dark frame around the whole biodome. Handing back the centre cell's own
+## height makes the border neutral — nothing there occludes, nothing there
+## casts.
+static func _h_at(heights: PackedFloat32Array, w: int, h: int,
+		x: float, z: float, outside: float) -> float:
+	if x < 0.0 or z < 0.0 or x > float(w - 1) or z > float(h - 1):
+		return outside
+	var x0 := int(x)
+	var z0 := int(z)
+	var x1 := mini(x0 + 1, w - 1)
+	var z1 := mini(z0 + 1, h - 1)
+	var fx := x - float(x0)
+	var fz := z - float(z0)
+	var a := heights[z0 * w + x0]
+	var b := heights[z0 * w + x1]
+	var c := heights[z1 * w + x0]
+	var d := heights[z1 * w + x1]
+	return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fz
+
+
+## Distance in CELLS from (x, z) to the nearest `level` contour of the root-web
+## noise, approximated as |f - level| / |grad f|.
+##
+## That first-order approximation is what turns a value threshold into a band of
+## constant width. It is exact for a linear field and good enough anywhere the
+## field is not near a saddle; near a saddle the gradient goes to zero and the
+## band widens, which is exactly where roots should braid anyway.
+##
+## The frequency is low on purpose. At the 0.058 it started on, the strands were
+## a dense tangle at the scale of a single unit; at this frequency they are long
+## sweeping ribbons that cross a whole channel, which is what the reference has.
+const WEB_FREQ := 0.030
+const WEB_SEED := 4421
+
+static func _ridge(x: float, z: float) -> float:
+	return 1.0 - absf(_vnoise(x * WEB_FREQ, z * WEB_FREQ, WEB_SEED) * 2.0 - 1.0)
+
+static func _ridge_dist(x: int, z: int, level: float) -> float:
+	var f := _ridge(x, z)
+	var gx := (_ridge(x + 1, z) - _ridge(x - 1, z)) * 0.5
+	var gz := (_ridge(x, z + 1) - _ridge(x, z - 1)) * 0.5
+	var g := sqrt(gx * gx + gz * gz)
+	return absf(f - level) / maxf(g, 0.0005)

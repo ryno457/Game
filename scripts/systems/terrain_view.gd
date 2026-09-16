@@ -7,9 +7,13 @@ extends Node3D
 ## ray march against the heightfield instead, which needs no chunking
 ## constraints and no collision cook at all.
 
+## 150 x 112 divides into 6 x 4 chunks.
 const CHUNK := Vector2i(25, 28)
+## Entries in the tone-ramp LUT. 256 with linear filtering resolves finer than
+## the render buffer, so the ramp can never itself be the source of a band.
+const RAMP_WIDTH := 256
 ## The project's first texture asset. See the shader for the channel packing.
-const BRUSH_TEX := "res://textures/brush_strokes.png"     ## 150x112 divides into 6 x 4 chunks
+const BRUSH_TEX := "res://textures/brush_strokes.png"
 
 var field: Heightfield
 var fog: FogOfWar
@@ -20,6 +24,8 @@ var _tex: ImageTexture
 ## and never creates a lake.
 var _water_tex: ImageTexture
 var _material_tex: ImageTexture
+var _field_tex: ImageTexture
+var _shade_tex: ImageTexture
 var _dirty := true
 
 
@@ -40,10 +46,10 @@ func setup(p_field: Heightfield, p_fog: FogOfWar, shader: Shader) -> void:
 	_mat.set_shader_parameter("height_map", _tex)
 	_mat.set_shader_parameter("water_map", _water_tex)
 
-	var mimg := Image.create_from_data(cfg.cells_x, cfg.cells_z, false,
-		Image.FORMAT_R8, p_field.material_id)
-	_material_tex = ImageTexture.create_from_image(mimg)
-	_mat.set_shader_parameter("material_map", _material_tex)
+	# The material and distance maps are NOT uploaded here. Both depend on the
+	# materials having been classified, and classification needs thresholds
+	# that live on the palette — which setup() has not been given. They upload
+	# in apply_palette instead, which runs after the caller has classified.
 	_mat.set_shader_parameter("fog_map", fog.texture())
 	_mat.set_shader_parameter("field_size_m",
 		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m))
@@ -86,12 +92,10 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("pool_glow_alt", p.pool_glow_alt)
 	_mat.set_shader_parameter("pool_alt_mix", p.pool_alt_mix)
 	_mat.set_shader_parameter("paint_strength", p.paint_strength)
-	_mat.set_shader_parameter("paint_bands", p.paint_bands)
 	_mat.set_shader_parameter("stroke_scale", p.stroke_scale)
 	_mat.set_shader_parameter("stroke_stretch", p.stroke_stretch)
 	_mat.set_shader_parameter("stroke_depth", p.stroke_depth)
 	_mat.set_shader_parameter("paint_quantise", p.paint_quantise)
-	_mat.set_shader_parameter("edge_ink", p.edge_ink)
 	_mat.set_shader_parameter("paint_tone", p.paint_tone)
 	_mat.set_shader_parameter("canvas_grain", p.canvas_grain)
 	_mat.set_shader_parameter("brush_tex", load(BRUSH_TEX))
@@ -130,6 +134,78 @@ func _apply_materials(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("mat_vein", vein)
 	_mat.set_shader_parameter("mat_stroke", stroke)
 	_mat.set_shader_parameter("material_jitter_m", p.material_jitter_m)
+	_mat.set_shader_parameter("material_jitter_scale", p.material_jitter_scale)
+	_mat.set_shader_parameter("field_range_m", p.field_range_m)
+	_mat.set_shader_parameter("edge_shade", p.edge_shade)
+	_mat.set_shader_parameter("edge_falloff_m", p.edge_falloff_m)
+	_mat.set_shader_parameter("strand_shade", p.strand_shade)
+	_mat.set_shader_parameter("strand_falloff_m", p.strand_falloff_m)
+	_mat.set_shader_parameter("shore_pale", p.shore_pale)
+	_mat.set_shader_parameter("shore_falloff_m", p.shore_falloff_m)
+	_mat.set_shader_parameter("tube_radius_m", p.tube_radius_m)
+	_mat.set_shader_parameter("tube_blend", p.tube_blend)
+	_mat.set_shader_parameter("ao_strength", p.ao_strength)
+	_mat.set_shader_parameter("ao_light_affect", p.ao_light_affect)
+	_mat.set_shader_parameter("shadow_strength", p.shadow_strength)
+	_mat.set_shader_parameter("terminator_k", p.terminator_k)
+	_mat.set_shader_parameter("curv_gain", p.curv_gain)
+	_mat.set_shader_parameter("crease_ink", p.crease_ink)
+	_mat.set_shader_parameter("ridge_gain", p.ridge_gain)
+	_mat.set_shader_parameter("ridge_tint", p.ridge_tint)
+	_mat.set_shader_parameter("tone_ramp", _ramp_texture(p))
+	_mat.set_shader_parameter("tone_ramp_strength",
+		p.tone_ramp_strength if p.tone_ramp != null else 0.0)
+	_upload_maps(p)
+
+
+## The gradient map as a 256x1 texture.
+##
+## Built from the palette's Gradient rather than shipped as an image, so the
+## whole lighting model stays art-editable in the .tres and nothing here is an
+## asset. 256 entries with linear filtering quantises finer than the render
+## buffer can represent, so the ramp itself can never be the source of a band.
+func _ramp_texture(p: BiomePalette) -> Texture2D:
+	if p.tone_ramp == null:
+		return null
+	var t := GradientTexture1D.new()
+	t.gradient = p.tone_ramp
+	t.width = RAMP_WIDTH
+	# The ramp is authored in the same space the shader works in. Letting Godot
+	# treat it as sRGB would bend the hue path, which is the whole point of it.
+	t.use_hdr = false
+	return t
+
+
+## Material ids and the distance fields, uploaded once.
+##
+## Here rather than in setup() because both depend on the caller having already
+## run TerrainBuilder.classify_materials — the strand field is distance to the
+## VINE material, so the materials have to exist before the field can be baked.
+## Neither changes per frame: digging changes the SHAPE of the ground, not what
+## it is made of, and the fields only shift near a dig.
+func _upload_maps(p: BiomePalette) -> void:
+	if field == null or _mat == null:
+		return
+	var cfg := field.cfg
+	var mimg := Image.create_from_data(cfg.cells_x, cfg.cells_z, false,
+		Image.FORMAT_R8, field.material_id)
+	_material_tex = ImageTexture.create_from_image(mimg)
+	_mat.set_shader_parameter("material_map", _material_tex)
+
+	var fimg := Image.create_from_data(cfg.cells_x, cfg.cells_z, false,
+		Image.FORMAT_RGB8,
+		TerrainBuilder.bake_fields(field, p.void_below, p.field_range_m))
+	_field_tex = ImageTexture.create_from_image(fimg)
+	_mat.set_shader_parameter("field_map", _field_tex)
+
+	# AO, cast shadow and wide curvature. Unlike the two above, this one DOES
+	# change when the ground does — it is a function of the heightfield — so
+	# when deformation lands it re-bakes per dirty chunk, dilated by the AO
+	# reach and the shadow length. Whole-map here because the map is one mesh.
+	var simg := Image.create_from_data(cfg.cells_x, cfg.cells_z, false,
+		Image.FORMAT_RGB8, TerrainBuilder.bake_shade(field, p))
+	_shade_tex = ImageTexture.create_from_image(simg)
+	_mat.set_shader_parameter("shade_map", _shade_tex)
 
 
 ## Scale the per-fragment surface work without rebuilding the palette. The
