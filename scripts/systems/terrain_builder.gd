@@ -585,14 +585,32 @@ static func _h_at(heights: PackedFloat32Array, w: int, h: int,
 ## a dense tangle at the scale of a single unit; at this frequency they are long
 ## sweeping ribbons that cross a whole channel, which is what the reference has.
 const WEB_FREQ := 0.030
-const WEB_SEED := 4421
+## THREE seeds, not one, and this is what lets the web BRAID.
+##
+## A level set of a single scalar field is a family of disjoint simple curves.
+## It cannot cross itself — that is a property of level sets, not a tuning
+## problem — so one ridge field can never produce the braided, rejoining network
+## that is the dominant feature of the reference. Strands from DIFFERENT fields
+## have no such constraint: they cross freely, and the union of three sparse
+## networks is a braid.
+##
+## Three rather than two because two crossing families still read as a grid from
+## overhead; three breaks the regularity. Each is thinner than the single web it
+## replaces, so the total area is comparable while the centreline length roughly
+## triples — which is the measured deficit against the reference (44 m of
+## centreline per 100 m2 there, against 13.9 m here).
+const WEB_SEEDS := [4421, 9173, 2087]
 
-static func _ridge(x: float, z: float) -> float:
-	return 1.0 - absf(_vnoise(x * WEB_FREQ, z * WEB_FREQ, WEB_SEED) * 2.0 - 1.0)
+static func _ridge(x: float, z: float, seed_v: int) -> float:
+	return 1.0 - absf(_vnoise(x * WEB_FREQ, z * WEB_FREQ, seed_v) * 2.0 - 1.0)
 
+## Distance in CELLS to the nearest strand centreline, over all three webs.
 static func _ridge_dist(x: int, z: int, level: float) -> float:
-	var f := _ridge(x, z)
-	var gx := (_ridge(x + 1, z) - _ridge(x - 1, z)) * 0.5
-	var gz := (_ridge(x, z + 1) - _ridge(x, z - 1)) * 0.5
-	var g := sqrt(gx * gx + gz * gz)
-	return absf(f - level) / maxf(g, 0.0005)
+	var best := INF
+	for seed_v in WEB_SEEDS:
+		var f := _ridge(x, z, seed_v)
+		var gx := (_ridge(x + 1, z, seed_v) - _ridge(x - 1, z, seed_v)) * 0.5
+		var gz := (_ridge(x, z + 1, seed_v) - _ridge(x, z - 1, seed_v)) * 0.5
+		var g := sqrt(gx * gx + gz * gz)
+		best = minf(best, absf(f - level) / maxf(g, 0.0005))
+	return best

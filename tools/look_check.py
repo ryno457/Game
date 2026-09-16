@@ -56,11 +56,34 @@ MIN_DARK = 0.55       # references run 67-78%
 TOL_SAT = 0.12
 
 
+# Pixels at or below this are void, sky or an unlit background — not terrain.
+#
+# THIS MASK IS THE WHOLE POINT, and leaving it out made the first version of
+# this file worse than no check at all. 18.2% of the game's frame is near-black
+# void against the reference's 3.5%, and void counts as "dark" in every metric
+# here. The tool therefore reported a frame whose LIT GROUND was 1.35x too
+# bright (median 0.320 against the reference's 0.237) as passing, because the
+# void dragged the median down to 0.292.
+#
+# It corrupted the saturation reading too. Saturation is (max-min)/max, which
+# is 1.0 by definition wherever a channel is zero, and 57% of the frame's
+# darkest quartile had R <= 1/255. So it reported shadows as MORE saturated
+# than the references (1.00 against 0.69) when masked they are LESS (0.61).
+# Two analyses then built arguments on that number and both concluded the scene
+# should be brightened 6x and 20x — the opposite of the truth.
+VOID_LEVEL = 0.10
+
+
 def measure(path, crop=None):
     a = np.asarray(Image.open(path).convert("RGB"), np.float32) / 255.0
     if crop:
         h, w, _ = a.shape
         a = a[int(h * crop[1]):int(h * crop[3]), int(w * crop[0]):int(w * crop[2])]
+    flat = a.reshape(-1, 3)
+    lit = flat[flat.max(1) >= VOID_LEVEL]
+    if len(lit) < 100:
+        raise SystemExit("%s is almost entirely void — nothing to measure" % path)
+    a = lit
     lum = a @ np.array([0.2126, 0.7152, 0.0722], np.float32)
     mx, mn = a.max(-1), a.min(-1)
     sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0.0)
@@ -75,6 +98,7 @@ def measure(path, crop=None):
         # cannot, so it is worth reporting even though it is not scored.
         sat_dark=float(np.median(sat[lum < q1])),
         sat_light=float(np.median(sat[lum > q3])),
+        lit_share=float(len(lit) / len(flat)),
     )
 
 
@@ -118,9 +142,10 @@ def main():
             if not ok:
                 failed += 1
             print("  %s  %-40s %s" % ("PASS" if ok else "FAIL", name, detail))
-        print("       (shadows are %s saturated than highlights: %.2f vs %.2f)"
+        print("       (shadows are %s saturated than highlights: %.2f vs %.2f;"
+              " %.0f%% of the crop is lit terrain, the rest void)"
               % ("MORE" if g["sat_dark"] > g["sat_light"] else "LESS",
-                 g["sat_dark"], g["sat_light"]))
+                 g["sat_dark"], g["sat_light"], 100 * g["lit_share"]))
         print()
 
     print("ALL CHECKS PASSED" if failed == 0 else "%d CHECK(S) FAILED" % failed)

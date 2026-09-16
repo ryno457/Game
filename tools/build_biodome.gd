@@ -72,7 +72,12 @@ const WEB := 0.84
 ## And how thick the ribbon around that contour is, in metres. This is the one
 ## that decides whether the roots read as roots. At the noise-threshold width it
 ## replaced, the strands varied from a hair to a blob across the same map.
-const STRAND_W := 5.0
+## Strand width in metres. Down from 5.0, which had outgrown the shader that
+## draws it: tube_radius_m is 0.55 m, so on a 5 m mat every fragment more than
+## 0.55 m inside got crest = 1 and a normal 80% of the way to straight up — a
+## 4 m mesa with rolled shoulders, not a tube. The mask and the radius have to
+## agree, and the reference's tubes are 0.35-0.85 m radius.
+const STRAND_W := 1.6
 ## Spline samples per traced outline segment. Four is enough that no straight
 ## run survives at the overhead camera; the polygon distance test is brute force
 ## over every segment, so this is a direct multiplier on that cost.
@@ -363,9 +368,17 @@ func _materials() -> Array[GroundMaterial]:
 	# SILT CHANNEL, the blue-grey wet apron between lobes, 19%.
 	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Silt channel",
 		Color(0.118, 0.235, 0.275), Color(0.173, 0.333, 0.380), 0.90, 0.08, 1.15)
-	# ROOT MAT, the dark ground under the web, 12%.
+	# ROOT MAT. Measured: in the reference the web is overwhelmingly a PALE TEAL
+	# TUBE — crest #53817C, body #39605E, with a dark #17383A outline — and only
+	# 0.8-1.2% of the map's area is actually a glowing emerald root.
+	#
+	# This slot had it backwards. It was the DARKEST albedo on the map and, with
+	# a vein strength of 1.35 on top, rendered as the BRIGHTEST thing on screen:
+	# the entire web was a light source. A structure that glows along every inch
+	# of its length reads as a neon scribble, which is what it looked like.
+	# Pale albedo, and a vein strength that lights a minority of it.
 	out[GroundMaterials.VINE] = _material(GroundMaterials.VINE, "Root mat",
-		Color(0.086, 0.196, 0.227), Color(0.118, 0.255, 0.278), 0.85, 1.35, 0.85)
+		Color(0.224, 0.376, 0.369), Color(0.325, 0.506, 0.486), 0.85, 0.30, 0.85)
 	return out
 
 
@@ -420,7 +433,7 @@ func _palette() -> BiomePalette:
 	# from one, so the lift is real but small.
 	p.bio_pool_gain = 0.28
 	p.bio_pool_reach_m = 5.0
-	p.bio_root_gain = 0.45
+	p.bio_root_gain = 0.22
 	p.bio_root_reach_m = 1.6
 	# Left ON. It is a readability aid and this is still a grey-box slice —
 	# turn it to 0 for a screenshot, not for a playtest.
