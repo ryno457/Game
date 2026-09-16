@@ -421,13 +421,15 @@ void fragment() {
 	}
 	float slope = 1.0 - clamp(n.y, 0.0, 1.0);
 
-	// Which material this is. The jitter is two noise taps, and it is what
-	// turns a cell grid into a torn organic border.
-	vec2 jit = vec2(fbm(v_world.xz * material_jitter_scale),
-		fbm(v_world.xz * material_jitter_scale + 9.13)) - 0.5;
-	vec2 muv = (v_world.xz + jit * material_jitter_m) / field_size_m;
-	int mid = int(textureLod(material_map, muv, 0.0).r * 255.0 + 0.5);
-	mid = clamp(mid, 0, 4);
+	// Which material this is — the SAME lookup as mid0 above, reused.
+	//
+	// This used to be computed a second time from character-identical
+	// expressions: same jitter scale, same +9.13, same jitter metres, same
+	// textureLod of the same map. The two results were necessarily equal, so
+	// the fragment was paying a whole extra texture tap and six noise
+	// evaluations for a value it already held. A driver may fold the fbm
+	// pair; it is much less likely to fold a second textureLod.
+	int mid = mid0;
 
 	// Two values per material, mixed by the stroke field where painting is on
 	// and by plain noise where it is not — a painter mixes two and reuses them

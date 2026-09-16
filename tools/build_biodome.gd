@@ -449,15 +449,26 @@ func _palette() -> BiomePalette:
 	# into noise and the paint pass changed nothing. These are strokes roughly
 	# four metres long and most of a metre across: brush marks at the scale the
 	# camera actually sees.
-	p.stroke_scale = 0.22
-	p.stroke_stretch = 5.0
+	p.stroke_scale = 0.075
+	# UN-MIP THE BRUSH SHEET. stroke_stretch made the UV rate anisotropic 5:1,
+	# and the GPU's mip selector uses max(|dUV/dx|, |dUV/dy|) — so the stretched
+	# axis chose the mip for BOTH. At 19.13 px/m that was 29.4 texels per screen
+	# pixel across the stroke, selecting mip 4.88: a 512 sheet reduced to an
+	# effective 17x17, with every mark averaged to flat grey before the fragment
+	# saw it. The elongation is already baked into the sheet at 5-10:1 by
+	# make_brush_texture.py; stretching again took it to 25-50:1.
+	#
+	# At 1.0 and a 13.3 m tile the marks land 1.7-8.5 screen px wide, which is
+	# squarely inside the measured contrast deficit band.
+	p.stroke_stretch = 1.0
 	p.stroke_depth = 0.62
 	# Posterise OFF. It fought the distance gradients — a handful of mixed
 	# values is a good description of albedo in a painting and a bad one for a
 	# surface that also has to carry smooth falloffs.
 	p.paint_quantise = 0.0
 	p.paint_tone = 0.55
-	p.canvas_grain = 0.10
+	p.canvas_grain = 0.0   # was 0.10: a 1.1 m tile is mip 4.59, an effective
+	                       # 21x21 sheet — a whole texture tap to deliver a constant
 	# Ink. The reference has linework around every shape; this is depth-only
 	# because the normal buffer does not exist on the Mobile renderer.
 	p.ink_colour = Color(0.020, 0.052, 0.058)
@@ -494,6 +505,11 @@ func _palette() -> BiomePalette:
 	# and zero across the top 80% of the frame. The knob had been set without
 	# reference to the camera's actual depth range, and it switched off the
 	# whole fine-detail path everywhere it mattered.
+	# macro_strength off. It ran at macro_scale 0.018 cycles/m — 55 m features,
+	# which is the octave band where the build already measures 1.27x MORE
+	# contrast than the reference. It was actively producing the large flat
+	# blobs the brief complains about. The 11 m fbm already supplies mid drift.
+	p.macro_strength = 0.0
 	p.detail_fade_m = 150.0
 	p.detail_scale = 1.4
 	p.detail_strength = 0.5
