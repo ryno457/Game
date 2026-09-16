@@ -108,6 +108,10 @@ extends Resource
 ## is no tile: the terrain is a fixed shape now, so it carries a real unwrap.
 @export_range(0.0, 2.0) var baked_normal: float = 0.0
 @export_range(0.0, 1.0) var baked_colour: float = 0.0
+## A dark line along every baked form. The depth-based ink pass cannot draw
+## these: the vines are a normal map on flat ground and change no depth at all.
+@export_range(0.0, 1.0) var baked_ink: float = 0.0
+@export var baked_ink_power: float = 2.2
 ## Cycles per metre. Around 2-3 reads as grit at the RTS camera height; much
 ## finer than that is invisible and shimmers when the camera pans.
 @export var detail_scale: float = 2.6

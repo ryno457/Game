@@ -90,6 +90,8 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("detail_albedo", p.detail_albedo)
 	_mat.set_shader_parameter("baked_normal", p.baked_normal)
 	_mat.set_shader_parameter("baked_colour", p.baked_colour)
+	_mat.set_shader_parameter("baked_ink", p.baked_ink)
+	_mat.set_shader_parameter("baked_ink_power", p.baked_ink_power)
 	_mat.set_shader_parameter("detail_normal_tex", load(DETAIL_N))
 	_mat.set_shader_parameter("detail_colour_tex", load(DETAIL_C))
 	_mat.set_shader_parameter("detail_scale", p.detail_scale)

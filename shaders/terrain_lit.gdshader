@@ -255,6 +255,19 @@ uniform sampler2D detail_normal_tex : filter_linear_mipmap, repeat_disable;
 uniform sampler2D detail_colour_tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform float baked_normal = 0.0;   // 0 skips both fetches entirely
 uniform float baked_colour = 0.0;
+// INK ALONG EVERY BAKED FORM, from the normal map already in hand.
+//
+// Both references outline every shape in a dark, saturated version of its own
+// hue — it is the single most characteristic thing about the painted look,
+// and shaders/outline.gdshader cannot supply it here. That pass works on
+// DEPTH, and the vines are a normal map on flat ground: they change no depth
+// at all, so the silhouette and crease tests see nothing to draw.
+//
+// The baked normal does see them. Where it tilts away from vertical the
+// surface is a flank, and a flank is exactly where a painter puts the line.
+// Zero extra taps: the fetch has already happened.
+uniform float baked_ink = 0.0;
+uniform float baked_ink_power = 2.2;
 uniform float detail_scale = 2.6;       // cycles per metre
 uniform float detail_fade_m = 55.0;     // past this, flat — and cheaper
 uniform float macro_scale = 0.018;      // broad colour drift across the valley
@@ -281,6 +294,7 @@ varying float v_curv;    // signed: negative convex, positive concave
 varying float v_seen;    // fog of war, so light() can respect it too
 varying float v_detail;  // fine surface detail, as a VALUE shift
 varying vec3 v_baked;    // baked detail colour, mixed into the pigment
+varying float v_flank;   // how steeply the baked normal leans: the ink
 
 
 float sample_h(vec2 world_xz) {
@@ -423,6 +437,7 @@ void fragment() {
 	float detail_fade = 0.0;
 	v_detail = 0.0;
 	v_baked = vec3(0.0);
+	v_flank = 0.0;
 	if (detail_strength > 0.0 || detail_albedo > 0.0) {
 		float d = length(v_world - CAMERA_POSITION_WORLD);
 		detail_fade = 1.0 - smoothstep(detail_fade_m * 0.45, detail_fade_m, d);
@@ -448,6 +463,9 @@ void fragment() {
 					// that building a real TBN is not worth two more varyings.
 					n = normalize(n + vec3(-bn.x, 0.0, -bn.y)
 						* baked_normal * detail_fade);
+					// How far this fragment's baked normal leans. On open ground
+					// it is ~0; on the flank of a vine or a nodule it approaches 1.
+					v_flank = clamp(length(bn) * 1.35, 0.0, 1.0);
 				}
 				if (baked_colour > 0.0) {
 					v_baked = texture(detail_colour_tex, buv).rgb;
@@ -585,6 +603,14 @@ void fragment() {
 	// ground and vine colours, so at full strength it IS the surface.
 	if (baked_colour > 0.0) {
 		base = mix(base, v_baked, baked_colour * detail_fade);
+	}
+	// The line. A dark, SATURATED version of the surface's own colour, not
+	// black — a black outline reads as clip art, and the reference's ink
+	// holds real chroma (its measured outline is #17383A, not #000).
+	if (baked_ink > 0.0) {
+		float line = pow(v_flank, baked_ink_power) * baked_ink;
+		vec3 dark = base * vec3(0.30, 0.42, 0.46);
+		base = mix(base, dark, line);
 	}
 
 	// --- distance gradients --------------------------------------------------

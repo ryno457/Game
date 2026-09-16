@@ -12,9 +12,21 @@ that is not in the repository is not a reference.
 | `01-vtt-cavern-map.jpg` | Top-down painted VTT battle map | **The terrain read.** Ground materials, the glowing root network, rock rims, coral clusters, the survey grid, the value structure. This is the primary target. |
 | `03-detail-painting.png` | The same world, close up | **Detail density and palette.** Every square inch carries small-scale structure — pores, speckles, nodules, tiny glowing dots, colour mottling at three or four scales at once. |
 | `04-moonlit-ravine.png` | The same world, wide, at night | **Lighting and surround.** Moon key light, night sky, and the mountain geometry behind the playable area. |
-| `02-ui-mockup-landscape.png` | A phone HUD mockup | **Layout only — NOT an art target.** The resources it shows (SHIP PARTS, ESSENCE) were mockup filler; mass is the only resource. |
+| `02-ui-mockup-landscape.png` | A phone HUD mockup | **Layout, and now also GROUND COLOUR VARIETY.** Promoted 2026-09-16: its floor carries mossy greens, warm rust debris and violet accents where `01` is almost entirely teal, and that variety is wanted. Still not authoritative for the resource readouts — SHIP PARTS and ESSENCE were mockup filler, and mass is the only resource. |
 
 ## Reading them
+
+### A tension worth naming
+
+`01` measures as almost monochrome: 69-80% of its saturated pixels sit in hue
+170-210, and every warm hue in it put together is 0.38% of the image. `02` and
+`03` are far more varied — greens, rust, violet, coral pinks.
+
+Both are wanted, and they are not the same instruction. The resolution used
+here is that the GROUND STRUCTURE follows `01` (teal, dark, high value range)
+while the DRESSING on it — clumps, coral, fungal clusters — supplies `02` and
+`03`'s hue variety as accents. If the flats themselves go polychrome the map
+stops reading as one place.
 
 `01` is the one to check the game against, because it is the same projection
 the game uses. The others say what the world is made of and how it is lit, at a

@@ -469,7 +469,7 @@ func _palette() -> BiomePalette:
 	# values is a good description of albedo in a painting and a bad one for a
 	# surface that also has to carry smooth falloffs.
 	p.paint_quantise = 0.0
-	p.paint_tone = 0.55
+	p.paint_tone = 0.70
 	p.canvas_grain = 0.0   # was 0.10: a 1.1 m tile is mip 4.59, an effective
 	                       # 21x21 sheet — a whole texture tap to deliver a constant
 	# Ink. The reference has linework around every shape; this is depth-only
@@ -519,7 +519,10 @@ func _palette() -> BiomePalette:
 	p.detail_albedo = 0.18
 	# The baked detail carries the form now; the noise is backup.
 	p.baked_normal = 0.85
-	p.baked_colour = 0.55
+	p.baked_colour = 0.62
+	# The painted line along every vine and nodule.
+	p.baked_ink = 0.55
+	p.baked_ink_power = 2.0
 	p.threshold_line_strength = 0.85
 	# Below this nothing is drawn and the cloud deck shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.
