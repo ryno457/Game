@@ -71,7 +71,19 @@ def hexcol(h):
     return tuple(f(int(h[i:i + 2], 16)) for i in (0, 2, 4)) + (1.0,)
 
 
-HULL_HEX, PLATE_HEX, ACCENT_HEX = "12303a", "16222c", "4fe3c1"
+# LIGHT GREY, and the landscape is forbidden it.
+#
+# These were "12303a" and "16222c" — dark teal, the SAME hue family as the
+# ground, at a lower value than most of it. A machine painted the colour of the
+# thing it stands on cannot be picked out at a 50 m camera, and the player's own
+# units were the hardest objects on screen to find.
+#
+# Grey is the right answer rather than a bright hue because it is the one family
+# the alien landscape has none of: the reference's most achromatic sample is
+# #707b6d at 1.2% of the image and nothing in it is lighter. So grey reads as
+# MANUFACTURED without competing with the bioluminescence for attention.
+# tools/build_biodome.gd keeps every ground material teal-tinted to protect it.
+HULL_HEX, PLATE_HEX, ACCENT_HEX = "b9bdc2", "8e949b", "4fe3c1"
 HULL, PLATE, ACCENT = 0, 1, 2            # material slot indices
 
 

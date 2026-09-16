@@ -14,6 +14,10 @@ const CHUNK := Vector2i(25, 28)
 const RAMP_WIDTH := 256
 ## The project's first texture asset. See the shader for the channel packing.
 const BRUSH_TEX := "res://textures/brush_strokes.png"
+## Baked in Blender from art/detail_source.blend. Data, not pictures: both are
+## imported uncompressed and without source_color.
+const DETAIL_N := "res://textures/ground_detail_n.png"
+const DETAIL_C := "res://textures/ground_detail_c.png"
 
 var field: Heightfield
 var fog: FogOfWar
@@ -84,6 +88,11 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("threshold_line_strength", p.threshold_line_strength)
 	_mat.set_shader_parameter("detail_strength", p.detail_strength)
 	_mat.set_shader_parameter("detail_albedo", p.detail_albedo)
+	_mat.set_shader_parameter("baked_tile_m", p.baked_tile_m)
+	_mat.set_shader_parameter("baked_normal", p.baked_normal)
+	_mat.set_shader_parameter("baked_colour", p.baked_colour)
+	_mat.set_shader_parameter("detail_normal_tex", load(DETAIL_N))
+	_mat.set_shader_parameter("detail_colour_tex", load(DETAIL_C))
 	_mat.set_shader_parameter("detail_scale", p.detail_scale)
 	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m)
 	_mat.set_shader_parameter("macro_strength", p.macro_strength)

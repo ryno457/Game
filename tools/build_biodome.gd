@@ -358,8 +358,11 @@ func _materials() -> Array[GroundMaterial]:
 	out[GroundMaterials.MOSS] = _material(GroundMaterials.MOSS, "Open flat",
 		Color(0.122, 0.239, 0.235), Color(0.204, 0.353, 0.329), 0.88, 0.0, 1.0)
 	# BARE ROCK, near-achromatic, and the only slot allowed to be grey. 0.75%.
+	# Note the ALT is teal-tinted rather than a neutral light grey. Grey belongs
+	# to the machines and to nothing else: a light grey rock is the one ground
+	# colour that would camouflage a unit standing on it.
 	out[GroundMaterials.ROCK] = _material(GroundMaterials.ROCK, "Bare rock",
-		Color(0.243, 0.259, 0.271), Color(0.431, 0.443, 0.455), 0.94, 0.0, 1.9)
+		Color(0.216, 0.263, 0.271), Color(0.333, 0.408, 0.412), 0.94, 0.0, 1.9)
 	# PALE BASIN / shoreline, 11%. The lightest ground, and what makes the
 	# basins read from above. It tops out at L*54 — nothing in the reference's
 	# ground is brighter, which is what the old near-white sediment got wrong.
@@ -513,7 +516,11 @@ func _palette() -> BiomePalette:
 	p.detail_fade_m = 150.0
 	p.detail_scale = 1.4
 	p.detail_strength = 0.5
-	p.detail_albedo = 0.30
+	p.detail_albedo = 0.18
+	# The baked detail carries the form now; the noise is backup.
+	p.baked_tile_m = 26.8
+	p.baked_normal = 0.85
+	p.baked_colour = 0.55
 	p.threshold_line_strength = 0.85
 	# Below this nothing is drawn and the cloud deck shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.

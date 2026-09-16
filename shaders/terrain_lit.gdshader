@@ -229,6 +229,33 @@ uniform float detail_strength = 0.0;    // bump depth; 0 skips the work entirely
 // third of their fine LUMA: colour wobble with no value structure, which
 // reads as a dirty flat.
 uniform float detail_albedo = 0.0;
+
+// BAKED DETAIL, from art/detail_source.blend by way of
+// tools/blender/detail_source.py. Modelled geometry lit and baked down, not
+// noise: the build already carries MORE fine-scale chroma than the reference
+// paintings while carrying a third of their fine LUMA, which is what colour
+// wobble with no underlying form measures as.
+//
+// Sampled in WORLD XZ, like everything else here. No UVs, no tangents, no
+// unwrap — the ground changes shape when it is dug and there is nothing to
+// re-unwrap because there was never an unwrap. The map's R and G are read as
+// slopes along world X and Z and used to perturb NORMAL directly, which is
+// the same thing detail_normal() already does with noise.
+//
+// The tile is 26.8 m because at the shipped camera's 19.13 px/m a 512 px
+// sheet over 26.8 m is sampled at exactly one texel per screen pixel: mip 0,
+// full detail, no aliasing, no texels paid for and not seen.
+uniform sampler2D detail_normal_tex : filter_linear_mipmap, repeat_enable;
+// source_color on the COLOUR map and deliberately NOT on the normal map.
+// The colour bake is an albedo — a picture — so its bytes are sRGB and Godot
+// has to linearise them on the way in. Sampling it raw made the ground read
+// about eight times too bright: sRGB 0.126 taken as linear is linear 0.126,
+// where it means linear 0.0145. The normal map is data and would be bent by
+// the same conversion.
+uniform sampler2D detail_colour_tex : source_color, filter_linear_mipmap, repeat_enable;
+uniform float baked_tile_m = 26.8;
+uniform float baked_normal = 0.0;   // 0 skips both fetches entirely
+uniform float baked_colour = 0.0;
 uniform float detail_scale = 2.6;       // cycles per metre
 uniform float detail_fade_m = 55.0;     // past this, flat — and cheaper
 uniform float macro_scale = 0.018;      // broad colour drift across the valley
@@ -254,6 +281,7 @@ varying float v_shade;   // AO * cast shadow, already weighted
 varying float v_curv;    // signed: negative convex, positive concave
 varying float v_seen;    // fog of war, so light() can respect it too
 varying float v_detail;  // fine surface detail, as a VALUE shift
+varying vec3 v_baked;    // baked detail colour, mixed into the pigment
 
 
 float sample_h(vec2 world_xz) {
@@ -395,12 +423,29 @@ void fragment() {
 	// other reason is that per-pixel bump on distant ground is pure shimmer.
 	float detail_fade = 0.0;
 	v_detail = 0.0;
+	v_baked = vec3(0.0);
 	if (detail_strength > 0.0 || detail_albedo > 0.0) {
 		float d = length(v_world - CAMERA_POSITION_WORLD);
 		detail_fade = 1.0 - smoothstep(detail_fade_m * 0.45, detail_fade_m, d);
 		if (detail_fade > 0.003) {
 			if (detail_strength > 0.0) {
 				n = detail_normal(v_world.xz, n, detail_fade);
+			}
+			// The baked detail. Two taps, and they replace the reason the
+			// ground reads flat: modelled form rather than noise.
+			if (baked_normal > 0.0 || baked_colour > 0.0) {
+				vec2 buv = v_world.xz / baked_tile_m;
+				if (baked_normal > 0.0) {
+					vec2 bn = texture(detail_normal_tex, buv).rg * 2.0 - 1.0;
+					// Tangent-space R/G as world X/Z slopes. Valid because a
+					// heightfield's world X and Z are close enough to tangents
+					// that building a real TBN is not worth two more varyings.
+					n = normalize(n + vec3(-bn.x, 0.0, -bn.y)
+						* baked_normal * detail_fade);
+				}
+				if (baked_colour > 0.0) {
+					v_baked = texture(detail_colour_tex, buv).rgb;
+				}
 			}
 			// The same field, in the domain that survives this camera.
 			if (detail_albedo > 0.0) {
@@ -530,6 +575,11 @@ void fragment() {
 
 	// Lay the stroke down as a value shift.
 	base *= 1.0 + stroke_tone + v_detail;
+	// Mixed rather than multiplied: the bake carries the reference's own
+	// ground and vine colours, so at full strength it IS the surface.
+	if (baked_colour > 0.0) {
+		base = mix(base, v_baked, baked_colour * detail_fade);
+	}
 
 	// --- distance gradients --------------------------------------------------
 	// Three ramps off one texture fetch. Each is an exponential shoulder rather
