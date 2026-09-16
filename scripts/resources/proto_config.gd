@@ -28,6 +28,26 @@ extends Resource
 ## can respond. Set too high this reads as an instant loss with no counterplay.
 @export var module_drain_per_s: float = 0.4
 
+@export_group("Camera")
+## Where the camera sits relative to the rig it orbits, and how wide it sees.
+##
+## These were literals in proto_main.gd, which the project rule calls a bug —
+## and it was one with teeth: nothing else could read them, so the Blender
+## previews had to GUESS the game's camera and guessed a different one.
+##
+## Steep but not straight down. The reference survey map is drawn flat
+## overhead and a camera that copied it would hide every silhouette in the
+## game: the arches, the spires and the machines all become circles. This
+## offset is about seventy degrees down, which reads as the survey map while
+## leaving the props something to be seen by.
+@export var camera_offset := Vector3(0.0, 48.0, 17.0)
+## VERTICAL field of view in degrees. Godot's Camera3D defaults to
+## keep_aspect = KEEP_HEIGHT, which fixes the vertical angle and lets the
+## horizontal one open up with the aspect ratio — measured at 2340x1080 this
+## is 58 vertical, 100.4 horizontal. Anything reproducing this camera has to
+## set the VERTICAL angle or it will frame a different shot.
+@export var camera_fov_deg: float = 58.0
+
 @export_group("Models")
 @export var module_model: String = "module_forms"
 ## One entry per growth form, chosen by how much mass the module is carrying.

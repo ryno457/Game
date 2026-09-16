@@ -13,6 +13,31 @@ static func apply(cfg: LightingConfig, sun: DirectionalLight3D,
 	_project_quality(cfg)
 
 
+## The sun's direction as an (azimuth, elevation) pair in degrees.
+##
+## One source for the sun, because there were three. The DirectionalLight3D
+## takes a Godot Euler triple; TerrainBuilder.bake_shade wants an azimuth and an
+## elevation to march cast shadows along; the Blender previews had a hand-typed
+## rotation of their own. They had all drifted apart — the light in the scene
+## was at azimuth -48 / elevation 38 while the shadows baked into the ground
+## were marched at -50 / 42. Nothing on screen says that: shadows pointing four
+## degrees wrong still look exactly like shadows.
+##
+## Azimuth is measured clockwise from -Z, matching bake_shade, and elevation is
+## degrees above the horizon. Derived from the light rather than typed beside
+## it, so the two cannot disagree again.
+static func sun_angles(cfg: LightingConfig) -> Vector2:
+	var basis := Basis.from_euler(
+		Vector3(deg_to_rad(cfg.sun_rotation_deg.x),
+			deg_to_rad(cfg.sun_rotation_deg.y),
+			deg_to_rad(cfg.sun_rotation_deg.z)))
+	# A DirectionalLight3D shines along its local -Z, so the direction TOWARD
+	# the sun is the negative of the direction the light travels.
+	var toward := -(basis * Vector3(0.0, 0.0, -1.0))
+	return Vector2(rad_to_deg(atan2(toward.x, -toward.z)),
+		rad_to_deg(asin(clampf(toward.y, -1.0, 1.0))))
+
+
 static func _sun(cfg: LightingConfig, sun: DirectionalLight3D) -> void:
 	sun.rotation_degrees = cfg.sun_rotation_deg
 	sun.light_color = cfg.sun_colour

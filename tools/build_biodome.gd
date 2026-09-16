@@ -21,6 +21,14 @@ const PALETTE_OUT := "res://data/biomes/biodome_01_palette.tres"
 const DRESSING_OUT := "res://data/biomes/biodome_01_dressing.tres"
 const CLOUDS_OUT := "res://data/biomes/biodome_01_clouds.tres"
 const TERRAIN_CFG := "res://data/terrain/biodome_01.tres"
+## Read, not duplicated. The bake's sun angles are derived from this.
+const LIGHTING := "res://data/gameplay/lighting.tres"
+## And the camera, for the same reason: a preview that guesses the game's
+## camera is a preview of a game nobody ships.
+const PROTO_CFG := "res://data/gameplay/proto.tres"
+## The module's size in a render is its MASS, so the preview reads the same
+## economy resource the game does rather than being told a scale.
+const MASS_CFG := "res://data/gameplay/mass.tres"
 
 ## Where the module comes down. Everything else is authored around it.
 ## TRACED FROM THE REFERENCE, not approximated.
@@ -432,17 +440,20 @@ func _palette() -> BiomePalette:
 ## are. Split out of _palette() because it is a model rather than a palette —
 ## these numbers decide how SHAPE reads, not what colour anything is.
 func _painted_light(p: BiomePalette) -> void:
-	# Upper-left and high. Upper-left is the illustration convention and has
-	# been since 15th-century cartography; high is also a performance decision,
+	# THE SUN, taken from the light that is actually in the scene rather than
+	# typed here. These two numbers used to be hand-written and they had drifted:
+	# the DirectionalLight3D was at azimuth -48 / elevation 38 while cast shadows
+	# were being baked into the ground along -50 / 42. Shadows four degrees wrong
+	# look exactly like shadows, so nothing on screen was ever going to say so.
+	#
+	# Upper-left and high is still what the lighting config is SET to, and both
+	# halves of that matter: upper-left is the illustration convention and has
+	# been since 15th-century cartography, while high is a performance decision,
 	# since shadow length is height * cot(elevation) and a long shadow means a
 	# large re-bake neighbourhood for every shovel-load.
-	p.sun_azimuth_deg = -50.0
-	# 58 was too high for THIS terrain to cast anything: the lobes are gentle
-	# domes a couple of metres proud of the plate, and at 58 degrees their own
-	# slope never out-climbs the sun ray, so the cast-shadow channel was a no-op
-	# and the AO was doing all the work. 42 still keeps shadows short enough that
-	# the re-bake neighbourhood stays small.
-	p.sun_elevation_deg = 42.0
+	var sun := LightingRig.sun_angles(load(LIGHTING) as LightingConfig)
+	p.sun_azimuth_deg = sun.x
+	p.sun_elevation_deg = sun.y
 
 	# THE GRADIENT MAP. Five stops, authored the way a painter mixes a shadow
 	# rather than the way a renderer computes one.
@@ -492,6 +503,64 @@ func _painted_light(p: BiomePalette) -> void:
 	p.crease_ink = 0.38
 	p.ridge_gain = 0.26
 	p.ridge_tint = Color(0.78, 0.94, 0.80)
+
+
+## The module's mass at the moment the prototype starts.
+func _start_mass() -> MassPool:
+	return MassPool.new(load(MASS_CFG) as MassConfig)
+
+
+## Which growth form that mass earns. Mirrors proto_main._form_for_mass(); the
+## thresholds live there because that is the only place that switches forms.
+func _start_form() -> int:
+	var t := _start_mass().normalized()
+	if t < 0.18:
+		return 0
+	return 1 if t < 0.45 else 2
+
+
+## The camera and the sun, as another renderer needs them.
+##
+## Exported rather than left for a preview script to guess. tools/blender's
+## previews used to hand-type "roughly the RTS camera" and a sun of their own,
+## and both were wrong — which makes a preview worse than no preview, because it
+## disagrees with the game while claiming not to.
+func _view() -> Dictionary:
+	var tune: ProtoConfig = load(PROTO_CFG)
+	var cfg: LightingConfig = load(LIGHTING)
+	var sun := LightingRig.sun_angles(cfg)
+	var map: TerrainMap = load(MAP_OUT)
+	return {
+		# Camera offset from the rig it orbits, in Godot's Y-up axes.
+		"camera_offset": [tune.camera_offset.x, tune.camera_offset.y,
+			tune.camera_offset.z],
+		# VERTICAL fov. Godot fixes the vertical angle and widens the
+		# horizontal one with the aspect ratio (keep_aspect = KEEP_HEIGHT), so
+		# a renderer that reads this as horizontal frames a different shot.
+		"fov_deg_vertical": tune.camera_fov_deg,
+		"resolution": [2340, 1080],
+		# The rig starts on the module, which starts at the map's spawn.
+		"target": [map.spawn.x, map.spawn.y],
+		"sun_azimuth_deg": sun.x,
+		"sun_elevation_deg": sun.y,
+		"sun_colour": cfg.sun_colour.to_html(false),
+		"sun_energy": cfg.sun_energy,
+		"sun_angular_deg": cfg.sun_angular_distance
+			if "sun_angular_distance" in cfg else 1.0,
+		"ambient_colour": cfg.ambient_colour.to_html(false),
+		"ambient_energy": cfg.ambient_energy,
+		"sky_top": cfg.sky_top.to_html(false),
+		"sky_horizon": cfg.sky_horizon.to_html(false),
+		"module_model": tune.module_model,
+		"module_forms": tune.module_forms,
+		# How big the module actually is at the start, and which growth form
+		# that mass earns — both from MassPool, not guessed. The module IS its
+		# mass, so a preview that scales it arbitrarily is drawing a different
+		# machine.
+		"module_scale": _start_mass().display_scale(),
+		"module_form": _start_form(),
+		"drone_model": tune.drone_model,
+	}
 
 
 ## The weather under the map. Height is in world metres: the terrain's lowest
@@ -964,6 +1033,9 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 			"shore_pale": pal.shore_pale, "shore_falloff_m": pal.shore_falloff_m,
 			"tube_radius_m": pal.tube_radius_m, "tube_blend": pal.tube_blend,
 		},
+		# Enough to rebuild the game's shot in another renderer. Every number
+		# here is read from the resources the game itself loads.
+		"view": _view(),
 		"light": {
 			"sun_azimuth_deg": pal.sun_azimuth_deg,
 			"sun_elevation_deg": pal.sun_elevation_deg,

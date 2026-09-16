@@ -15,6 +15,7 @@ var _failed := 0
 func _initialize() -> void:
 	print("SENTINEL — painted light checks\n")
 	_shaders_compile()
+	_one_sun()
 	_curvature_sign()
 	_ao_sees_the_sky()
 	_shadow_falls_away_from_the_sun()
@@ -192,3 +193,23 @@ func _shaders_compile() -> void:
 		var n := sh.get_shader_uniform_list().size()
 		_ok("%s compiles" % path, n > 0, "%d uniforms, %d lines"
 			% [n, code.count("\n")])
+
+
+## The sun the shadows are baked along is the sun that is actually in the scene.
+##
+## These were two hand-typed pairs of numbers and they had drifted four degrees
+## apart. That is exactly the class of bug this file exists for: shadows marched
+## along the wrong azimuth still look like shadows, so the render never
+## complains and neither does any other check. Now the palette derives its
+## angles from the LightingConfig, and this asserts the derivation held.
+func _one_sun() -> void:
+	var cfg: LightingConfig = load("res://data/gameplay/lighting.tres")
+	var pal: BiomePalette = load("res://data/biomes/biodome_01_palette.tres")
+	var want := LightingRig.sun_angles(cfg)
+	# A tenth of a degree. The angles round-trip through a float in the .tres,
+	# so exact equality would fail on the serialisation, not on a real drift.
+	_ok("the baked sun is the scene's sun",
+		absf(want.x - pal.sun_azimuth_deg) < 0.1
+			and absf(want.y - pal.sun_elevation_deg) < 0.1,
+		"light %.1f/%.1f, palette %.1f/%.1f"
+			% [want.x, want.y, pal.sun_azimuth_deg, pal.sun_elevation_deg])

@@ -1494,9 +1494,9 @@ func _say(text: String) -> void:
 ## Landscape, so the useful axis is width: the camera sits further back and the
 ## side panels take the edges rather than the battlefield.
 func _frame_camera() -> void:
-	camera.position = Vector3(0.0, 48.0, 17.0)
+	camera.position = tune.camera_offset
 	camera.look_at(rig.global_position, Vector3.UP)
-	camera.fov = 58.0
+	camera.fov = tune.camera_fov_deg
 
 
 # --- input -------------------------------------------------------------------
