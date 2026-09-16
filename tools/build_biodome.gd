@@ -500,7 +500,14 @@ func _painted_light(p: BiomePalette) -> void:
 	# bright ring where its dome meets the plate — correct behaviour (that IS
 	# a convex crest) but at an intensity that reads as a glow rather than as
 	# a lit edge. Curvature is a line, not a lighting effect.
-	p.curv_gain = 3.2
+	#
+	# Then down again from 3.2 to 0.6, when moving the gain out of the bake
+	# changed what it multiplies. It used to act on a value the bake had
+	# ALREADY clamped to +/-1; now it acts on the raw curvature, whose p99 is
+	# 2.05. At 3.2 that railed the final `curv` at +/-1 across 20% of the map
+	# — the railing had only moved out of the texture and into the shader.
+	# 0.6 leaves 2.1% clipped, which is the genuine extremes.
+	p.curv_gain = 0.6
 	p.crease_ink = 0.38
 	p.ridge_gain = 0.26
 	p.ridge_tint = Color(0.78, 0.94, 0.80)

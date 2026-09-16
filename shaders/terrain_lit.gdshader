@@ -126,6 +126,9 @@ uniform vec3 col_ground : source_color = vec3(0.37, 0.36, 0.40);
 uniform vec3 col_ridge : source_color = vec3(0.66, 0.64, 0.69);
 uniform vec3 col_cliff : source_color = vec3(0.24, 0.23, 0.27);
 uniform vec3 fog_tint : source_color = vec3(0.05, 0.06, 0.10);
+// How much ambient reaches ground nobody can see. Not zero: the reference
+// keeps unexplored ground readable as terrain rather than as a black hole.
+uniform float fog_ao_floor = 0.25;
 
 // Bioluminescence. The low band is standing liquid rather than a black hole,
 // and it is the brightest thing on the map — in a cavern with one weak sun the
@@ -221,6 +224,7 @@ varying vec3 v_normal_w;
 // light() cannot fetch them itself and has no access to fragment locals.
 varying float v_shade;   // AO * cast shadow, already weighted
 varying float v_curv;    // signed: negative convex, positive concave
+varying float v_seen;    // fog of war, so light() can respect it too
 
 
 float sample_h(vec2 world_xz) {
@@ -471,6 +475,7 @@ void fragment() {
 	// Fog of war: unseen ground goes dark, explored-but-unwatched stays dim.
 	// The glow is fogged too — unexplored pools must not give the map away.
 	float seen = clamp(textureLod(fog_map, v_world.xz / field_size_m, 0.0).r, 0.0, 1.0);
+	v_seen = seen;
 	base = mix(fog_tint, base, seen);
 
 	// Survey grid. Screen-space derivatives keep the line one pixel wide at any
@@ -623,6 +628,21 @@ void fragment() {
 	} else {
 		SPECULAR = 0.12;
 	}
+	// FOG KILLS THE SHEEN TOO.
+	//
+	// Fogging only ALBEDO leaves a hole: specular is not multiplied by albedo,
+	// so on unseen ground — where albedo is a near-black fog_tint and the
+	// diffuse term collapses to nothing — the sky's indirect specular is the
+	// only thing left, and it is pale. 91% of this map is unseen at the start,
+	// and it was rendering as a sheet of bone-white haze with the explored
+	// circle as a small green island in it. Exactly inverted: the unknown was
+	// the brightest thing on screen.
+	//
+	// Suppressing SPECULAR by the same `seen` term costs nothing and closes it.
+	SPECULAR *= seen;
+	// AO carries it into the ambient term as well, so unseen ground is not lit
+	// by the sky either.
+	AO = min(AO, mix(fog_ao_floor, 1.0, seen));
 }
 
 
@@ -680,8 +700,16 @@ void light() {
 			// the surface rather than a property of it, and only diffuse gets
 			// multiplied by albedo. Put it in diffuse and dark ground gives a
 			// dark highlight, which is the one place it has to stay bright.
+			// * v_seen, and it is not optional. This term is added to the light,
+			// not multiplied into the pigment, so the fog's albedo has no
+			// hold on it: on unseen ground, where the diffuse term collapses
+			// to nothing against a near-black fog_tint, this was the ONLY
+			// surviving term. 91% of the map is unseen at the start, and it
+			// rendered as a sheet of pale green haze with the explored circle
+			// as a small island inside it. The unknown was the brightest
+			// thing on screen — the exact inverse of what fog is for.
 			SPECULAR_LIGHT += ridge_tint * ridge * ridge * ridge_gain
-				* max(ndl, 0.0) * ATTENUATION * v_shade * LIGHT_COLOR;
+				* max(ndl, 0.0) * ATTENUATION * v_shade * v_seen * LIGHT_COLOR;
 		}
 	} else {
 		// No ramp configured: plain Lambert, still carrying the shape cues.
