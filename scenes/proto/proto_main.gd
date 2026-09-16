@@ -151,7 +151,8 @@ func _ready() -> void:
 	# Explicit rather than folded into TerrainBuilder.build(), because it needs
 	# the palette's world edge and the palette is a look, not a shape — one
 	# call, one source for that number.
-	TerrainBuilder.classify_materials(field, palette.void_below)
+	TerrainBuilder.classify_materials(field, palette.void_below, palette.channel_below,
+		palette.channel_web_threshold)
 	terrain.apply_palette(palette)
 	# The weather under the map. Added before anything else so it is the first
 	# opaque thing behind the terrain in the depth sort.

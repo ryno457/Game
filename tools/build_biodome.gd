@@ -23,35 +23,94 @@ const CLOUDS_OUT := "res://data/biomes/biodome_01_clouds.tres"
 const TERRAIN_CFG := "res://data/terrain/biodome_01.tres"
 
 ## Where the module comes down. Everything else is authored around it.
-const LANDING := Vector2(30.0, 40.0)
-## The far island. The route between the two has to exist across the necks, and
-## that is checked with a real flow field rather than by eye.
-const GOAL := Vector2(120.0, 86.0)
+const LANDING := Vector2(30.0, 36.0)
+## The far side of the mass. There is a walkable route the whole way, and that
+## is checked with a real flow field rather than by eye.
+const GOAL := Vector2(118.0, 82.0)
 
 ## Ground below this is not drawn at all. Between it and `impassable_below`
-## (0.26) sits a rim of real-but-unwalkable ground — the cliff edge a peak
-## falls away over, which is what stops an island looking like a cut-out.
+## (0.26) sits a rim of real-but-unwalkable ground — the cliff edge the mass
+## falls away over, which is what stops the outline looking like a cut-out.
 const VOID_BELOW := 0.16
 
-## centre, radius, height of the top
-const ISLANDS := [
-	[Vector2(30, 34), 24.0, 0.66],
-	[Vector2(28, 82), 21.0, 0.62],
-	[Vector2(76, 56), 20.0, 0.70],
-	[Vector2(118, 32), 23.0, 0.64],
-	[Vector2(120, 86), 20.0, 0.60],
+## ONE CONTINUOUS LANDMASS, not an archipelago.
+##
+## The earlier version made five separate islands over cloud and it was simply a
+## misread of the reference. The reference is a single connected mass shaped
+## like an HOURGLASS — two broad lobes left and right joined at a central waist
+## — with space cutting into it from the top and bottom middle and the corners
+## rounded away. Everything inside the outline is ground.
+##
+## These discs are the base plate. Their union is the mass; the overlaps are
+## what make the outline lobed rather than circular.
+## 0.50, not 0.455. A disc's cosine-squared falloff means the union of two
+## discs sags between them, and at 0.455 the sag across the waist landed
+## BETWEEN void_below and impassable_below — drawn ground that nothing could
+## walk on, which cut the map in half while still looking continuous. The
+## connectivity check caught it; nothing else would have.
+const PLATE_LEVEL := 0.50
+## Anything under this is a channel between lobes rather than a lobe top. Sits
+## midway between the 0.50 plate and the lowest lobe median of about 0.57.
+const CHANNEL_BELOW := 0.545
+## How thin the channel strands are. Higher is thinner.
+const WEB := 0.84
+const PLATE := [
+	[Vector2(30, 40), 30.0],
+	[Vector2(30, 76), 27.0],
+	[Vector2(18, 58), 20.0],
+	# The waist, overlapping generously. Spacing these at roughly the radius
+	# is what keeps the sag between them above the walkable threshold.
+	[Vector2(46, 58), 19.0],
+	[Vector2(60, 58), 19.0],
+	[Vector2(74, 57), 19.0],
+	[Vector2(88, 57), 19.0],
+	[Vector2(102, 58), 19.0],
+	# The lower middle, either side of the bottom bay. Without these the plate
+	# has a hole under the (56, 74) lobe and that lobe ends up sitting LOWER
+	# than the channels it is supposed to stand above.
+	[Vector2(52, 74), 18.0],
+	[Vector2(96, 76), 18.0],
+	[Vector2(114, 38), 29.0],
+	[Vector2(116, 80), 27.0],
+	[Vector2(132, 58), 20.0],
 ]
 
-## The necks. Narrow on purpose: a land bridge the width of a road is a
-## chokepoint an army has to fight over, which is the whole point of putting
-## the ground in separate pieces.
-const NECKS := [
-	[Vector2(44, 38), Vector2(62, 50)],
-	[Vector2(44, 76), Vector2(62, 62)],
-	[Vector2(92, 50), Vector2(104, 38)],
-	[Vector2(92, 66), Vector2(106, 80)],
-	[Vector2(20, 52), Vector2(22, 66)],
+## Pieces cut back OUT of it, down past the world edge. This is the other half
+## of the shape: the reference's outline is defined as much by what has been
+## bitten out of it as by what was laid down.
+const CUTS := [
+	[Vector2(72, 2), 24.0],       # the bay that comes down from the top
+	[Vector2(74, 112), 22.0],     # and the one that comes up from the bottom
+	[Vector2(4, 4), 18.0],
+	[Vector2(146, 4), 18.0],
+	[Vector2(4, 108), 18.0],
+	[Vector2(146, 108), 18.0],
+	[Vector2(64, 24), 10.0],      # smaller nibbles, so the edge is not smooth
+	[Vector2(86, 92), 9.0],
+	[Vector2(2, 34), 9.0],
+	[Vector2(148, 78), 9.0],
 ]
+
+## The raised lobes on top of the plate. THESE are the "different heights" —
+## plateau tops, with the plate showing between them as lower channels.
+## Levels are measured against a 0.50 plate, and the small lobes had to come
+## UP: at 0.59-0.61 with a 0.88 strength they resolved to barely three
+## hundredths above the channel, which is not a height difference anyone would
+## see. A lobe has to clear the plate by about a tenth to read as raised.
+const LOBES := [
+	[Vector2(30, 34), 17.0, 0.72],
+	[Vector2(26, 76), 16.0, 0.68],
+	[Vector2(110, 34), 17.0, 0.73],
+	[Vector2(118, 82), 16.0, 0.67],
+	[Vector2(56, 74), 13.0, 0.65],
+	[Vector2(98, 42), 13.0, 0.66],
+	[Vector2(126, 58), 14.0, 0.66],
+	[Vector2(16, 56), 14.0, 0.66],
+]
+
+## The alcove at the waist: a hollow holding the two glowing pools, exactly as
+## the reference has it at the centre of the map.
+const ALCOVE := Vector2(68.0, 52.0)
 
 var _failed := 0
 
@@ -109,10 +168,10 @@ func _map() -> TerrainMap:
 	var m := TerrainMap.new()
 	m.display_name = "Biodome 01 — the cloud shelf"
 	m.terrain = load(TERRAIN_CFG)
-	m.noise_seed = 20260915
-	# The base sits BELOW the world edge, so the default state of every cell is
-	# "no ground". An island is not a hill carved out of a plain here — it is
-	# the only thing that exists.
+	m.noise_seed = 20260916
+	# The base still sits below the world edge, so the DEFAULT state of a cell
+	# is "no ground". The difference from the archipelago version is what gets
+	# raised: one connected plate, not five separate peaks.
 	m.base_level = 0.055
 	m.amplitude = 0.10
 	m.octaves = [Vector2(0.045, 0.58), Vector2(0.125, 0.30), Vector2(0.29, 0.12)]
@@ -121,64 +180,71 @@ func _map() -> TerrainMap:
 
 	var ops: Array[Dictionary] = []
 
-	# The islands. One broad disc each: the cosine-squared falloff takes the top
-	# down to the base over the radius on its own, which is exactly the rounded
-	# shoulder-then-cliff profile the reference has.
-	for isl in ISLANDS:
-		var c: Vector2 = isl[0]
+	# 1. THE PLATE. One union of overlapping discs, all at the same level, so
+	# the result is a single connected mass with a lobed outline rather than a
+	# ring of separate hills.
+	for d in PLATE:
+		var c: Vector2 = d[0]
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": isl[1], "level": isl[2], "strength": 0.97})
+			"r": d[1], "level": PLATE_LEVEL, "strength": 0.97})
 
-	# The necks, stamped after the islands so they bridge whatever the falloffs
-	# left between them. Level is below every island top, so a neck reads as a
-	# saddle rather than a causeway laid across the gap.
-	for n in NECKS:
-		_run(ops, [n[0], n[1]], 7.0, 0.50, 0.93, 2.0)
-
-	# Flat tops. Without these an island is a cone and there is nowhere to
-	# build; with them it is a plateau with a rim, which is what the reference
-	# shows and what a convoy needs.
-	for isl in ISLANDS:
-		var c: Vector2 = isl[0]
+	# 2. THE CUTS, pushed back down past the world edge. Half the shape of the
+	# reference is what has been bitten out of the outline, not what was laid
+	# down — the bays top and bottom centre are most of why it reads as one
+	# organic mass and not as a blob.
+	for d in CUTS:
+		var c: Vector2 = d[0]
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": isl[1] * 0.58, "level": isl[2] - 0.06, "strength": 0.80})
+			"r": d[1], "level": 0.02, "strength": 1.0})
 
-	# Ridges along the rims — the rock in the reference sits at the edges, not
-	# in the middle, because that is where a peak is steepest.
-	ops.append({"op": "plateau", "x": 14.0, "z": 24.0, "r": 9.0,
-		"level": 0.90, "strength": 0.80})
-	ops.append({"op": "plateau", "x": 62.0, "z": 46.0, "r": 7.0,
-		"level": 0.88, "strength": 0.75})
-	ops.append({"op": "plateau", "x": 132.0, "z": 96.0, "r": 9.0,
-		"level": 0.87, "strength": 0.78})
-	ops.append({"op": "plateau", "x": 108.0, "z": 20.0, "r": 8.0,
-		"level": 0.89, "strength": 0.78})
+	# 3. THE LOBES — the "different heights". Raised plateaus ON the plate, so
+	# the plate shows between them as lower channels. That is where the root
+	# mat lives in the reference: down in the gaps, not over the tops.
+	for d in LOBES:
+		var c: Vector2 = d[0]
+		ops.append({"op": "plateau", "x": c.x, "z": c.y,
+			"r": d[1], "level": d[2], "strength": 0.93})
+	# Flat tops, so a lobe is a plateau with a rim rather than a dome.
+	for d in LOBES:
+		var c: Vector2 = d[0]
+		ops.append({"op": "plateau", "x": c.x, "z": c.y,
+			"r": float(d[1]) * 0.66, "level": float(d[2]) - 0.02, "strength": 0.86})
 
-	# The glowing basins, in the hollows on the island tops. Banked first and
-	# cut inside, same as before: a single deep stamp goes rim-to-water in four
-	# metres and leaves no shoreline to stand on.
-	var basins := [
-		[Vector2(70, 51), 6.5, 0.17],
-		[Vector2(84, 61), 5.5, 0.16],
-		[Vector2(26, 30), 6.0, 0.19],
-		[Vector2(122, 28), 5.5, 0.18],
-		[Vector2(30, 86), 5.0, 0.20],
-	]
-	for b in basins:
+	# 4. Ridges at a few rims, where the reference shows exposed rock.
+	for r in [[Vector2(14, 26), 8.0, 0.88], [Vector2(122, 22), 8.0, 0.89],
+			[Vector2(134, 94), 8.0, 0.86], [Vector2(12, 92), 7.0, 0.87]]:
+		var c: Vector2 = r[0]
+		ops.append({"op": "plateau", "x": c.x, "z": c.y,
+			"r": r[1], "level": r[2], "strength": 0.78})
+
+	# 5. THE ALCOVE at the waist, and the two pools in it. Banked wide and
+	# shallow first, then cut narrow inside, so there is a shoreline to stand
+	# on rather than a kerb.
+	ops.append({"op": "plateau", "x": ALCOVE.x, "z": ALCOVE.y,
+		"r": 15.0, "level": 0.335, "strength": 0.72})
+	for b in [[ALCOVE + Vector2(-5.0, -1.0), 5.0, 0.17],
+			[ALCOVE + Vector2(6.5, 2.0), 4.5, 0.16]]:
 		var c: Vector2 = b[0]
-		var r: float = b[1]
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": r + 5.0, "level": 0.32, "strength": 0.62})
-		# "water": true also stamps the water mask, which is the only thing
-		# that tells the shader this is a pool and not the outer rim of an
-		# island — they are the same height, and before this every island was
-		# ringed with a neon halo.
+			"r": float(b[1]) + 4.0, "level": 0.30, "strength": 0.60})
 		ops.append({"op": "plateau", "x": c.x, "z": c.y,
-			"r": r, "level": b[2], "strength": 0.95, "water": true})
+			"r": b[1], "level": b[2], "strength": 0.95, "water": true})
 
-	# The landing clearing: flat, dry, buildable, and clear of the rim.
+	# 6. A few more basins out on the lobes, so the pools are not all in one
+	# place. Same bank-then-cut.
+	# Off the lobe centres, as the reference has them — a pond sits in a hollow
+	# toward one side of a plateau, not dead in the middle of it.
+	for b in [[Vector2(22, 28), 5.0, 0.19], [Vector2(117, 26), 4.5, 0.18],
+			[Vector2(124, 90), 4.5, 0.19]]:
+		var c: Vector2 = b[0]
+		ops.append({"op": "plateau", "x": c.x, "z": c.y,
+			"r": float(b[1]) + 4.5, "level": 0.32, "strength": 0.62})
+		ops.append({"op": "plateau", "x": c.x, "z": c.y,
+			"r": b[1], "level": b[2], "strength": 0.95, "water": true})
+
+	# 7. The landing clearing: flat, dry, buildable, clear of the rim.
 	ops.append({"op": "plateau", "x": LANDING.x, "z": LANDING.y,
-		"r": 11.0, "level": 0.56, "strength": 0.92})
+		"r": 10.0, "level": 0.60, "strength": 0.90})
 	m.ops = ops
 	return m
 
@@ -291,6 +357,8 @@ func _palette() -> BiomePalette:
 	# Below this nothing is drawn and the cloud deck shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.
 	p.void_below = VOID_BELOW
+	p.channel_below = CHANNEL_BELOW
+	p.channel_web_threshold = WEB
 	# The survey grid from the reference. Ten metres reads as a useful ruler
 	# from the overhead camera without turning the ground into graph paper.
 	p.grid_spacing_m = 10.0
@@ -392,7 +460,7 @@ func _dressing() -> BiomeDressing:
 func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	print("\nthe range")
 	var field := TerrainBuilder.build(map)
-	var mats := TerrainBuilder.classify_materials(field, VOID_BELOW)
+	var mats := TerrainBuilder.classify_materials(field, VOID_BELOW, CHANNEL_BELOW, WEB)
 	var cfg := field.cfg
 	var total := cfg.cells_x * cfg.cells_z
 	var drawn := 0
@@ -430,36 +498,89 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	# THE CHECK THAT MATTERS. The islands are only a design if you can actually
 	# get between them — a neck that the falloffs pinched shut leaves the far
 	# half of the map unreachable, and nothing else here would notice.
-	print("\ncan you get across")
+	print("\nis it ONE landmass")
 	var ff := FlowField.new(cfg)
 	var ms := ff.build(field.heights, Vector2i(int(GOAL.x), int(GOAL.y)))
-	var reached := 0
-	for isl in ISLANDS:
-		var c: Vector2 = isl[0]
+
+	# The correction that prompted this rebuild: the reference is one connected
+	# mass with pieces cut out, not an archipelago. So the test is CONNECTEDNESS
+	# — every walkable cell must be reachable from the far side, not merely
+	# "each island has a bridge". A stray pocket cut off by a bay would pass the
+	# old check and fail this one.
+	var walkable_cells := 0
+	var reachable := 0
+	for z in cfg.cells_z:
+		for x in cfg.cells_x:
+			if field.heights[z * cfg.cells_x + x] < cfg.impassable_below:
+				continue
+			walkable_cells += 1
+			if ff.is_reachable(x, z):
+				reachable += 1
+	var connected := 100.0 * reachable / maxi(1, walkable_cells)
+	_ok("the walkable ground is one piece", connected > 97.0,
+		"%.1f%% of %d walkable cells reachable, field in %.0f ms"
+			% [connected, walkable_cells, ms])
+	if connected <= 97.0:
+		# A severed map is nearly impossible to debug from a percentage. This
+		# is how the first break was found: the mass LOOKED continuous and the
+		# waist was sitting between void_below and impassable_below — drawn
+		# ground nothing could walk on.
+		_print_ascii(field)
+
+	var lobes_ok := 0
+	for d in LOBES:
+		var c: Vector2 = d[0]
 		if ff.is_reachable(int(c.x), int(c.y)):
-			reached += 1
-	_ok("every island is reachable from the far one", reached == ISLANDS.size(),
-		"%d of %d, field built in %.0f ms" % [reached, ISLANDS.size(), ms])
-	_ok("the landing site can reach the goal",
+			lobes_ok += 1
+	_ok("every lobe is reachable", lobes_ok == LOBES.size(),
+		"%d of %d" % [lobes_ok, LOBES.size()])
+	_ok("the landing site can reach the far side",
 		ff.is_reachable(int(LANDING.x), int(LANDING.y)),
 		"cost %.0f" % ff.cost_at_cell(int(LANDING.x), int(LANDING.y)))
 
-	# The necks have to be narrow, or they are not chokepoints and putting the
-	# ground in separate pieces bought nothing.
-	var widest := 0
-	var narrowest := 999
-	for n in NECKS:
-		var mid: Vector2 = (n[0] + n[1]) * 0.5
-		var dir: Vector2 = (n[1] - n[0]).normalized()
-		var across := Vector2(-dir.y, dir.x)
-		var w := 0
-		for step in range(-20, 21):
-			if field.is_passable(mid + across * float(step)):
-				w += 1
-		widest = maxi(widest, w)
-		narrowest = mini(narrowest, w)
-	_ok("the necks are chokepoints", widest <= 16 and narrowest >= 3,
-		"%d to %d metres of walkable width" % [narrowest, widest])
+	# The cuts have to actually cut, or the outline is a rounded rectangle and
+	# none of the reference's shape survives.
+	var cut_open := 0
+	for d in CUTS:
+		var c: Vector2 = d[0]
+		var p := Vector2(clampf(c.x, 1.0, cfg.cells_x - 2.0),
+			clampf(c.y, 1.0, cfg.cells_z - 2.0))
+		if field.height_at(p) < VOID_BELOW:
+			cut_open += 1
+	_ok("the bays are cut through to the void", cut_open == CUTS.size(),
+		"%d of %d" % [cut_open, CUTS.size()])
+
+	# And the lobes have to sit ABOVE the channels between them, or "different
+	# heights" is a claim the map does not make.
+	#
+	# MEDIAN over the lobe's inner area, not the height at its centre point.
+	# Three lobes have a pool on them, and a single centre sample was reading
+	# the bottom of the pond and calling the whole lobe low. The median is
+	# strictly more informative: it is not hostage to whichever op happened to
+	# land on one cell.
+	var lowest_lobe := 1.0
+	var lowest_name := ""
+	for d in LOBES:
+		var c: Vector2 = d[0]
+		var r: float = float(d[1]) * 0.6
+		var samples := PackedFloat32Array()
+		for z in range(int(c.y - r), int(c.y + r) + 1):
+			for x in range(int(c.x - r), int(c.x + r) + 1):
+				if Vector2(x - c.x, z - c.y).length() > r:
+					continue
+				if x < 0 or x >= cfg.cells_x or z < 0 or z >= cfg.cells_z:
+					continue
+				samples.append(field.heights[z * cfg.cells_x + x])
+		if samples.is_empty():
+			continue
+		samples.sort()
+		var med: float = samples[samples.size() / 2]
+		if med < lowest_lobe:
+			lowest_lobe = med
+			lowest_name = "%.0f, %.0f" % [c.x, c.y]
+	_ok("the lobes stand above the channels", lowest_lobe > PLATE_LEVEL + 0.06,
+		"lowest lobe median %.2f (at %s) against a %.2f plate"
+			% [lowest_lobe, lowest_name, PLATE_LEVEL])
 
 	print("\nwhat the ground is made of")
 	var ground := 0
@@ -575,7 +696,7 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		raw.store_float(h)
 	raw.close()
 
-	TerrainBuilder.classify_materials(field, VOID_BELOW)
+	TerrainBuilder.classify_materials(field, VOID_BELOW, CHANNEL_BELOW, WEB)
 	var mat := FileAccess.open(OUT + "/biodome_01_mat.u8", FileAccess.WRITE)
 	mat.store_buffer(field.material_id)
 	mat.close()
@@ -670,3 +791,18 @@ func _legal_cells(field: Heightfield, e: PropScatter) -> int:
 				continue
 			n += 1
 	return n
+
+
+## The map as text: '#' walkable, ':' drawn but not walkable, ' ' void.
+##
+## Printed only when connectivity fails. A percentage cannot tell you WHERE a
+## map got severed, and this can — at a glance.
+func _print_ascii(field: Heightfield) -> void:
+	var cfg := field.cfg
+	print("      (# walkable   : drawn but impassable   . void)")
+	for z in range(0, cfg.cells_z, 3):
+		var row := ""
+		for x in range(0, cfg.cells_x, 2):
+			var h := field.heights[z * cfg.cells_x + x]
+			row += "." if h < VOID_BELOW else (":" if h < cfg.impassable_below else "#")
+		print("  %3d %s" % [z, row])

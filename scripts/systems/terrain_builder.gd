@@ -65,7 +65,14 @@ static func _apply(hf: Heightfield, op: Dictionary) -> void:
 ## here. At 5 m on plateaus 20 m across the mat covered HALF the walkable
 ## ground and bare rock never appeared at all, because the mat is applied last
 ## and overrode it. A border is a couple of metres.
+## `channel_below` is the height that separates a raised lobe from the plate
+## between lobes. Ground at or under it is CHANNEL, and in the reference the
+## root mat lives down in the channels as much as around the outer rim — it is
+## the web that fills every gap between the plateaus. Zero disables it, which
+## is what a map with no lobes wants.
 static func classify_materials(hf: Heightfield, void_below: float,
+		channel_below: float = 0.0,
+		web_threshold: float = 0.82,
 		rim_m: float = 2.5, shore_m: float = 3.0) -> Dictionary:
 	var cfg := hf.cfg
 	var w := cfg.cells_x
@@ -107,9 +114,25 @@ static func classify_materials(hf: Heightfield, void_below: float,
 			# Bare rock on anything steep, and on the tops of the ridges.
 			if _slope(hf, x, z) > 0.35 or height > 0.72:
 				id = GroundMaterials.ROCK
-			# The root mat, ringing every plateau. Last, so it runs over the
-			# cliffs the way it does in the reference.
-			if near_edge[i] == 1 and hf.water[i] <= 0.05:
+			# The root mat. Around the outer rim AND down in the channels
+			# between the lobes — in the reference it is the web that fills
+			# every gap, not merely an outline. Last, so it runs over the
+			# cliffs and the bare rock the way it does there.
+			# In the channels the mat is a WEB OF STRANDS with open ground
+			# between them, not a fill. Filling every channel outright put the
+			# root mat on 77% of the map — the opposite of the note that
+			# started this, which was that not all the ground should be vines.
+			#
+			# A ridged fold of value noise gives strands a few metres wide that
+			# branch and rejoin, which is what the reference actually shows.
+			var in_channel := false
+			if channel_below > 0.0 and height < channel_below:
+				var n := _vnoise(x * 0.058, z * 0.058, 4421)
+				var strand := 1.0 - absf(n * 2.0 - 1.0)
+				# Higher is narrower. 0.60 left the mat on half the map; the
+				# strands have to be genuinely thin for open ground to win.
+				in_channel = strand > web_threshold
+			if (near_edge[i] == 1 or in_channel) and hf.water[i] <= 0.05:
 				id = GroundMaterials.VINE
 			hf.material_id[i] = id
 			counts[id] = int(counts.get(id, 0)) + 1

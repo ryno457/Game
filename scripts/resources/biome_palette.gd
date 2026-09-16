@@ -37,6 +37,14 @@ extends Resource
 ## sits lower, so between the two there is a rim of real-but-impassable ground:
 ## the cliff edge a peak falls away over.
 @export_range(0.0, 0.5) var void_below: float = 0.0
+## Ground under this height is CHANNEL — the plate between the raised lobes.
+## The root mat grows there as well as around the outer rim, because in the
+## reference the web fills every gap between plateaus rather than merely
+## outlining the mass. Zero disables it.
+@export_range(0.0, 1.0) var channel_below: float = 0.0
+## How thin the channel strands are. Higher is thinner — this is the knob that
+## decides how much of the map is root mat versus open ground.
+@export_range(0.5, 0.98) var channel_web_threshold: float = 0.82
 
 @export_group("Survey grid")
 ## Metres between grid lines. Zero is off. A readability aid for judging
