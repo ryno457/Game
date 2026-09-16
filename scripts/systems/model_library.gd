@@ -1,5 +1,12 @@
 class_name ModelLibrary
 extends RefCounted
+
+const PAINTED_SHADER := "res://shaders/painted_prop.gdshader"
+
+## Set before the first load_model() call. Null leaves models on their
+## imported StandardMaterial3D, which is the grey-box look.
+var painted_ramp: Texture2D
+var painted_ink := 0.35
 ## Loads the Blender-authored glTF assets and hands out ready-to-place nodes.
 ##
 ## Two things it fixes centrally rather than per-caller:
@@ -39,6 +46,12 @@ func load_model(model_name: String) -> PackedScene:
 		return null
 	var packed: PackedScene = load(path)
 	_apply_vertex_colours(packed)
+	# One lighting model for everything on screen. See apply_painted: the
+	# terrain and everything else were lit by different models, and the moon rig
+	# was tuned for the terrain, so a light grey machine rendered darker than
+	# the ground it stood on.
+	if painted_ramp != null:
+		apply_painted(packed, painted_ramp, painted_ink)
 	_scenes[model_name] = packed
 	return packed
 
@@ -64,6 +77,51 @@ static func _apply_vertex_colours(packed: PackedScene) -> int:
 			if mat != null and not mat.vertex_color_use_as_albedo:
 				mat.vertex_color_use_as_albedo = true
 				changed += 1
+	probe.free()
+	return changed
+
+
+## Swap every StandardMaterial3D on a model for the painted shader.
+##
+## Props, plants and machines used to be lit by Godot's default Lambert while
+## the terrain ran its own light() with a tone ramp reaching a gain of 2.98.
+## The moon rig was then tuned so the TERRAIN hit the reference's value, which
+## left everything else underlit by about that gain — measured on a frame, a
+## light grey module rendered DARKER than the teal ground it stood on. One
+## lighting model for everything is the fix; two was the bug.
+##
+## Mutates the shared cached mesh resources, like _apply_vertex_colours above,
+## so every instance after the first gets it — node-spawned or MultiMesh.
+static func apply_painted(packed: PackedScene, ramp: Texture2D,
+		ink := 0.35) -> int:
+	var shader: Shader = load(PAINTED_SHADER)
+	if shader == null:
+		return 0
+	var probe: Node = packed.instantiate()
+	var changed := 0
+	for node in probe.find_children("*", "MeshInstance3D", true, false):
+		var m: Mesh = (node as MeshInstance3D).mesh
+		if m == null:
+			continue
+		var has_col: bool = (m.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR) != 0
+		for i in m.get_surface_count():
+			var std := m.surface_get_material(i) as StandardMaterial3D
+			if std == null:
+				continue
+			var sm := ShaderMaterial.new()
+			sm.shader = shader
+			sm.set_shader_parameter("albedo", std.albedo_color)
+			sm.set_shader_parameter("roughness_v", std.roughness)
+			sm.set_shader_parameter("emission_tint", std.emission)
+			# emission_energy_multiplier, not emission_energy: the latter does
+			# not exist on StandardMaterial3D in Godot 4 and access throws.
+			sm.set_shader_parameter("emission_energy",
+				std.emission_energy_multiplier if std.emission_enabled else 0.0)
+			sm.set_shader_parameter("use_vertex_colour", has_col)
+			sm.set_shader_parameter("tone_ramp", ramp)
+			sm.set_shader_parameter("rim_ink", ink)
+			m.surface_set_material(i, sm)
+			changed += 1
 	probe.free()
 	return changed
 

@@ -266,8 +266,9 @@ def build(rng, cx, cz, h, mat, hs, void):
             _mat("coral_p", CORAL_PINK, 0.78),
             _mat("coral_r", CORAL_RUST, 0.80),
             _mat("brain", BRAIN_VIOLET, 0.72),
-            _mat("pore", "3a1c07", 0.40, PORE, 4.0)]
-    VINE, LIVE, MOSS, CPINK, CRUST, BRAIN, POREM = 1, 2, 3, 4, 5, 6, 7
+            _mat("pore", "3a1c07", 0.40, PORE, 4.0),
+            _mat("bone", "9a9c7e", 0.86)]
+    VINE, LIVE, MOSS, CPINK, CRUST, BRAIN, POREM, BONE = 1, 2, 3, 4, 5, 6, 7, 8
 
     # THE FLOOR'S OWN COLOUR, drifting between the two references.
     #
@@ -282,11 +283,11 @@ def build(rng, cx, cz, h, mat, hs, void):
         warm = _vnoise(x * 0.017 + 41.0, y * 0.017 + 13.6)
         base = list(hexcol(GROUND_MID))
         for i in range(3):
-            base[i] += (hexcol(MOSS_CLUMP)[i] - base[i]) * _fit(moss, 0.52, 0.86) * 0.55
-            base[i] += (hexcol(GROUND_OLIVE)[i] - base[i]) * _fit(olive, 0.60, 0.90) * 0.38
+            base[i] += (hexcol(MOSS_CLUMP)[i] - base[i]) * _fit(moss, 0.40, 0.80) * 0.80
+            base[i] += (hexcol(GROUND_OLIVE)[i] - base[i]) * _fit(olive, 0.52, 0.88) * 0.55
         dry = _fit(z / max(1.0, hs), 0.62, 0.92)
         for i in range(3):
-            base[i] += (hexcol(GROUND_RUST)[i] - base[i]) * _fit(warm, 0.76, 0.95) * dry * 0.55
+            base[i] += (hexcol(GROUND_RUST)[i] - base[i]) * _fit(warm, 0.70, 0.93) * dry * 0.70
         return (base[0], base[1], base[2], 1.0)
 
     low = terrain(cx, cz, h, hs, void, "bake_target", [mats[0]])
@@ -342,6 +343,31 @@ def build(rng, cx, cz, h, mat, hs, void):
                            radii[k] * 0.34, 6, 4)
             made += 1
 
+    # A SECOND, FINER TIER. The reference's web is layered: heavy trunks with a
+    # mat of much thinner runners threaded over and under them. One tier at one
+    # thickness reads as a diagram of a web rather than a web, however dense it
+    # gets — what makes it look grown is two scales crossing each other.
+    #
+    # These are a third the radius and run shorter, so they add length and
+    # crossings without adding bulk, and they are seeded from the same cells so
+    # they land on top of the trunks rather than in the open.
+    fine = 0
+    for i in seeds:
+        if fine >= VINE_TARGET // 2:
+            break
+        if rng.random() > 0.45:
+            continue
+        x0, y0 = i % cx, i // cx
+        pts, radii, _ = vine_run(rng, h, cx, cz, hs,
+                                 x0 + rng.uniform(-2.4, 2.4),
+                                 y0 + rng.uniform(-2.4, 2.4),
+                                 rng.uniform(2.5, 6.0),
+                                 rng.uniform(0.06, 0.16))
+        mb.tube(VINE, pts, radii, 5, ridge=rng.uniform(0.10, 0.22),
+                seed=rng.random() * 99.0)
+        fine += 1
+    print("PY: %d fine runners over the trunks" % fine)
+
     # THE DRESSING: where the colour variety comes from.
     #
     # Scattered as CLUMPS on open ground rather than spread across the flats.
@@ -351,10 +377,16 @@ def build(rng, cx, cz, h, mat, hs, void):
     open_cells = [i for i in range(cx * cz)
                   if mat[i] != VINE_MAT and h[i] > void + 0.06]
     rng.shuffle(open_cells)
-    dressing = [(MOSS, 0.9, 7, 0.55, 0.34),    # mossy green, ref 02's floor
-                (CPINK, 0.6, 6, 0.8, 0.14),
-                (CRUST, 0.55, 5, 0.7, 0.12),   # the warm rust ref 01 lacks
-                (BRAIN, 1.1, 9, 0.5, 0.06)]
+    # More kinds, and more of them, from reference 03 — which is dense with
+    # distinct growths rather than one repeated blob: mossy cushions, coral
+    # fans, warm rust nodules, violet brain masses, pale pods and teal buttons.
+    dressing = [(MOSS, 0.9, 7, 0.55, 0.30),    # mossy cushions, ref 02's floor
+                (CPINK, 0.6, 7, 0.85, 0.15),   # coral fans
+                (CRUST, 0.55, 5, 0.70, 0.13),  # the warm rust ref 01 lacks
+                (BRAIN, 1.2, 10, 0.45, 0.08),  # violet brain mass
+                (BONE, 0.7, 4, 0.35, 0.10),    # pale pods, standing taller
+                (LIVE, 0.45, 5, 0.9, 0.09),    # teal glowing buttons
+                (POREM, 0.22, 3, 1.0, 0.15)]   # amber ocelli, everywhere in 03
     dressed = 0
     for i in open_cells[:CLUMP_TARGET * 4]:
         if dressed >= CLUMP_TARGET:

@@ -169,7 +169,7 @@ func _apply_materials(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("crease_ink", p.crease_ink)
 	_mat.set_shader_parameter("ridge_gain", p.ridge_gain)
 	_mat.set_shader_parameter("ridge_tint", p.ridge_tint)
-	_mat.set_shader_parameter("tone_ramp", _ramp_texture(p))
+	_mat.set_shader_parameter("tone_ramp", ramp_texture(p))
 	_mat.set_shader_parameter("tone_ramp_strength",
 		p.tone_ramp_strength if p.tone_ramp != null else 0.0)
 	_upload_maps(p)
@@ -181,7 +181,7 @@ func _apply_materials(p: BiomePalette) -> void:
 ## whole lighting model stays art-editable in the .tres and nothing here is an
 ## asset. 256 entries with linear filtering quantises finer than the render
 ## buffer can represent, so the ramp itself can never be the source of a band.
-func _ramp_texture(p: BiomePalette) -> Texture2D:
+static func ramp_texture(p: BiomePalette) -> Texture2D:
 	if p.tone_ramp == null:
 		return null
 	var t := GradientTexture1D.new()

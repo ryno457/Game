@@ -112,6 +112,10 @@ extends Resource
 ## these: the vines are a normal map on flat ground and change no depth at all.
 @export_range(0.0, 1.0) var baked_ink: float = 0.0
 @export var baked_ink_power: float = 2.2
+## The same line, around props and machines, from the facing ratio rather than
+## a second geometry pass — an inverted hull would double the vertex work on a
+## 600-unit MultiMesh.
+@export_range(0.0, 1.0) var prop_rim_ink: float = 0.35
 ## Cycles per metre. Around 2-3 reads as grit at the RTS camera height; much
 ## finer than that is invisible and shimmers when the camera pans.
 @export var detail_scale: float = 2.6

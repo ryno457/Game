@@ -151,6 +151,10 @@ func _ready() -> void:
 	# Explicit rather than folded into TerrainBuilder.build(), because it needs
 	# the palette's world edge and the palette is a look, not a shape — one
 	# call, one source for that number.
+	# Hand the model library the ground's own tone ramp BEFORE anything spawns,
+	# so every prop, plant and machine is lit by the same model as the terrain.
+	lib.painted_ramp = TerrainView.ramp_texture(palette)
+	lib.painted_ink = palette.prop_rim_ink
 	TerrainBuilder.classify_materials(field, palette.void_below, palette.channel_below,
 		palette.channel_web_threshold, 2.5, 3.0, palette.channel_strand_width_m)
 	terrain.apply_palette(palette)
@@ -367,11 +371,20 @@ func _ring_mesh() -> Mesh:
 func _chunk_mesh(c: Color) -> Mesh:
 	var m := BoxMesh.new()
 	m.size = Vector3(0.9, 0.9, 0.9)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = c
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.7
-	m.material = mat
+	# The painted shader, like everything else on screen. These are built here
+	# rather than loaded through ModelLibrary, so they missed the material swap
+	# and stayed on default Lambert — which on this dim moon rig meant the
+	# debris and the alien swarm rendered as black boxes while the ground and
+	# the machines beside them did not. Two lighting models was the bug; this
+	# is the last thing that was still on the second one.
+	var sm := ShaderMaterial.new()
+	sm.shader = load(ModelLibrary.PAINTED_SHADER)
+	sm.set_shader_parameter("albedo", c)
+	sm.set_shader_parameter("roughness_v", 0.7)
+	sm.set_shader_parameter("use_vertex_colour", false)
+	sm.set_shader_parameter("tone_ramp", TerrainView.ramp_texture(palette))
+	sm.set_shader_parameter("rim_ink", palette.prop_rim_ink)
+	m.material = sm
 	return m
 
 

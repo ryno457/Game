@@ -36,8 +36,12 @@ TAU = math.tau
 SEED = 20260914
 
 argv = script_args()
+# Defaults to models/, the directory the GAME loads from — the same default
+# build_machines.py has. It used to default to build/models/, which is a
+# scratch directory nothing reads, so a palette change here rebuilt happily,
+# printed all its assertions green, and left the shipped module untouched.
 OUT = argv[0] if argv else os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                        "..", "..", "build", "models")
+                                        "..", "..", "models")
 OUT = os.path.abspath(OUT)
 os.makedirs(OUT, exist_ok=True)
 GLB = os.path.join(OUT, "module_forms.glb")
@@ -49,7 +53,11 @@ GLB = os.path.join(OUT, "module_forms.glb")
 # glTF baseColorFactor are both LINEAR, so feeding the hex bytes in raw makes
 # every surface far too light (#12303a arrives looking like #4b7883). Convert
 # once, here, and assert the round-trip at the end of the file.
-HULL_HEX, PLATE_HEX, ACCENT_HEX = "12303a", "16222c", "4fe3c1"
+# LIGHT GREY, matching build_machines.py. Kept in step by hand because these
+# two files each carry their own copy; last pass only build_machines.py was
+# changed and the player's own MODULE stayed dark teal while its drone and
+# guard went grey — the one object on screen that most needs to be findable.
+HULL_HEX, PLATE_HEX, ACCENT_HEX = "b9bdc2", "8e949b", "4fe3c1"
 
 
 def srgb_to_linear(c):

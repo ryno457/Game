@@ -735,6 +735,12 @@ func _entry(model: String, count: int, lo: float, hi: float, slope: float,
 
 
 func _dressing() -> BiomeDressing:
+	# NOTE ON max_slope BELOW. Every one of these was tuned against
+	# height_scale_m = 12. At 28 the identical ground is 2.33x steeper, so the
+	# old limits excluded most of the map — and the cliff rim first, which is
+	# exactly where 'the rims are rooted' says props have to be. They are
+	# raised here rather than the check being lowered: the check is right and
+	# the rules were the thing that went stale.
 	var d := BiomeDressing.new()
 	d.display_name = "Biodome 01"
 	d.seed = 20260915
@@ -760,24 +766,24 @@ func _dressing() -> BiomeDressing:
 		# Landmarks, on the flat tops where there is room for them. The two
 		# share the same band and the same land, so their budgets have to be
 		# read together: about 1600 legal square metres between them.
-		_entry("flora_arch", 6, 0.46, 0.78, 0.30, 10.0, 1.30, 2.40, 0.10, 5, 22.0),
-		_entry("flora_brain", 4, 0.48, 0.86, 0.34, 10.0, 1.10, 1.95, 0.15, 4, 20.0),
+		_entry("flora_arch", 6, 0.46, 0.78, 0.62, 10.0, 1.30, 2.40, 0.10, 5, 22.0),
+		_entry("flora_brain", 4, 0.48, 0.86, 0.68, 10.0, 1.10, 1.95, 0.15, 4, 20.0),
 		# Rock on the high ground. Band starts at 0.52, not 0.60: the flat-top
 		# op takes six hundredths off every island centre, so almost nothing
 		# outside the four ridge stamps was ever above 0.60.
-		_entry("rock_spire", 35, 0.52, 1.00, 0.85, 2.4, 0.85, 2.10, 0.85, 9, 14.0),
+		_entry("rock_spire", 35, 0.52, 1.00, 0.97, 2.4, 0.85, 2.10, 0.85, 9, 14.0),
 		# The roots. Banded 0.18-0.56 so they cover the cliff rim AND the
 		# channels between the lobes — which is where the reference puts them.
 		# Banded to the rim alone there was only 1457 legal square metres and
 		# the scatter could place 98 of 130.
-		_entry("flora_tendril", 140, 0.180, 0.56, 0.62, 2.2, 1.00, 2.20, 0.55,
+		_entry("flora_tendril", 140, 0.180, 0.56, 0.90, 2.2, 1.00, 2.20, 0.55,
 			18, 15.0, false),
 		# Coral stays at the waterlines and the rim, as it does in the
 		# reference — it is a shoreline thing, not a channel thing.
-		_entry("flora_coral", 55, 0.185, 0.40, 0.55, 1.8, 0.95, 1.85, 0.35,
+		_entry("flora_coral", 55, 0.185, 0.40, 0.88, 1.8, 0.95, 1.85, 0.35,
 			12, 12.0, false),
 		# Clutter last, into whatever is left.
-		_entry("flora_pods", 150, 0.180, 0.80, 0.58, 1.5, 0.85, 1.60, 0.55,
+		_entry("flora_pods", 150, 0.180, 0.80, 0.90, 1.5, 0.85, 1.60, 0.55,
 			18, 10.0, false),
 	]
 	d.entries = entries

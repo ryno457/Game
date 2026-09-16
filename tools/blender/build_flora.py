@@ -50,14 +50,22 @@ def hexcol(h):
 
 
 # slot index -> (name, base hex, emission hex or None, emission strength)
+# Sampled toward docs/reference/02-ui-mockup-landscape.png, whose floor carries
+# mossy greens, warm rust and violet where reference 01 is almost all teal.
+#
+# The old values were near-black: husk #26362f and stone #2b3036 are luma 0.04
+# and 0.03. Under the moon rig every prop on the map rendered as a silhouette
+# with no readable form at all — the "black plants" complaint, and it was an
+# albedo problem rather than a lighting one. Nothing here is light grey, which
+# belongs to the machines.
 PALETTE = [
-    ("bone",     "b3a892", None,     0.0),   # pale ribbed arch material
-    ("husk",     "26362f", None,     0.0),   # dark green-black tendril skin
-    ("flesh",    "7c4fb0", None,     0.0),   # purple lobed growth
-    ("stone",    "2b3036", None,     0.0),   # rock
-    ("glow_t",   "0d3b38", "2ff0d0", 6.0),   # teal bioluminescence
-    ("glow_p",   "2a1140", "b061ff", 5.0),   # violet bioluminescence
-    ("glow_a",   "3a1c07", "ff9a3c", 5.0),   # amber ocelli
+    ("bone",     "9a9c7e", None,     0.0),   # pale ribbed arch, olive-tinted
+    ("husk",     "4a7a44", None,     0.0),   # MOSSY GREEN tendril skin, ref 02
+    ("flesh",    "8a5ab8", None,     0.0),   # purple lobed growth
+    ("stone",    "55605e", None,     0.0),   # rock, teal-grey and not near-black
+    ("glow_t",   "1d5b52", "2ff0d0", 6.0),   # teal bioluminescence
+    ("glow_p",   "3d1f5c", "b061ff", 5.0),   # violet bioluminescence
+    ("glow_a",   "6b3a12", "ff9a3c", 5.0),   # amber ocelli
 ]
 BONE, HUSK, FLESH, STONE, GLOW_T, GLOW_P, GLOW_A = range(7)
 
