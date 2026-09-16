@@ -23,6 +23,10 @@ set -euo pipefail
 OUT="${1:-godot_view.png}"
 FRAMES="${2:-120}"
 RES="${3:-2400x1080}"
+# Pass "reveal" as the 4th arg to open the fog. Needed to compare the art
+# against a painting, which has no fog; leave it off for a shot of what the
+# player actually sees on frame one.
+REVEAL="${4:-}"
 GODOT="${GODOT:-$HOME/.cache/sentinel-godot/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -47,6 +51,6 @@ xvfb-run -a -s "-screen 0 ${RES}x24" "$GODOT" \
 	--rendering-method mobile \
 	--resolution "$RES" \
 	--script tools/screenshot.gd \
-	-- "$OUT" "$FRAMES" 2>&1 | grep -vE "ALSA|alsa|snd_|audio driver|init_output_device" || true
+	-- "$OUT" "$FRAMES" "$REVEAL" 2>&1 | grep -vE "ALSA|alsa|snd_|audio driver|init_output_device" || true
 
 echo "  -> build/shots/$OUT"

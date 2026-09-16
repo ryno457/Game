@@ -34,6 +34,17 @@ func _initialize() -> void:
 	print("renderer: ", RenderingServer.get_video_adapter_name(),
 		"  (", RenderingServer.get_video_adapter_api_version(), ")")
 
+	# Optionally reveal the whole map before capturing.
+	#
+	# Not a cheat for a prettier picture — it is what makes the frame COMPARABLE.
+	# 91% of the map is fogged at the start, so a shot of the real opening state
+	# is mostly unlit ground, and measuring it against a painting (which has no
+	# fog at all) scores the fog rather than the art. tools/look_check.py wants
+	# the revealed one; a shot of what the player actually sees on frame one
+	# wants the fogged one. Both are worth having, which is why this is a flag.
+	var reveal: bool = argv.size() > 2 and argv[2] == "reveal"
+	var white := _white()
+
 	var ps: PackedScene = load("res://scenes/proto/proto_main.tscn")
 	if ps == null:
 		push_error("no main scene")
@@ -43,6 +54,8 @@ func _initialize() -> void:
 
 	for i in frames:
 		await process_frame
+		if reveal:
+			_reveal_all(root, white)
 		if i % 30 == 0:
 			print("  frame %d/%d" % [i, frames])
 
@@ -63,3 +76,34 @@ func _initialize() -> void:
 		return
 	print("wrote %s  %dx%d" % [path, img.get_width(), img.get_height()])
 	quit()
+
+
+## Open the fog, by handing the terrain a fog map that is white everywhere.
+##
+## FogOfWar is a RefCounted held by the prototype, not a node, so there is
+## nothing in the tree to reach for. Overriding the shader uniform is both
+## simpler and more robust: the game keeps uploading its own fog into its own
+## ImageTexture, and the terrain is simply no longer pointed at it. A 1x1 white
+## texture is enough — the sampler is filter_linear, repeat_disable, so every
+## sample of it returns 1.0.
+##
+## Re-applied every frame because apply_palette() can re-bind the real map.
+func _reveal_all(n: Node, white: Texture2D) -> void:
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		var m: Material = mi.material_override
+		if m == null and mi.mesh != null:
+			m = mi.get_active_material(0)
+		if m is ShaderMaterial:
+			var sm := m as ShaderMaterial
+			if sm.shader != null and sm.shader.resource_path.ends_with(
+					"terrain_lit.gdshader"):
+				sm.set_shader_parameter("fog_map", white)
+	for c in n.get_children():
+		_reveal_all(c, white)
+
+
+static func _white() -> Texture2D:
+	var img := Image.create_empty(1, 1, false, Image.FORMAT_R8)
+	img.set_pixel(0, 0, Color(1, 1, 1))
+	return ImageTexture.create_from_image(img)
