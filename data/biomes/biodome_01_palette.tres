@@ -6,26 +6,26 @@
 [sub_resource type="Resource" id="Resource_pk5fx"]
 script = ExtResource("1_yywnl")
 id = &"MOSS"
-display_name = "Moss flat"
-colour = Color(0.114, 0.224, 0.251, 1)
-colour_alt = Color(0.188, 0.341, 0.369, 1)
+display_name = "Open flat"
+colour = Color(0.122, 0.239, 0.235, 1)
+colour_alt = Color(0.204, 0.353, 0.329, 1)
 roughness = 0.88
 
 [sub_resource type="Resource" id="Resource_o5cs5"]
 script = ExtResource("1_yywnl")
 id = &"ROCK"
 display_name = "Bare rock"
-colour = Color(0.224, 0.282, 0.259, 1)
-colour_alt = Color(0.31, 0.372, 0.345, 1)
+colour = Color(0.243, 0.259, 0.271, 1)
+colour_alt = Color(0.431, 0.443, 0.455, 1)
 roughness = 0.94
 stroke_scale_mult = 1.9
 
 [sub_resource type="Resource" id="Resource_ap7rc"]
 script = ExtResource("1_yywnl")
 id = &"SEDIMENT"
-display_name = "Sediment"
-colour = Color(0.31, 0.518, 0.533, 1)
-colour_alt = Color(0.42, 0.647, 0.659, 1)
+display_name = "Pale basin"
+colour = Color(0.247, 0.424, 0.427, 1)
+colour_alt = Color(0.29, 0.545, 0.537, 1)
 roughness = 0.8
 vein_strength = 0.05
 stroke_scale_mult = 0.75
@@ -33,9 +33,9 @@ stroke_scale_mult = 0.75
 [sub_resource type="Resource" id="Resource_sgg00"]
 script = ExtResource("1_yywnl")
 id = &"LOAM"
-display_name = "Deep ground"
-colour = Color(0.067, 0.169, 0.188, 1)
-colour_alt = Color(0.114, 0.224, 0.251, 1)
+display_name = "Silt channel"
+colour = Color(0.118, 0.235, 0.275, 1)
+colour_alt = Color(0.173, 0.333, 0.38, 1)
 roughness = 0.9
 vein_strength = 0.08
 stroke_scale_mult = 1.15
@@ -44,8 +44,8 @@ stroke_scale_mult = 1.15
 script = ExtResource("1_yywnl")
 id = &"VINE"
 display_name = "Root mat"
-colour = Color(0.031, 0.098, 0.122, 1)
-colour_alt = Color(0.067, 0.169, 0.188, 1)
+colour = Color(0.086, 0.196, 0.227, 1)
+colour_alt = Color(0.118, 0.255, 0.278, 1)
 vein_strength = 1.35
 stroke_scale_mult = 0.85
 
@@ -78,9 +78,10 @@ vein_strength = 0.34
 vein_scale = 0.016
 vein_sharpness = 3.4
 edge_shade = 0.42
-strand_shade = 0.34
+strand_shade = 0.55
+strand_falloff_m = 0.6
 shore_pale = 0.5
-tube_radius_m = 1.8
+tube_radius_m = 0.55
 sun_azimuth_deg = -47.999996
 sun_elevation_deg = 38.000004
 tone_ramp = SubResource("Gradient_wnwf4")

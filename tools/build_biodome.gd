@@ -342,28 +342,30 @@ func _materials() -> Array[GroundMaterial]:
 	# The old palette spanned 0.23 to 0.58 in luma, under half of that.
 	var out: Array[GroundMaterial] = []
 	out.resize(GroundMaterials.COUNT)
-	# Open flats — most of every plateau top. The reference's single commonest
-	# pair of values, which is what most of the ground should be.
-	out[GroundMaterials.MOSS] = _material(GroundMaterials.MOSS, "Moss flat",
-		Color(0.114, 0.224, 0.251), Color(0.188, 0.341, 0.369), 0.88, 0.0, 1.0)
-	# Bare rock: steep faces and ridge tops. The greyest thing the reference
-	# has — 394842, the one sample under 0.25 saturation.
+	# The five ground materials, as measured in the reference after masking out
+	# roots, rocks, pools and void. Percentages are share of ground area.
+	#
+	# Note what is NOT here: anything warm. The old LOAM slot was a brown at hue
+	# 41 degrees and the references contain no brown ground at all — every warm
+	# hue in reference 01 put together is 0.38% of the image. It becomes the
+	# silt channel, which is what that ground actually is.
+	# OPEN FLAT, the largest single material, 25% of ground.
+	out[GroundMaterials.MOSS] = _material(GroundMaterials.MOSS, "Open flat",
+		Color(0.122, 0.239, 0.235), Color(0.204, 0.353, 0.329), 0.88, 0.0, 1.0)
+	# BARE ROCK, near-achromatic, and the only slot allowed to be grey. 0.75%.
 	out[GroundMaterials.ROCK] = _material(GroundMaterials.ROCK, "Bare rock",
-		Color(0.224, 0.282, 0.259), Color(0.310, 0.372, 0.345), 0.94, 0.0, 1.9)
-	# Pale sediment at every waterline, and the LIGHTEST thing on the map. Note
-	# it tops out at 0.60 luma, not at white: nothing in the reference is white,
-	# which is exactly what the old near-white sediment got wrong.
-	out[GroundMaterials.SEDIMENT] = _material(GroundMaterials.SEDIMENT, "Sediment",
-		Color(0.310, 0.518, 0.533), Color(0.420, 0.647, 0.659), 0.80, 0.05, 0.75)
-	# The deep shadowed ground between features — the reference's dark end, and
-	# the most saturated slot, because that is the painter's rule the samples
-	# show plainly: darker is MORE saturated, not less.
-	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Deep ground",
-		Color(0.067, 0.169, 0.188), Color(0.114, 0.224, 0.251), 0.90, 0.08, 1.15)
-	# The root mat. The ONLY slot with a real vein strength, so the filament web
-	# rings each plateau instead of covering it.
+		Color(0.243, 0.259, 0.271), Color(0.431, 0.443, 0.455), 0.94, 0.0, 1.9)
+	# PALE BASIN / shoreline, 11%. The lightest ground, and what makes the
+	# basins read from above. It tops out at L*54 — nothing in the reference's
+	# ground is brighter, which is what the old near-white sediment got wrong.
+	out[GroundMaterials.SEDIMENT] = _material(GroundMaterials.SEDIMENT, "Pale basin",
+		Color(0.247, 0.424, 0.427), Color(0.290, 0.545, 0.537), 0.80, 0.05, 0.75)
+	# SILT CHANNEL, the blue-grey wet apron between lobes, 19%.
+	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Silt channel",
+		Color(0.118, 0.235, 0.275), Color(0.173, 0.333, 0.380), 0.90, 0.08, 1.15)
+	# ROOT MAT, the dark ground under the web, 12%.
 	out[GroundMaterials.VINE] = _material(GroundMaterials.VINE, "Root mat",
-		Color(0.031, 0.098, 0.122), Color(0.067, 0.169, 0.188), 0.85, 1.35, 0.85)
+		Color(0.086, 0.196, 0.227), Color(0.118, 0.255, 0.278), 0.85, 1.35, 0.85)
 	return out
 
 
@@ -443,12 +445,18 @@ func _palette() -> BiomePalette:
 	p.field_range_m = 20.0
 	p.edge_shade = 0.42
 	p.edge_falloff_m = 9.0
-	p.strand_shade = 0.34
-	p.strand_falloff_m = 3.0
+	p.strand_shade = 0.55
+	# Measured: the contact shadow beside a root is 0.3-0.6 m wide. At 3.0,
+	# exp(-0.5/3) = 0.85 — the darkening had barely begun by the edge of the
+	# contact and instead spread several metres as a general murk.
+	p.strand_falloff_m = 0.6
 	p.strand_range_m = 4.0
 	p.shore_pale = 0.50
 	p.shore_falloff_m = 7.0
-	p.tube_radius_m = 1.8
+	# Measured: the reference's tubes are 0.35-0.85 m radius, median 0.55. At
+	# 1.8 every tube was about three times too fat, and one number for the
+	# whole map is the 'ribbons of one thickness' complaint as a uniform.
+	p.tube_radius_m = 0.55
 	p.tube_blend = 0.80
 	_painted_light(p)
 	p.threshold_line_strength = 0.85
