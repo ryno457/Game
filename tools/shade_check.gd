@@ -14,6 +14,7 @@ var _failed := 0
 
 func _initialize() -> void:
 	print("SENTINEL — painted light checks\n")
+	_shaders_compile()
 	_curvature_sign()
 	_ao_sees_the_sky()
 	_shadow_falls_away_from_the_sun()
@@ -162,3 +163,32 @@ func _speed() -> void:
 		"%.0f ms for %d cells (%.1f us/cell)" % [full, w * h, per_cell])
 	print("        one 25 x 28 chunk: %.1f ms  <- the number that matters for digging"
 		% chunk)
+
+
+## Every shader in the project actually compiles.
+##
+## Worth having as a check rather than trusting a clean boot: headless runs on
+## the dummy renderer, so booting the game does NOT compile any shader. A syntax
+## error or an undeclared identifier survives `--headless --quit-after 240`
+## silently and turns up as a pink screen on the phone, which is a day's round
+## trip. Assigning the code to a ShaderMaterial forces the compile, and the
+## server prints SHADER ERROR on failure — verified by feeding it a bad shader.
+func _shaders_compile() -> void:
+	for path in DirAccess.get_files_at("res://shaders"):
+		if not path.ends_with(".gdshader"):
+			continue
+		var full := "res://shaders/" + path
+		var code := FileAccess.get_file_as_string(full)
+		var sh := Shader.new()
+		sh.code = code
+		var m := ShaderMaterial.new()
+		m.shader = sh
+		# Godot reports a compile failure by PUSHING an error rather than
+		# returning one, and a failed shader still holds its own source — so
+		# comparing the code back is a check that cannot fail. The uniform list
+		# can: the server only populates it from a successful parse, so a broken
+		# shader reports zero uniforms. Verified both ways against a deliberately
+		# broken shader before relying on it.
+		var n := sh.get_shader_uniform_list().size()
+		_ok("%s compiles" % path, n > 0, "%d uniforms, %d lines"
+			% [n, code.count("\n")])

@@ -634,14 +634,25 @@ void light() {
 
 		vec3 tone = texture(tone_ramp, vec2(t, 0.5)).rgb;
 		tone = mix(vec3(t), tone, tone_ramp_strength);
-		DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * tone;
+		// NO ALBEDO HERE. The engine multiplies DIFFUSE_LIGHT by albedo after
+		// light() returns — forward_mobile's `diffuse_light *= albedo`, which
+		// is outside any custom-light guard — so writing ALBEDO in here squares
+		// it. That was in this shader from the start and it is most of why the
+		// map rendered darker than every preview of it: the previews compute
+		// albedo * light once, which is the correct picture, and the game was
+		// computing albedo * albedo * light.
+		DIFFUSE_LIGHT += LIGHT_COLOR * tone;
 
 		// The bright line along a convex crest, gated by the LIT side so a
 		// crest in shadow does not glow. This is the other half of what makes
 		// a root read as a rounded tube and a fresh trench read as dug.
 		if (ridge_gain > 0.0) {
 			float ridge = max(-v_curv, 0.0);
-			DIFFUSE_LIGHT += ridge_tint * ridge * ridge * ridge_gain
+			// SPECULAR_LIGHT, not DIFFUSE_LIGHT: the crest line is a light on
+			// the surface rather than a property of it, and only diffuse gets
+			// multiplied by albedo. Put it in diffuse and dark ground gives a
+			// dark highlight, which is the one place it has to stay bright.
+			SPECULAR_LIGHT += ridge_tint * ridge * ridge * ridge_gain
 				* max(ndl, 0.0) * ATTENUATION * v_shade * LIGHT_COLOR;
 		}
 	} else {
@@ -649,7 +660,7 @@ void light() {
 		// This is the grey-box fallback, so a palette with nothing set still
 		// reads sanely. (if/else rather than an early return: Godot rejects a
 		// bare `return` in these stage functions.)
-		DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION
+		DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION
 			* clamp(ndl, 0.0, 1.0) * v_shade;
 	}
 }
