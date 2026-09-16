@@ -245,15 +245,14 @@ uniform float detail_albedo = 0.0;
 // The tile is 26.8 m because at the shipped camera's 19.13 px/m a 512 px
 // sheet over 26.8 m is sampled at exactly one texel per screen pixel: mip 0,
 // full detail, no aliasing, no texels paid for and not seen.
-uniform sampler2D detail_normal_tex : filter_linear_mipmap, repeat_enable;
+uniform sampler2D detail_normal_tex : filter_linear_mipmap, repeat_disable;
 // source_color on the COLOUR map and deliberately NOT on the normal map.
 // The colour bake is an albedo — a picture — so its bytes are sRGB and Godot
 // has to linearise them on the way in. Sampling it raw made the ground read
 // about eight times too bright: sRGB 0.126 taken as linear is linear 0.126,
 // where it means linear 0.0145. The normal map is data and would be bent by
 // the same conversion.
-uniform sampler2D detail_colour_tex : source_color, filter_linear_mipmap, repeat_enable;
-uniform float baked_tile_m = 26.8;
+uniform sampler2D detail_colour_tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform float baked_normal = 0.0;   // 0 skips both fetches entirely
 uniform float baked_colour = 0.0;
 uniform float detail_scale = 2.6;       // cycles per metre
@@ -434,7 +433,14 @@ void fragment() {
 			// The baked detail. Two taps, and they replace the reason the
 			// ground reads flat: modelled form rather than noise.
 			if (baked_normal > 0.0 || baked_colour > 0.0) {
-				vec2 buv = v_world.xz / baked_tile_m;
+				// THE WHOLE MAP, sampled once. This used to divide by a tile size and
+				// repeat, because a surface that can be dug cannot hold a UV unwrap.
+				// Deformation is out of the design, so the terrain is a fixed shape,
+				// carries a real unwrap, and the whole 150 x 112 m is baked once.
+				// Nothing repeats, so there is no tiling to hide — the problem is
+				// removed rather than tuned. This is the same mapping the material
+				// and distance-field maps already use.
+				vec2 buv = v_world.xz / field_size_m;
 				if (baked_normal > 0.0) {
 					vec2 bn = texture(detail_normal_tex, buv).rg * 2.0 - 1.0;
 					// Tangent-space R/G as world X/Z slopes. Valid because a

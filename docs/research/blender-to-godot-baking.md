@@ -78,3 +78,46 @@ imported uncompressed with `detect_3d/compress_to=0`.
 - <https://supermatrix.studio/blog/how-to-create-realistic-pbr-materials-in-blender-for-godot-4>
 - <https://salivity.github.io/blender/article/create-seamless-tileable-textures-in-blender>
 - <https://bitsoulhosting.com/marketplace/blog/blender-to-godot-4-glb-export-workflow-guide>
+
+---
+
+## Update, 2026-09-16: deformation was cut, and that changed the answer
+
+The section above says the mesh-bake workflow every tutorial describes — a UV
+unwrap, a cage, a high-poly and a low-poly — is the wrong one for this terrain,
+because the ground can be dug and a deformable surface cannot hold an unwrap.
+
+**Runtime deformation has since been cut from the design**, on the grounds that
+the landscape looking right matters more than it being diggable. That inverts
+the conclusion, so the note above is kept as the record of why the first
+pipeline was built the way it was, and this is what supersedes it.
+
+With a fixed terrain shape, the tutorials' workflow is now exactly right, and
+better in two ways than the tiling version:
+
+- **There is no tiling to hide.** The whole 150 x 112 m map bakes into one
+  texture and nothing repeats. That is not a better-tuned tile; it is the
+  removal of the problem.
+- **The unwrap costs nothing to make.** A heightfield is a graph over the XZ
+  plane, so `(x / width, z / depth)` is injective over the whole surface with
+  no seams, no packing and no overlap — and it is the SAME mapping the shader's
+  material map and distance fields already use, so the bake lands in the
+  coordinate system the game is already sampling.
+
+**The cage.** Vines sit above the ground, so rays must start above them and
+travel down. `cage_extrusion` pushes the low-poly outward along its own normals
+to launch from. Too small and the tops of the vines are missed; too large and a
+ray launched from one side of a ridge reaches geometry on the other. Set it from
+the tallest feature plus a margin (here 1.4 m against a ~0.9 m vine) rather than
+by trial.
+
+**Samples.** A NORMAL bake is geometric and a colour-only DIFFUSE bake reads
+material values directly — neither is a light integration, so Cycles samples buy
+nothing. Four is not a corner cut; forty would produce identical output for
+minutes more CPU.
+
+**What this costs if deformation ever comes back.** The whole-map bake becomes
+invalid the moment the ground changes shape, and there is no partial re-bake:
+Blender is not in the loop at runtime. Returning to deformation means returning
+to the tiling approach in this file's first half, which is why it has not been
+deleted.

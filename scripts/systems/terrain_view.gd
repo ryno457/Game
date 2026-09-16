@@ -88,7 +88,6 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("threshold_line_strength", p.threshold_line_strength)
 	_mat.set_shader_parameter("detail_strength", p.detail_strength)
 	_mat.set_shader_parameter("detail_albedo", p.detail_albedo)
-	_mat.set_shader_parameter("baked_tile_m", p.baked_tile_m)
 	_mat.set_shader_parameter("baked_normal", p.baked_normal)
 	_mat.set_shader_parameter("baked_colour", p.baked_colour)
 	_mat.set_shader_parameter("detail_normal_tex", load(DETAIL_N))

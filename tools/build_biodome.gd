@@ -518,7 +518,6 @@ func _palette() -> BiomePalette:
 	p.detail_strength = 0.5
 	p.detail_albedo = 0.18
 	# The baked detail carries the form now; the noise is backup.
-	p.baked_tile_m = 26.8
 	p.baked_normal = 0.85
 	p.baked_colour = 0.55
 	p.threshold_line_strength = 0.85

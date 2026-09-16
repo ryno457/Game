@@ -12,10 +12,19 @@ JS prototype, carry these over rather than re-deriving them.
 ## Stack — decided, do not relitigate
 
 - **Godot 4.7**, GDScript. Not C#, not Python, not another engine.
-- **Heightmap terrain deformation, NOT voxel.** Voxel gives overhangs and caves
-  but will not hold framerate on a mid-range phone under thermal throttle.
-  Craters and trenches come from a displacement heightfield plus a collision
-  heightmap updated per-chunk.
+- **Heightmap terrain, NOT voxel.** Voxel gives overhangs and caves but will
+  not hold framerate on a mid-range phone under thermal throttle.
+- **RUNTIME DEFORMATION IS OUT OF THE DESIGN** (decided 2026-09-16). Trenches,
+  craters and weapon scarring are cut. The call was that the landscape looking
+  right matters more than it being diggable, and the two were in direct
+  conflict: a surface that changes shape cannot hold a UV unwrap, and without
+  an unwrap the ground can only be textured by projection and noise, which is
+  why it read flat for so long.
+  The terrain is now a FIXED shape, which buys a real unwrap, a whole-map
+  baked normal and albedo, and a cage bake from high-detail geometry. See
+  `docs/research/blender-to-godot-baking.md` and `tools/blender/detail_source.py`.
+  The deformation code still exists in `Heightfield.deform()` and its ops; it
+  is unused, not deleted.
 - **Flow-field pathfinding, not per-unit A*.** One shared field per order group.
   Must rebuild affected chunks when terrain deforms.
 - **MultiMesh** for unit rendering.
@@ -44,22 +53,34 @@ capsules and cubes only. Do not suggest asset work.
 
 ## Risk order — prove these before building on top of them
 
-1. Deformable 3D terrain holding 60fps on a physical mid-range Android phone.
-   This is the largest unknown in the project. If it fails, the fallback is
-   crater decals plus a collision-only heightmap, which changes the design.
-2. Pathfinding that reacts correctly to a freshly dug U-shaped trench.
-3. Save/load of a deformed heightfield. Naive serialization is megabytes per
-   save — store the procedural seed plus a deformation diff.
+1. ~~Deformable 3D terrain holding 60fps~~ — **resolved by cutting it.** Risks
+   2 and 3 below went with it.
+2. ~~Pathfinding reacting to a freshly dug trench~~ — no longer arises.
+3. ~~Save/load of a deformed heightfield~~ — the map is the procedural seed
+   again, so a save is the seed and the game state.
+4. **The frame budget is unmeasured on the current build.** Spike A's p95 of
+   16.67 ms was measured against a 59-line terrain shader with one texture
+   fetch. The shader that ships today is an order of magnitude heavier, plus a
+   full-screen ink pass that did not exist then, plus two whole-map baked
+   textures. Nothing should be called affordable until it is re-soaked from an
+   APK on the A54.
 
 ---
 
 ## Hard-won lessons from the prototype
 
-- **Terrain deformation needs to be roughly 5x deeper than feels intuitive.**
-  First pass had the excavator digging at a rate that looked like it worked but
-  never actually breached the impassable threshold. Trenches read as cosmetic
-  dents. Always verify deformation against the passability threshold with a
-  headless test, never by eye.
+- **Terrain deformation needed to be roughly 5x deeper than felt intuitive.**
+  Kept although deformation is cut, because the general lesson outlived it:
+  the first pass dug at a rate that looked like it worked but never breached
+  the impassable threshold, so trenches read as cosmetic dents. An effect that
+  looks like it is happening is not evidence that it is. Verify against the
+  threshold with a headless test, never by eye.
+- **Measure the render, do not judge it.** `tools/look_check.py` scores a frame
+  against the reference art's value structure, and `tools/screenshot.sh` takes
+  that frame out of the real engine. Both exist because the previews lied:
+  Blender's Cycles is a different renderer, a headless boot compiles no shaders
+  at all, and the first version of look_check counted unexplored void as dark
+  terrain and so passed a frame that was a third too bright.
 - **Module recall must cost something.** In the prototype it is free and
   instant, which removes the decision entirely. Needs a cooldown, a salvage
   cost, or a vulnerable travel-back animation.
