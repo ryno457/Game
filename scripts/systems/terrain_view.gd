@@ -140,6 +140,7 @@ func _apply_materials(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("edge_falloff_m", p.edge_falloff_m)
 	_mat.set_shader_parameter("strand_shade", p.strand_shade)
 	_mat.set_shader_parameter("strand_falloff_m", p.strand_falloff_m)
+	_mat.set_shader_parameter("strand_range_m", p.strand_range_m)
 	_mat.set_shader_parameter("shore_pale", p.shore_pale)
 	_mat.set_shader_parameter("shore_falloff_m", p.shore_falloff_m)
 	_mat.set_shader_parameter("tube_radius_m", p.tube_radius_m)
@@ -149,6 +150,7 @@ func _apply_materials(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("shadow_strength", p.shadow_strength)
 	_mat.set_shader_parameter("terminator_k", p.terminator_k)
 	_mat.set_shader_parameter("curv_gain", p.curv_gain)
+	_mat.set_shader_parameter("curv_range", TerrainBuilder.CURV_RANGE)
 	_mat.set_shader_parameter("crease_ink", p.crease_ink)
 	_mat.set_shader_parameter("ridge_gain", p.ridge_gain)
 	_mat.set_shader_parameter("ridge_tint", p.ridge_tint)
@@ -194,7 +196,8 @@ func _upload_maps(p: BiomePalette) -> void:
 
 	var fimg := Image.create_from_data(cfg.cells_x, cfg.cells_z, false,
 		Image.FORMAT_RGB8,
-		TerrainBuilder.bake_fields(field, p.void_below, p.field_range_m))
+		TerrainBuilder.bake_fields(field, p.void_below, p.field_range_m,
+			p.strand_range_m))
 	_field_tex = ImageTexture.create_from_image(fimg)
 	_mat.set_shader_parameter("field_map", _field_tex)
 

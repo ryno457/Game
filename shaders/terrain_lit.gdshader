@@ -43,6 +43,7 @@ uniform sampler2D field_map : filter_linear, repeat_disable;
 uniform float field_range_m = 20.0;
 uniform float edge_shade = 0.0;      // darkening as ground nears the drop
 uniform float edge_falloff_m = 9.0;
+uniform float strand_range_m = 4.0;  // the G channel's own SIGNED range
 uniform float strand_shade = 0.0;    // contact shadow beside a root strand
 uniform float strand_falloff_m = 3.0;
 uniform float shore_pale = 0.0;      // bleaching toward a waterline
@@ -88,6 +89,9 @@ uniform float terminator_k = 1.5;
 // this frame gets its highlighted lip and its dark inner crease this frame —
 // which is the specific fix for "trenches read as cosmetic dents".
 uniform float curv_gain = 0.0;
+// Physical range the baked wide-curvature channel was companded over. Must
+// match TerrainBuilder.CURV_RANGE or every crease reads at the wrong depth.
+uniform float curv_range = 3.0;
 uniform float crease_ink = 0.0;
 uniform float ridge_gain = 0.0;
 uniform vec3 ridge_tint : source_color = vec3(0.80, 0.93, 0.78);
@@ -487,15 +491,24 @@ void fragment() {
 	// Three ramps off one texture fetch. Each is an exponential shoulder rather
 	// than a linear one, because contact darkening in a painted map falls off
 	// fast near the feature and long after it — a linear ramp reads as a fog.
-	vec3 dist = textureLod(field_map, v_world.xz / field_size_m, 0.0).rgb
-		* field_range_m;
+	vec3 draw = textureLod(field_map, v_world.xz / field_size_m, 0.0).rgb;
+	// R and B are plain distances over field_range_m. G is SIGNED over its own
+	// shorter range: positive outside a root strand, zero at its edge, negative
+	// toward its centreline. See TerrainBuilder.bake_fields for why it needs an
+	// inside at all.
+	vec3 dist = vec3(draw.r * field_range_m,
+		(draw.g * 2.0 - 1.0) * strand_range_m,
+		draw.b * field_range_m);
 
 	if (edge_shade > 0.0) {
 		float t = exp(-dist.r / max(0.01, edge_falloff_m));
 		base *= 1.0 - t * edge_shade;
 	}
 	if (strand_shade > 0.0) {
-		float t = exp(-dist.g / max(0.01, strand_falloff_m));
+		// max(dist.g, 0): the contact shadow belongs BESIDE a strand, not on it.
+		// Keyed on the raw distance it hit exp(0) = 1 right across the mat and
+		// darkened at full strength the very thing it exists to set off.
+		float t = exp(-max(dist.g, 0.0) / max(0.01, strand_falloff_m));
 		base *= 1.0 - t * strand_shade;
 	}
 	if (shore_pale > 0.0) {
@@ -504,29 +517,34 @@ void fragment() {
 	}
 
 	// --- root strands as rounded tubes --------------------------------------
-	if (tube_radius_m > 0.0 && dist.g < tube_radius_m) {
-		// Height of a circular cross-section: 1 at the crest, 0 at the base.
-		float t = dist.g / tube_radius_m;
+	// Only INSIDE a strand. dist.g < 0 there, and how far below zero is how far
+	// in from the edge — the coordinate a circular cross-section actually wants.
+	if (tube_radius_m > 0.0 && dist.g < 0.0) {
+		// u: 0 at the strand's edge, growing inward. t: 1 at the edge, 0 at the
+		// crest. The section rises from nothing at the rim to full height at the
+		// centreline, and a mat wider than 2 * tube_radius_m gets a flat top
+		// with domed shoulders rather than a crease down its spine.
+		float u = -dist.g;
+		float t = clamp(1.0 - u / tube_radius_m, 0.0, 1.0);
 		float crest = sqrt(max(0.0, 1.0 - t * t));
 
-		// Which way is "away from the strand". Two taps rather than screen
-		// derivatives: dFdx/dFdy would be screen space, which only matches
-		// world x/z near the middle of a top-down view and skews at the edges.
+		// Which way is out. Two taps rather than screen derivatives: dFdx/dFdy
+		// are screen space, which only matches world x/z near the middle of a
+		// top-down view and skews at the edges. On the SIGNED field this is
+		// well conditioned everywhere; on the unsigned one it was exactly zero
+		// across the whole interior, which is what flattened the mat to a mesa.
 		float e = 1.0;
-		vec2 uv_e = vec2(e, 0.0) / field_size_m;
-		vec2 uv_n = vec2(0.0, e) / field_size_m;
 		vec2 c = v_world.xz / field_size_m;
-		float gx = textureLod(field_map, c + uv_e, 0.0).g
-			- textureLod(field_map, c - uv_e, 0.0).g;
-		float gz = textureLod(field_map, c + uv_n, 0.0).g
-			- textureLod(field_map, c - uv_n, 0.0).g;
-		vec2 away = vec2(gx, gz);
+		vec2 ue = vec2(e, 0.0) / field_size_m;
+		vec2 un = vec2(0.0, e) / field_size_m;
+		vec2 away = vec2(
+			textureLod(field_map, c + ue, 0.0).g - textureLod(field_map, c - ue, 0.0).g,
+			textureLod(field_map, c + un, 0.0).g - textureLod(field_map, c - un, 0.0).g);
 		float glen = length(away);
 		away = glen > 0.0001 ? away / glen : vec2(0.0);
 
-		// The tube's own normal, blended in by how close to the crest we are —
-		// so it fades out at the base instead of ending in a seam.
 		vec3 tube_n = normalize(vec3(away.x * t, max(crest, 0.08), away.y * t));
+		// Faded by crest so the tube meets the ground rather than ending in a seam.
 		n = normalize(mix(n, tube_n, tube_blend * crest));
 	}
 
@@ -542,17 +560,27 @@ void fragment() {
 		// Curvature at two scales. The wide one is baked (it needs a few cells
 		// of reach); the fine one is four taps here, so a trench dug this frame
 		// gets its lip and its crease this frame with nothing to re-bake.
-		float wide = sh.b * 2.0 - 1.0;
+		// Undo bake_shade's signed-sqrt compander. Stored that way because
+		// curvature is near zero almost everywhere, and a linear 8-bit encode
+		// wide enough not to clip spends almost no codes on the values that
+		// cover half the map.
+		float we = sh.b * 2.0 - 1.0;
+		float wide = sign(we) * we * we * curv_range;
 		float e = texel_m;
 		float lap = sample_h(v_world.xz - vec2(e, 0.0))
 			+ sample_h(v_world.xz + vec2(e, 0.0))
 			+ sample_h(v_world.xz - vec2(0.0, e))
 			+ sample_h(v_world.xz + vec2(0.0, e))
 			- 4.0 * v_h;
-		float fine = clamp(lap * height_scale_m / e * curv_gain, -1.0, 1.0);
+		float fine = lap * height_scale_m / e;
 		// Broad first, crisp on top — the order an airbrushed highlight is laid
 		// down. Positive is concave, negative is convex.
-		curv = clamp(wide * 0.65 + fine * 0.45, -1.0, 1.0);
+		// The gain goes HERE, after both scales are combined and in floating
+		// point, so it is a look and not a quantisation. Applying it inside
+		// the bake railed 23.5% of the map against the 8-bit ends and drew a
+		// hard contour through a quarter of the ground — a manufactured
+		// band, in the change whose entire purpose was removing bands.
+		curv = clamp((wide * 0.65 + fine * 0.45) * curv_gain, -1.0, 1.0);
 
 		// The crease line goes in the PIGMENT, not the light: a painter puts a
 		// dark mark where a form meets the ground and it is there whichever way

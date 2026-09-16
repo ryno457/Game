@@ -18,6 +18,11 @@ const SHADOW_STEPS := 12
 # a near rock's shadow crisp and a far ridge's shadow a faint wash, which is
 # what an area light does and what a paint program's Size slider approximates.
 const SHADOW_DISTANCE_FADE := 0.06
+## The physical range the wide-curvature channel is encoded over, before
+## companding. Measured off this map: |curvature| has a p99 of 2.02 and a p100
+## of 3.04, so 3.0 clips 0.03% of cells instead of the 23.5% that applying the
+## art gain before the clamp used to.
+const CURV_RANGE := 3.0
 
 
 static func build(map: TerrainMap) -> Heightfield:
@@ -89,7 +94,7 @@ static func _apply(hf: Heightfield, op: Dictionary) -> void:
 ## Baked at load. The fields change when the player digs, but only near the dig,
 ## and a full transform is ~57 ms so a local rebake is the shape of that fix.
 static func bake_fields(hf: Heightfield, void_below: float,
-		range_m: float = 20.0) -> PackedByteArray:
+		range_m: float = 20.0, strand_range_m: float = 4.0) -> PackedByteArray:
 	var cfg := hf.cfg
 	var n := cfg.cells_x * cfg.cells_z
 
@@ -104,15 +109,40 @@ static func bake_fields(hf: Heightfield, void_below: float,
 		strand[i] = 1 if hf.material_id[i] == GroundMaterials.VINE else 0
 		shore[i] = 1 if hf.water[i] > 0.05 else 0
 
+	# The strand channel is SIGNED, and that is the whole difference between a
+	# root that reads as a tube and one that reads inside-out.
+	#
+	# Unsigned, every cell of the root mat itself is distance ZERO — 16% of this
+	# map sat at exactly 0. The shader's tube then got t = 0, crest = 1 and a
+	# gradient of (0,0) across the entire interior, so it flattened the whole mat
+	# to face straight up and put the only tilt in a pinched ring at the rim:
+	# a mesa, not a tube. `strand_shade` compounded it, darkening the interior at
+	# full strength because exp(-0) is 1.
+	#
+	# Signed, the mat has an inside. Distance runs to zero at its edge and grows
+	# negative toward its centreline, which is exactly the coordinate a circular
+	# cross-section needs.
+	var inv := PackedByteArray()
+	inv.resize(n)
+	for i in n:
+		inv[i] = 1 - strand[i]
+
 	var d_edge := DistanceField.compute(edge, cfg.cells_x, cfg.cells_z, range_m)
-	var d_strand := DistanceField.compute(strand, cfg.cells_x, cfg.cells_z, range_m)
 	var d_shore := DistanceField.compute(shore, cfg.cells_x, cfg.cells_z, range_m)
+	var d_out := DistanceField.compute(strand, cfg.cells_x, cfg.cells_z, strand_range_m)
+	var d_in := DistanceField.compute(inv, cfg.cells_x, cfg.cells_z, strand_range_m)
 
 	var out := PackedByteArray()
 	out.resize(n * 3)
 	for i in n:
+		# A SHORT range for the strand, on its own scale rather than the shared
+		# 20 m. At 20 m a 1.8 m tube spans about 23 of the 256 codes, so the one
+		# feature the channel exists to make smooth was being banded by its own
+		# encoding.
+		var signed_d := d_out[i] - d_in[i]
 		out[i * 3] = int(clampf(d_edge[i] / range_m, 0.0, 1.0) * 255.0)
-		out[i * 3 + 1] = int(clampf(d_strand[i] / range_m, 0.0, 1.0) * 255.0)
+		out[i * 3 + 1] = int(clampf(signed_d / (2.0 * strand_range_m) + 0.5,
+			0.0, 1.0) * 255.0)
 		out[i * 3 + 2] = int(clampf(d_shore[i] / range_m, 0.0, 1.0) * 255.0)
 	return out
 
@@ -421,23 +451,28 @@ static func bake_shade(hf: Heightfield, p: BiomePalette) -> PackedByteArray:
 		dirs.append(Vector2(cos(a), sin(a)))
 
 	# Step radii, geometric so a few steps reach a long way. r0 is one cell.
+	# Geometric steps that ACTUALLY REACH ao_reach_m.
+	#
+	# This used to hardcode a 1.5x growth and stop after AO_STEPS, which capped
+	# the sweep at 1 * 1.5^5 = 7.59 m no matter what the palette asked for.
+	# ao_reach_m was a knob that did nothing above 7.6 — and the shipped bake
+	# has an AO mean of 0.956, i.e. almost no occlusion anywhere. Solving for
+	# the growth factor instead makes the number on the resource true.
 	var radii := PackedFloat32Array()
+	var reach := maxf(tm * 1.5, p.ao_reach_m)
+	var grow: float = pow(reach / tm, 1.0 / float(maxi(1, AO_STEPS - 1)))
 	var r := tm
-	var reach := maxf(tm, p.ao_reach_m)
-	while r <= reach and radii.size() < AO_STEPS:
+	for _i in AO_STEPS:
 		radii.append(r)
-		r *= 1.5
-	if radii.is_empty():
-		radii.append(tm)
+		r *= grow
 
 	var shadow_radii := PackedFloat32Array()
+	var s_reach := maxf(tm * 1.5, p.shadow_reach_m)
+	var s_grow: float = pow(s_reach / tm, 1.0 / float(maxi(1, SHADOW_STEPS - 1)))
 	r = tm
-	var s_reach := maxf(tm, p.shadow_reach_m)
-	while r <= s_reach and shadow_radii.size() < SHADOW_STEPS:
+	for _i in SHADOW_STEPS:
 		shadow_radii.append(r)
-		r *= 1.35
-	if shadow_radii.is_empty():
-		shadow_radii.append(tm)
+		r *= s_grow
 
 	var soft := maxf(0.01, p.shadow_softness_m) / hs
 	var curv_px := maxi(1, int(round(maxf(tm, p.curv_wide_m) / tm)))
@@ -490,8 +525,22 @@ static func bake_shade(hf: Heightfield, p: BiomePalette) -> PackedByteArray:
 				+ _h_at(heights, w, h, x, z - curv_px, hc)
 				+ _h_at(heights, w, h, x, z + curv_px, hc)
 				- 4.0 * hc)
-			var curv := clampf(lap * hs / (float(curv_px) * tm) * p.curv_gain,
-				-1.0, 1.0)
+			# RAW curvature, companded — no art gain applied here.
+			#
+			# Multiplying by curv_gain BEFORE the 8-bit clamp railed 23.5% of
+			# this map: 11.1% pinned at 0 and 12.4% at 255. That clip contour is
+			# a hard C0 edge running through a quarter of the ground, and it fed
+			# both the crease ink in pigment and the ramp bias in light() — a
+			# manufactured band, in the one change whose whole purpose was
+			# removing bands. The gain belongs in the shader, where it is a look
+			# and not a quantisation.
+			#
+			# The compander is a signed square root. Curvature is near zero
+			# almost everywhere (median 0.11 against a p100 of 3.04), so a linear
+			# encode over a range wide enough not to clip spends five codes on
+			# the values that cover half the map. sqrt spends about twenty-four.
+			var raw := lap * hs / (float(curv_px) * tm)
+			var curv := signf(raw) * sqrt(minf(absf(raw) / CURV_RANGE, 1.0))
 
 			out[i * 3] = int(ao * 255.0)
 			out[i * 3 + 1] = int(shadow * 255.0)

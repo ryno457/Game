@@ -264,12 +264,19 @@ def render(paint):
 
     # Distance gradients — exponential shoulders off the baked fields. This is
     # the part that replaces posterised bands with smooth falloff.
-    dist = sample_fields(wx, wz) * P["field_range_m"]
+    draw = sample_fields(wx, wz)
+    # R and B are plain distances; G is SIGNED over its own shorter range —
+    # positive outside a root strand, zero at its edge, negative toward its
+    # centreline. See TerrainBuilder.bake_fields for why it needs an inside.
+    dist = np.stack([draw[..., 0] * P["field_range_m"],
+                     (draw[..., 1] * 2.0 - 1.0) * P["strand_range_m"],
+                     draw[..., 2] * P["field_range_m"]], -1)
     if P["edge_shade"] > 0:
         base = base * (1.0 - np.exp(-dist[..., 0] / max(0.01, P["edge_falloff_m"]))
                        * P["edge_shade"])[..., None]
     if P["strand_shade"] > 0:
-        base = base * (1.0 - np.exp(-dist[..., 1] / max(0.01, P["strand_falloff_m"]))
+        base = base * (1.0 - np.exp(-np.maximum(dist[..., 1], 0.0)
+                                    / max(0.01, P["strand_falloff_m"]))
                        * P["strand_shade"])[..., None]
     if P["shore_pale"] > 0:
         t = (np.exp(-dist[..., 2] / max(0.01, P["shore_falloff_m"]))
@@ -281,8 +288,10 @@ def render(paint):
     # its base. That is a normal, not a colour, so it goes in before the light.
     if P["tube_radius_m"] > 0.0:
         dg = dist[..., 1]
-        inside = dg < P["tube_radius_m"]
-        tt = np.clip(dg / max(1e-4, P["tube_radius_m"]), 0, 1)
+        inside = dg < 0.0
+        # t: 1 at the strand's edge, 0 at its crest. The section rises from
+        # nothing at the rim to full height at the centreline.
+        tt = np.clip(1.0 + dg / max(1e-4, P["tube_radius_m"]), 0.0, 1.0)
         crest = np.sqrt(np.maximum(0.0, 1.0 - tt * tt))
         gx = (sample_fields(wx + 1.0, wz)[..., 1]
               - sample_fields(wx - 1.0, wz)[..., 1])
@@ -302,11 +311,13 @@ def render(paint):
     sh = sample_shade(wx, wz)
     ao = 1.0 + (sh[..., 0] - 1.0) * L["ao_strength"]
     cast_shadow = 1.0 + (sh[..., 1] - 1.0) * L["shadow_strength"]
-    wide = sh[..., 2] * 2.0 - 1.0
+    # Undo bake_shade's signed-sqrt compander.
+    we = sh[..., 2] * 2.0 - 1.0
+    wide = np.sign(we) * we * we * L["curv_range"]
     lap = (sample_h(wx - 1.0, wz) + sample_h(wx + 1.0, wz)
            + sample_h(wx, wz - 1.0) + sample_h(wx, wz + 1.0) - 4.0 * h)
-    fine = np.clip(lap * HS * L["curv_gain"], -1.0, 1.0)
-    curv = np.clip(wide * 0.65 + fine * 0.45, -1.0, 1.0)
+    fine = lap * HS
+    curv = np.clip((wide * 0.65 + fine * 0.45) * L["curv_gain"], -1.0, 1.0)
     crease = np.maximum(curv, 0.0)
     base = base * (1.0 - crease * crease * L["crease_ink"])[..., None]
     v_shade = (1.0 + (ao - 1.0) * L["ao_light_affect"]) * cast_shadow
@@ -395,6 +406,7 @@ P = dict(stroke_scale=_p["stroke_scale"], stroke_stretch=_p["stroke_stretch"],
          strand_falloff_m=_p.get("strand_falloff_m", 3.0),
          shore_pale=_p.get("shore_pale", 0.0),
          shore_falloff_m=_p.get("shore_falloff_m", 7.0),
+         strand_range_m=_p.get("strand_range_m", 4.0),
          tube_radius_m=_p.get("tube_radius_m", 0.0),
          tube_blend=_p.get("tube_blend", 0.8))
 PAINT_ON = _p["strength"]
@@ -408,7 +420,8 @@ L = dict(terminator_k=_l.get("terminator_k", 1.0),
          shadow_strength=_l.get("shadow_strength", 0.0),
          curv_gain=_l.get("curv_gain", 0.0),
          crease_ink=_l.get("crease_ink", 0.0),
-         ridge_gain=_l.get("ridge_gain", 0.0))
+         ridge_gain=_l.get("ridge_gain", 0.0),
+         curv_range=_p.get("curv_range", 3.0))
 RIDGE_TINT = rgb(_l.get("ridge_tint", "ffffff"))
 
 # The sun, from the same two angles the bake used — so the preview's highlights

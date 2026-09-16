@@ -416,6 +416,7 @@ func _palette() -> BiomePalette:
 	p.edge_falloff_m = 9.0
 	p.strand_shade = 0.34
 	p.strand_falloff_m = 3.0
+	p.strand_range_m = 4.0
 	p.shore_pale = 0.50
 	p.shore_falloff_m = 7.0
 	p.tube_radius_m = 1.8
@@ -962,7 +963,7 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 	mat.close()
 
 	var fld := FileAccess.open(OUT + "/biodome_01_fields.u8", FileAccess.WRITE)
-	fld.store_buffer(TerrainBuilder.bake_fields(field, VOID_BELOW, 20.0))
+	fld.store_buffer(TerrainBuilder.bake_fields(field, VOID_BELOW, 20.0, 4.0))
 	fld.close()
 
 	# AO, cast shadow and wide curvature, so the preview shades from the SAME
@@ -1030,6 +1031,8 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 			"field_range_m": pal.field_range_m,
 			"edge_shade": pal.edge_shade, "edge_falloff_m": pal.edge_falloff_m,
 			"strand_shade": pal.strand_shade, "strand_falloff_m": pal.strand_falloff_m,
+			"strand_range_m": pal.strand_range_m,
+			"curv_range": TerrainBuilder.CURV_RANGE,
 			"shore_pale": pal.shore_pale, "shore_falloff_m": pal.shore_falloff_m,
 			"tube_radius_m": pal.tube_radius_m, "tube_blend": pal.tube_blend,
 		},

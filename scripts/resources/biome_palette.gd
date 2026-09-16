@@ -122,6 +122,11 @@ extends Resource
 ## tube rather than a green line drawn on the floor.
 @export_range(0.0, 1.0) var strand_shade: float = 0.30
 @export var strand_falloff_m: float = 3.0
+## The SIGNED range the strand channel is encoded over, in metres. Short on
+## purpose and separate from field_range_m: at the shared 20 m a 1.8 m tube
+## spans about 23 of the 256 codes, so the one feature the channel exists to
+## make smooth was being banded by its own encoding.
+@export var strand_range_m: float = 4.0
 ## Bleaching toward a waterline.
 @export_range(0.0, 1.0) var shore_pale: float = 0.45
 @export var shore_falloff_m: float = 7.0
