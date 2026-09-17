@@ -2,6 +2,11 @@ class_name ModelLibrary
 extends RefCounted
 
 const PAINTED_SHADER := "res://shaders/painted_prop.gdshader"
+## The skin the ground and the vines wear, from tools/make_scale_detail.py.
+## Everything that GREW shares it; the machines do not, and that is the line
+## the whole look rests on.
+const SCALE_N := "res://textures/scale_detail_n.png"
+const SCALE_AO := "res://textures/scale_detail_ao.png"
 
 ## Set before the first load_model() call. Null leaves models on their
 ## imported StandardMaterial3D, which is the grey-box look.
@@ -9,6 +14,8 @@ var painted_ramp: Texture2D
 var painted_ink := 0.35
 ## How hard the machines' baked normal map bites. 0 leaves them smooth.
 var painted_machine_detail := 0.0
+## And how hard the shared scale map bites on everything that grew.
+var painted_scale_detail := 0.0
 ## Loads the Blender-authored glTF assets and hands out ready-to-place nodes.
 ##
 ## Two things it fixes centrally rather than per-caller:
@@ -54,7 +61,7 @@ func load_model(model_name: String) -> PackedScene:
 	# the ground it stood on.
 	if painted_ramp != null:
 		apply_painted(packed, painted_ramp, painted_ink, model_name,
-			painted_machine_detail)
+			painted_machine_detail, painted_scale_detail)
 	_scenes[model_name] = packed
 	return packed
 
@@ -96,7 +103,8 @@ static func _apply_vertex_colours(packed: PackedScene) -> int:
 ## Mutates the shared cached mesh resources, like _apply_vertex_colours above,
 ## so every instance after the first gets it — node-spawned or MultiMesh.
 static func apply_painted(packed: PackedScene, ramp: Texture2D,
-		ink := 0.35, model_name := "", machine_detail := 0.0) -> int:
+		ink := 0.35, model_name := "", machine_detail := 0.0,
+		scale_detail := 0.0) -> int:
 	var shader: Shader = load(PAINTED_SHADER)
 	if shader == null:
 		return 0
@@ -131,6 +139,16 @@ static func apply_painted(packed: PackedScene, ramp: Texture2D,
 				sm.set_shader_parameter("detail_n", load(n_path))
 				sm.set_shader_parameter("detail_ao", load(ao_path))
 				sm.set_shader_parameter("detail_strength", machine_detail)
+			elif scale_detail > 0.0 and ResourceLoader.exists(SCALE_N):
+				# EVERYTHING THAT GREW WEARS THE SAME SKIN. A prop with no baked
+				# map of its own is a plant or a ruin, and those get the shared
+				# scale texture through the UVs build_flora unwraps. The ground
+				# and the vines are already wearing it; the structures standing
+				# on them were the one thing still smooth.
+				sm.set_shader_parameter("detail_n", load(SCALE_N))
+				sm.set_shader_parameter("detail_ao", load(SCALE_AO))
+				sm.set_shader_parameter("detail_strength", scale_detail)
+				sm.set_shader_parameter("detail_ao_strength", 0.5)
 			m.surface_set_material(i, sm)
 			changed += 1
 	probe.free()

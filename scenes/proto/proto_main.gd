@@ -156,6 +156,7 @@ func _ready() -> void:
 	lib.painted_ramp = TerrainView.ramp_texture(palette)
 	lib.painted_ink = palette.prop_rim_ink
 	lib.painted_machine_detail = palette.machine_detail
+	lib.painted_scale_detail = palette.scale_detail
 	TerrainBuilder.classify_materials(field, palette.void_below, palette.channel_below,
 		palette.channel_web_threshold, 2.5, 3.0, palette.channel_strand_width_m)
 	terrain.apply_palette(palette)

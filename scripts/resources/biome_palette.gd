@@ -119,6 +119,11 @@ extends Resource
 ## How hard the machines' baked normal map bites. Panel seams and chamfers,
 ## from tools/blender/bake_machines.py.
 @export_range(0.0, 4.0) var machine_detail: float = 1.6
+## How hard the shared scale map bites on the plants and the structures. The
+## machines are deliberately excluded: they carry their own baked panel detail,
+## and a machine wearing the landscape's skin is the one thing that would undo
+## the contrast the light grey exists to create.
+@export_range(0.0, 4.0) var scale_detail: float = 1.0
 ## Cycles per metre. Around 2-3 reads as grit at the RTS camera height; much
 ## finer than that is invisible and shimmers when the camera pans.
 @export var detail_scale: float = 2.6

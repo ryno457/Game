@@ -357,6 +357,73 @@ from outside — geometry that is simply not drawn:
 What finally separated them was setting `emission` and watching the surround
 come back magenta while the lit path stayed dark.
 
+## The vines are splines now
+
+Every vine used to be points and triangles emitted from Python: correct
+geometry that nobody could ever edit, because there was nothing in the .blend
+to take hold of. They are Blender **curves** now — open `art/detail_source.blend`,
+tab into `vine_trunks`, and the vines are control points you can move, with the
+tube regenerating from them.
+
+One curve datablock per tier, not per vine. `bevel_depth` belongs to the curve
+rather than the spline, so each tier carries its own base thickness and the
+per-vine swell rides on each control point's `radius`, which multiplies it.
+Four thousand curve *objects* is what killed the bake at 66 minutes the first
+time round; four is free.
+
+**Half the thickness, and 1.75x the count.** "Smaller" was the ask; sparser was
+not, and they are the same change unless you pay for it. Halving a vine's
+radius halves the ground it covers per metre of its length, and at the old
+count the mat thinned out and the bare floor came through — measured, the baked
+map went from 45% near-grey to 49% and the rendered frame's saturation fell
+from 0.35 to 0.27. The bevel resolution went *up* at the same time: a 12-sided
+tube at 10 cm costs what a 6-sided one at 20 cm did, and now that they are
+round the silhouette is worth having.
+
+**The paint moved from vertices to coordinates, and improved.** A curve cannot
+hold a colour attribute, so the three variations that used to live in `COLOR_0`
+come out of texture coordinates instead — and they are better for it, because a
+curve's UV knows where the root and the tip are while a vertex colour only knew
+where the vertex was. The along-vine gradient is a ramp on V; the per-vine
+jitter is a noise on object coordinates at about two metres, which is spatial
+rather than per-object and is the whole reason four thousand vines can share
+four datablocks.
+
+## One skin on everything that grew
+
+`tools/make_scale_detail.py` generates a seamless field of overlapping scales —
+normal and cavity — and the ground, the vines and the structures all wear it.
+That is the point: they are supposed to read as one organism's landscape, and
+nothing says so faster than one skin. The machines are deliberately excluded.
+They carry their own baked panel detail, and a machine wearing the landscape's
+skin would undo the contrast the light grey exists to create.
+
+**Rows lie over rows.** The first version took the tallest dome at each pixel,
+which sounds like overlap and is not: two domes of equal height meet at a ridge
+halfway between them, so a field of them tessellates into a honeycomb and reads
+as bubble wrap. Real scales have a free edge. So it is a painter's order — among
+the scales whose footprint covers a pixel, the one from the frontmost row wins
+outright and sits a step above what it covers.
+
+**The tiling check was wrong, twice.** "The opposite edges match" fails a map
+that tiles perfectly, because the last column sits next to the first column of
+the *next* copy and should differ by one ordinary step. Its replacement — "the
+wrap step is near the average step" — failed this pattern while it tiled
+*exactly*, because most of the image is smooth dome interior and a wrap that
+cuts through a row of lips beats the average by a mile. What a seam actually is
+is a step much larger than the steps immediately beside it, so the wrap is now
+compared to its own neighbours. Both generators use it.
+
+**Props needed UVs, and needed them in metres.** These assets never had any —
+the project had no textures when they were written and `COLOR_0` carried
+everything. `smart_project` packs each object's islands into 0..1, which means
+a 9.3 m arch and an 80 cm pod come out with the same number of UV units across
+them, and a tiling texture then makes the arch's scales twelve times the size of
+the pod's. So the unwrap is rescaled by a measurement, not a guess: the median
+ratio of world length to UV length over every edge, so one UV unit is a fixed
+1.2 m of surface. The ground uses 5 m, because it is a floor seen at a distance
+and a plant is a small thing close to the same camera.
+
 ## Beige, and the measurement that missed it
 
 "Every warm hue in reference 01 put together is 0.38% of the image" was true

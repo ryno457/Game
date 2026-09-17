@@ -122,20 +122,24 @@ def main() -> int:
     # A map whose edges do not match is the one failure that is invisible until
     # it is on a 500 m wall, so it is asserted rather than eyeballed.
     #
-    # NOT "the two edges are equal". In a tiling texture the last column sits
-    # next to the FIRST column of the next copy, so they should differ by one
-    # ordinary step of the gradient — demanding they match would fail a map
-    # that tiles perfectly. What a seam actually is, is a step much larger than
-    # the neighbouring steps, so that is what is measured.
     a = img_n.astype(int)
-    step_x = np.abs(np.diff(a, axis=1)).mean()
-    step_y = np.abs(np.diff(a, axis=0)).mean()
-    seam_x = np.abs(a[:, 0] - a[:, -1]).mean()
-    seam_y = np.abs(a[0] - a[-1]).mean()
-    rx = seam_x / max(1e-6, step_x)
-    ry = seam_y / max(1e-6, step_y)
-    ok = rx < 1.6 and ry < 1.6
-    print("PY: %s tiling — the wrap step is %.2fx / %.2fx an ordinary step"
+    # TILING, tested against the wrap's OWN NEIGHBOURS.
+    #
+    # Comparing the wrap step to the average step over the whole image looks
+    # right and is not: a pattern with a few sharp features and a lot of
+    # smooth ground beats or misses the average for reasons that have nothing
+    # to do with seams. What a seam actually is,
+    # is a step much larger than the steps immediately beside it — so that is
+    # the comparison. A true tile lands near 1.0.
+    def _wrap(arr, axis):
+        edge = np.abs(np.take(arr, 0, axis) - np.take(arr, -1, axis)).mean()
+        near = 0.5 * (np.abs(np.take(arr, 1, axis) - np.take(arr, 0, axis)).mean()
+                      + np.abs(np.take(arr, -1, axis) - np.take(arr, -2, axis)).mean())
+        return edge / max(1e-6, near)
+    rx = _wrap(a, 1)
+    ry = _wrap(a, 0)
+    ok = rx < 1.5 and ry < 1.5
+    print("PY: %s tiling — the wrap step is %.2fx / %.2fx the steps beside it"
           % ("ok  " if ok else "FAIL", rx, ry))
     print("PY: wrote %s\nPY: wrote %s" % (OUT_N, OUT_AO))
     return 0 if ok else 1

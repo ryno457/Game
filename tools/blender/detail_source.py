@@ -44,6 +44,22 @@ RES_X = int(argv[0]) if argv else 2048
 VINE_TARGET = int(argv[1]) if len(argv) > 1 else 520
 CLUMP_TARGET = int(argv[2]) if len(argv) > 2 else 260
 GROUND_SUBDIV = int(argv[3]) if len(argv) > 3 else 3
+## HALF. Every vine radius is multiplied by this. Length is left alone: a
+## vine's visual weight at the overhead camera is its thickness, and halving
+## the runs as well would have thinned the mat's coverage to a quarter for a
+## change that was asked for as 'smaller', not 'sparser'.
+VINE_SCALE = 0.5
+## And the count goes UP to pay for it. Halving the radius halves the ground
+## a vine covers per metre of its length, so at the old count the mat thinned
+## out and the bare floor came through: measured, the baked map went from 45%
+## near-grey to 49% and the rendered frame's saturation fell from 0.35 to
+## 0.27. Smaller was the ask; sparser was not.
+VINE_COUNT_SCALE = 1.75
+## Metres of ground covered by one tile of the scale map. The generator lays
+## 12 scales across a tile, so this over 12 is how big one scale is: at 5 m
+## that is 42 cm. At 25 cm it aliased: the bake is 2048 over 150 m, so a texel
+## is 7 cm and a 25 cm scale had three of them to be drawn with.
+SCALE_M = 5.0
 SEED = 20260916
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -67,7 +83,7 @@ OUT_C = os.path.join(ROOT, "textures", "ground_detail_c.png")
 GROUND_MID = "143c3c"      # hue 180. The beige drift is strong enough that
                            # a weaker teal under it left the floor grey: the
                            # render fell to saturation 0.34 against 0.46.
-VINE_BODY = "31534f"       # the pale structural tube: the dominant web
+VINE_BODY = "2a6058"       # the pale structural tube: the dominant web
 LIVE_BODY = "2e6640"       # the glowing emerald roots: a small MINORITY
 GLOW = "5cc79a"
 # The DRESSING, and this is where the colour variety lives.
@@ -117,7 +133,7 @@ def _fit(v, lo, hi):
     return min(1.0, max(0.0, (v - lo) / max(1e-6, hi - lo)))
 
 
-def _vertex_colour_mat(name, rough=0.92):
+def _vertex_colour_mat(name, rough=0.92, scale_tile=None):
     """A material whose base colour comes from the mesh's own vertex colours.
 
     This is how the floor gets colour VARIATION rather than one flat teal.
@@ -135,13 +151,19 @@ def _vertex_colour_mat(name, rough=0.92):
     attr = m.node_tree.nodes.new("ShaderNodeVertexColor")
     attr.layer_name = "ground"
     m.node_tree.links.new(attr.outputs["Color"], b.inputs["Base Color"])
+    if scale_tile is not None:
+        # THE SAME SKIN THE VINES WEAR. The ground's unwrap is the whole map in
+        # 0..1, so the tile count is the map's size over the scale's size —
+        # which is what makes one scale a fixed number of centimetres however
+        # big the map gets.
+        _scale_nodes(m.node_tree, b.inputs["Normal"], scale_tile, 0.55)
     return m
 
 
 def _painted_mat(name, hexs, rough=0.85, emit=None, emit_w=0.0):
     """A flat base colour MULTIPLIED by the mesh's "paint" attribute.
 
-    The vines carry a per-vertex gradient now (see vine_paint), and a plain
+    The clumps carry a per-clump colour now, and a plain
     Principled BSDF ignores it — the attribute would be written, baked over,
     and nothing in the output would change. This is the two nodes that make it
     count: the slot still decides WHAT the thing is made of, the attribute
@@ -290,51 +312,164 @@ def vine_run(rng, h, cx, cz, hs, x0, y0, length, width, ang=None):
     return pts, radii, ang
 
 
-def vine_paint(rng, pts, radii, live, hs):
-    """One colour per point along a vine, as a multiplier on its material.
+SCALE_N = os.path.join(ROOT, "textures", "scale_detail_n.png")
 
-    THE VINES WERE ONE FLAT TEAL. A material slot is one colour over every
-    triangle assigned to it, so four thousand vines all came out of the bake
-    identical — and a web whose every strand is the same value reads as a
-    diagram of a web. Reference 03's are not: each tube darkens into the
-    ground at its feet, pales along its back where the light sits, and no two
-    of them are quite the same colour.
 
-    Three things vary here, and they are three different arguments:
-      - PER VINE, a hue and value jitter, so neighbours differ.
-      - ALONG the vine, a dark root and a paler tip.
-      - PER POINT, the swell: where the tube is fattest it catches more light,
-        which is the thing that makes a swelling read as a swelling.
+def _scale_nodes(nt, base_socket, tile=(6.0, 1.0), strength=1.0):
+    """Wire the seamless scale map into a material's Normal input.
+
+    Uses the curve's OWN generated UV — Blender lays one out along a bevelled
+    spline, U around the tube and V from root to tip — so the scales run along
+    the vine the way scales on a thing actually do. A triplanar or object-space
+    projection would put them in world axes and the vine would look painted.
     """
-    warm = rng.uniform(-0.05, 0.10)          # toward beige, or away from it
-    lift = rng.uniform(0.74, 1.24)
-    rmax = max(radii) or 1.0
-    out = []
-    n = max(1, len(pts) - 1)
-    for i, p in enumerate(pts):
-        t = i / n
-        # Dark at the root, pale toward the tip, and the ends taper back down
-        # so a vine does not end on a highlight.
-        run = 0.70 + 0.55 * t - 0.25 * max(0.0, t - 0.82) / 0.18
-        fat = 0.88 + 0.34 * (radii[i] / rmax)
-        v = lift * run * fat
-        # Height: the mats down in the channels are wetter and darker than the
-        # ones over a lobe top, which is a real gradient across the whole map
-        # rather than a per-vine one.
-        v *= 0.86 + 0.28 * _fit(p[2] / max(1.0, hs), 0.30, 0.85)
-        g = 1.0 + warm * 0.4
-        r = 1.0 + warm * 1.8
-        b = 1.0 - warm * 1.2
-        if live:
-            # The glowing minority pales toward its own emission instead of
-            # toward beige, or the emissive slot fights the paint.
-            r, g, b = 0.86, 1.06, 1.0
-        out.append((v * r, v * g, v * b, 1.0))
-    return out
+    if not os.path.exists(SCALE_N):
+        return None
+    img = bpy.data.images.load(SCALE_N, check_existing=True)
+    img.colorspace_settings.name = 'Non-Color'
+    uv = nt.nodes.new("ShaderNodeUVMap")
+    mapn = nt.nodes.new("ShaderNodeMapping")
+    mapn.inputs["Scale"].default_value = (tile[0], tile[1], 1.0)
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.extension = 'REPEAT'
+    nm = nt.nodes.new("ShaderNodeNormalMap")
+    nm.inputs["Strength"].default_value = strength
+    nt.links.new(uv.outputs["UV"], mapn.inputs["Vector"])
+    nt.links.new(mapn.outputs["Vector"], tex.inputs["Vector"])
+    nt.links.new(tex.outputs["Color"], nm.inputs["Color"])
+    nt.links.new(nm.outputs["Normal"], base_socket)
+    return nm
 
 
-def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
+def _vine_curve_mat(name, hexs, rough=0.80, emit=None, emit_w=0.0,
+                    tile=(8.0, 1.0)):
+    """The vine material, with everything the vertex paint used to carry.
+
+    A curve cannot hold a colour attribute, so the three variations that used
+    to live in COLOR_0 come out of coordinates instead — and they are better
+    for it, because a curve's UV knows where the ROOT and the TIP are and a
+    vertex colour only knew where the vertex was:
+
+      ALONG THE VINE   a ramp on V: dark at the root, paler toward the tip.
+      PER VINE         a noise on object coordinates at about two metres, so
+                       each vine sits at its own value and its neighbour does
+                       not. Spatial rather than per-object, which is the whole
+                       reason four thousand vines can share three datablocks.
+      THE SKIN         the seamless scale map, running along the tube.
+    """
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    b.inputs["Roughness"].default_value = rough
+    if emit is not None and "Emission Color" in b.inputs:
+        b.inputs["Emission Color"].default_value = hexcol(emit)
+        b.inputs["Emission Strength"].default_value = emit_w
+
+    uv = nt.nodes.new("ShaderNodeUVMap")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(uv.outputs["UV"], sep.inputs["Vector"])
+    run = nt.nodes.new("ShaderNodeValToRGB")
+    run.color_ramp.elements[0].position = 0.0
+    run.color_ramp.elements[0].color = (0.62, 0.62, 0.62, 1.0)
+    run.color_ramp.elements[1].position = 1.0
+    run.color_ramp.elements[1].color = (1.28, 1.28, 1.28, 1.0)
+    nt.links.new(sep.outputs["Y"], run.inputs["Fac"])
+
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 0.55
+    noise.inputs["Detail"].default_value = 1.0
+    nt.links.new(coord.outputs["Object"], noise.inputs["Vector"])
+    jit = nt.nodes.new("ShaderNodeValToRGB")
+    jit.color_ramp.elements[0].color = (0.70, 0.74, 0.82, 1.0)
+    jit.color_ramp.elements[1].color = (1.30, 1.22, 1.06, 1.0)
+    nt.links.new(noise.outputs["Fac"], jit.inputs["Fac"])
+
+    mul1 = nt.nodes.new("ShaderNodeMix")
+    mul1.data_type = 'RGBA'
+    mul1.blend_type = 'MULTIPLY'
+    mul1.inputs["Factor"].default_value = 1.0
+    mul1.inputs[6].default_value = hexcol(hexs)
+    nt.links.new(run.outputs["Color"], mul1.inputs[7])
+
+    mul2 = nt.nodes.new("ShaderNodeMix")
+    mul2.data_type = 'RGBA'
+    mul2.blend_type = 'MULTIPLY'
+    mul2.inputs["Factor"].default_value = 1.0
+    nt.links.new(mul1.outputs[2], mul2.inputs[6])
+    nt.links.new(jit.outputs["Color"], mul2.inputs[7])
+    nt.links.new(mul2.outputs[2], b.inputs["Base Color"])
+
+    _scale_nodes(nt, b.inputs["Normal"], tile, 0.85)
+    return m
+
+
+class VineCurves:
+    """One Blender CURVE holding many splines, bevelled into a real tube.
+
+    REAL SPLINES, not a triangle list. Every vine used to be points and
+    triangles emitted from Python — correct geometry that nobody could ever
+    edit, because there was nothing in the .blend to grab hold of. These are
+    curve objects: open the file, tab into one, and the vines are control
+    points you can move, with the tube regenerating from them.
+
+    One datablock per TIER rather than per vine. `bevel_depth` is a property of
+    the curve, not of the spline, so each tier carries its own base thickness
+    and the per-vine variation rides on the control points' own `radius`, which
+    multiplies it. Four thousand curve objects is what killed the bake at 66
+    minutes the first time; three is free.
+    """
+
+    def __init__(self, name, depth_m, sides_res, mat):
+        self.cu = bpy.data.curves.new(name, 'CURVE')
+        self.cu.dimensions = '3D'
+        self.cu.bevel_depth = depth_m
+        self.cu.bevel_resolution = sides_res
+        self.cu.use_fill_caps = True
+        self.cu.resolution_u = 1          # POLY splines: no subdivision wanted
+        self.cu.materials.append(mat)
+        self.depth = depth_m
+        self.ob = bpy.data.objects.new(name, self.cu)
+        bpy.context.collection.objects.link(self.ob)
+        self.splines = 0
+
+    def add(self, pts, radii):
+        sp = self.cu.splines.new('POLY')
+        sp.points.add(len(pts) - 1)
+        for i, p in enumerate(pts):
+            sp.points[i].co = (p[0], p[1], p[2], 1.0)
+            # radius MULTIPLIES bevel_depth, so this is the swell the tube
+            # already had, expressed as a ratio instead of in metres.
+            sp.points[i].radius = max(0.02, radii[i] / self.depth)
+        self.splines += 1
+        return sp
+
+    def to_mesh_object(self, name):
+        """A mesh copy for the bake to fire at, leaving the curve editable.
+
+        Cycles' selected-to-active bake wants mesh sources, so the curve cannot
+        be a source itself. Converting rather than replacing means the .blend
+        keeps both: the splines somebody can edit, and the geometry the bake
+        actually read.
+        """
+        dg = bpy.context.evaluated_depsgraph_get()
+        me = bpy.data.meshes.new_from_object(self.ob.evaluated_get(dg))
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.collection.objects.link(ob)
+        self.ob.hide_render = True
+        self.ob.hide_viewport = True
+        return ob
+
+
+def grow_vine(curves, mb, slot, rng, h, cx, cz, hs, x0, y0, length, width,
+              depth=0):
     """A vine AND what grows off it. Returns the trunk's points and radii.
+
+    The trunk is a SPLINE on `curves` now; the nodules and pores stay triangle
+    geometry, because a nodule is a blob and not a swept tube and there is
+    nothing about it to edit.
 
     This is the difference between the first pass and reference 03. There, a
     vine is not a tube — it is a trunk that BRANCHES, with nodules swelling
@@ -342,10 +477,8 @@ def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
     never look like that however it is tuned, because the structure is missing
     rather than the detail.
     """
-    pts, radii, ang = vine_run(rng, h, cx, cz, hs, x0, y0, length, width)
-    cols = vine_paint(rng, pts, radii, slot == 2, hs)
-    mb.tube(slot, pts, radii, 6 if depth else 7, ring_cols=cols,
-            ridge=rng.uniform(0.08, 0.20), seed=rng.random() * 99.0)
+    pts, radii, _ang = vine_run(rng, h, cx, cz, hs, x0, y0, length, width)
+    curves.add(pts, radii)
 
     # NODULES. Swellings along the trunk, biggest where the trunk is thickest.
     # In the reference the light does not sit on the vine, it sits in beads
@@ -356,7 +489,7 @@ def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
         q = pts[k]
         r = radii[k] * rng.uniform(1.15, 1.75)
         mb.orb(slot, (q[0], q[1], q[2] + radii[k] * 0.45), r, 7, 5,
-               col=cols[k], lumps=0.25, seed=rng.random() * 40.0)
+               lumps=0.25, seed=rng.random() * 40.0)
 
     # BRANCHES, one level deep. Two levels doubles the triangle count for
     # structure the 19 px/m camera cannot resolve.
@@ -364,7 +497,7 @@ def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
         for _ in range(rng.randint(1, 3)):
             k = rng.randint(1, max(1, len(pts) - 2))
             q = pts[k]
-            grow_vine(mb, slot, rng, h, cx, cz, hs, q[0], q[1],
+            grow_vine(curves, mb, slot, rng, h, cx, cz, hs, q[0], q[1],
                       length * rng.uniform(0.35, 0.6),
                       width * rng.uniform(0.45, 0.7), depth + 1)
     return pts, radii
@@ -428,7 +561,7 @@ def build(rng, cx, cz, h, mat, hs, void):
             # exactly what it was meant to remove. A near-neutral warm grey
             # loses the chroma first and picks up the warmth second, and the
             # green band drops from 35% to 8% at a stronger weight than before.
-            base[i] += (hexcol(GROUND_SAND)[i] - base[i]) * _fit(sand, 0.30, 0.78) * 0.90
+            base[i] += (hexcol(GROUND_SAND)[i] - base[i]) * _fit(sand, 0.30, 0.78) * 0.80
             base[i] += (hexcol(GROUND_DEEP)[i] - base[i]) * _fit(deep, 0.48, 0.88) * 0.52
             # The green is now a MINORITY band and a narrow one: it appears
             # where two drifts happen to agree rather than across a third of
@@ -451,9 +584,12 @@ def build(rng, cx, cz, h, mat, hs, void):
     # a metre has to exist on this mesh or it exists nowhere. At subdiv 1 the
     # ground between the vines baked perfectly flat, which is most of why the
     # floor read as a painted plane with things lying on it.
+    # One scale every SCALE_M metres across the whole map.
+    tiles = ((cx - 1.0) / SCALE_M, (cz - 1.0) / SCALE_M)
     high_ground = terrain(cx, cz, h, hs, void, "high_ground",
-                          [_vertex_colour_mat("ground_painted")], ground_paint,
-                          subdiv=GROUND_SUBDIV)
+                          [_vertex_colour_mat("ground_painted",
+                                              scale_tile=tiles)],
+                          ground_paint, subdiv=GROUND_SUBDIV)
 
     # DENSITY, and it follows the map rather than a noise field. The classifier
     # already decided which cells are root mat; vines are seeded only there, so
@@ -472,9 +608,30 @@ def build(rng, cx, cz, h, mat, hs, void):
     # took the bake past an hour and it was killed mid-pass. Same triangles, one
     # object: the per-object overhead simply goes away.
     mb = MB()
+
+    # THE THREE TIERS, AS CURVES. See VineCurves: one datablock each, because
+    # bevel_depth belongs to the curve and the per-vine swell rides on the
+    # control points' radius.
+    #
+    # HALF THE THICKNESS THEY WERE. Every base radius below is the old one
+    # times VINE_SCALE. The bevel resolution went UP at the same time — a
+    # 12-sided tube at 10 cm costs the same triangles as a 6-sided one at
+    # 20 cm did, and now that they are round the silhouette is worth having.
+    # Their OWN materials, not the mesh slots. The curve material reads the
+    # generated UV (see _vine_curve_mat); the MB geometry that shares these
+    # slots — nodules, clumps — has no UV at all, so one material cannot serve
+    # both without one of them sampling a texture at (0, 0) forever.
+    vine_m = _vine_curve_mat("vine_skin", VINE_BODY, 0.80, tile=(10.0, 1.0))
+    live_m = _vine_curve_mat("live_skin", LIVE_BODY, 0.70, GLOW, 2.5,
+                             tile=(10.0, 1.0))
+    trunk_c = VineCurves("vine_trunks", 0.34 * VINE_SCALE, 2, vine_m)
+    live_c = VineCurves("vine_live", 0.34 * VINE_SCALE, 2, live_m)
+    runner_c = VineCurves("vine_runners", 0.11 * VINE_SCALE, 1, vine_m)
+    filament_c = VineCurves("vine_filaments", 0.062 * VINE_SCALE, 1, vine_m)
+    want_trunks = int(VINE_TARGET * VINE_COUNT_SCALE)
     made = 0
     for i in seeds:
-        if made >= VINE_TARGET:
+        if made >= want_trunks:
             break
         if rng.random() > 0.55:
             continue
@@ -482,17 +639,18 @@ def build(rng, cx, cz, h, mat, hs, void):
         # A bundle, not a single vine: the reference's web is bundles of about
         # four crests inside a 3.6 m envelope, which is what makes it BRAID.
         for _ in range(rng.randint(2, 4)):
-            if made >= VINE_TARGET:
+            if made >= want_trunks:
                 break
             # One vine in six glows. The reference's live emerald roots are
             # 0.8-1.2% of area; the rest of the web is a pale unlit tube, and
             # making all of it a light source read as a neon scribble.
             live = rng.random() < 0.16
-            pts, radii = grow_vine(mb, LIVE if live else VINE, rng, h, cx, cz,
+            pts, radii = grow_vine(live_c if live else trunk_c, mb,
+                                   LIVE if live else VINE, rng, h, cx, cz,
                                    hs, x0 + rng.uniform(-1.8, 1.8),
                                    y0 + rng.uniform(-1.8, 1.8),
                                    rng.uniform(5.0, 12.0),
-                                   rng.uniform(0.20, 0.50))
+                                   rng.uniform(0.20, 0.50) * VINE_SCALE)
             # PORES. In reference 03 these amber points are everywhere, and
             # they are the most characteristic small detail in it.
             if rng.random() < 0.45:
@@ -514,7 +672,7 @@ def build(rng, cx, cz, h, mat, hs, void):
     # they land on top of the trunks rather than in the open.
     fine = 0
     for i in seeds:
-        if fine >= VINE_TARGET // 2:
+        if fine >= int(VINE_TARGET * VINE_COUNT_SCALE * 0.5):
             break
         if rng.random() > 0.45:
             continue
@@ -523,10 +681,8 @@ def build(rng, cx, cz, h, mat, hs, void):
                                  x0 + rng.uniform(-2.4, 2.4),
                                  y0 + rng.uniform(-2.4, 2.4),
                                  rng.uniform(2.5, 6.0),
-                                 rng.uniform(0.06, 0.16))
-        mb.tube(VINE, pts, radii, 5,
-                ring_cols=vine_paint(rng, pts, radii, False, hs),
-                ridge=rng.uniform(0.10, 0.22), seed=rng.random() * 99.0)
+                                 rng.uniform(0.06, 0.16) * VINE_SCALE)
+        runner_c.add(pts, radii)
         fine += 1
     print("PY: %d fine runners over the trunks" % fine)
 
@@ -547,7 +703,7 @@ def build(rng, cx, cz, h, mat, hs, void):
     # Seeded wider than the trunks (+/- 4 m against +/- 1.8) so the mat spreads
     # into the gaps instead of bundling along the same lines.
     mat_runs = 0
-    want_mat = int(VINE_TARGET * 1.5)
+    want_mat = int(VINE_TARGET * VINE_COUNT_SCALE * 1.5)
     for i in seeds:
         if mat_runs >= want_mat:
             break
@@ -559,13 +715,8 @@ def build(rng, cx, cz, h, mat, hs, void):
                                      x0 + rng.uniform(-4.0, 4.0),
                                      y0 + rng.uniform(-4.0, 4.0),
                                      rng.uniform(1.4, 3.6),
-                                     rng.uniform(0.035, 0.09))
-            # Four sides, not five. At this radius the tube is under a
-            # texel across in the bake and the extra ring buys nothing but
-            # triangles — and there are four thousand of these.
-            mb.tube(VINE, pts, radii, 4,
-                    ring_cols=vine_paint(rng, pts, radii, False, hs),
-                    ridge=rng.uniform(0.05, 0.14), seed=rng.random() * 99.0)
+                                     rng.uniform(0.035, 0.09) * VINE_SCALE)
+            filament_c.add(pts, radii)
             mat_runs += 1
     print("PY: %d filaments in the mat under them" % mat_runs)
 
@@ -611,8 +762,18 @@ def build(rng, cx, cz, h, mat, hs, void):
         dressed += 1
 
     make_object("detail", mb, mats)
-    print("PY: %d vines and %d clumps in ONE mesh, %d tris"
-          % (made, dressed, mb.tris))
+
+    # Mesh copies for the bake to fire at. The curve objects stay in the file,
+    # hidden, so the splines remain there to edit; see VineCurves.to_mesh_object
+    # for why the bake cannot read them directly.
+    tris = mb.tris
+    for c in (trunk_c, live_c, runner_c, filament_c):
+        ob = c.to_mesh_object(c.ob.name + "_mesh")
+        tris += len(ob.data.polygons)
+    print("PY: %d vines and %d clumps; %d splines over 4 curves; %d faces"
+          % (made, dressed,
+             trunk_c.splines + live_c.splines + runner_c.splines
+             + filament_c.splines, tris))
 
     return low, high_ground
 
@@ -677,6 +838,16 @@ def main():
     low, _ = build(rng, cx, cz, h, mat, hs, void)
     os.makedirs(os.path.dirname(BLEND), exist_ok=True)
     bake(low, RES_X, res_y)
+    # THE SPLINES ARE THE DELIVERABLE, not a step on the way to one. A run that
+    # baked correct maps off converted meshes and saved a file with no curves
+    # in it would look like a complete success from every other output here, so
+    # it is asserted rather than assumed.
+    curves = [o for o in bpy.data.objects if o.type == 'CURVE']
+    total = sum(len(o.data.splines) for o in curves)
+    assert curves and total > 0, "no editable curves left in the scene"
+    print("PY: %d curve objects, %d splines, %d control points — editable"
+          % (len(curves), total,
+             sum(len(sp.points) for o in curves for sp in o.data.splines)))
     bpy.ops.wm.save_as_mainfile(filepath=BLEND)
     print("PY: wrote %s" % BLEND)
 

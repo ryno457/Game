@@ -583,6 +583,8 @@ func _palette() -> BiomePalette:
 	# floor that now carries real surface detail it read as graph paper laid on
 	# top of the art. The spacing and colour stay so it can be turned back on
 	# for a debug readout; the strength is what switches it.
+	# The shared skin on everything that grew. See BiomePalette.scale_detail.
+	p.scale_detail = 1.0
 	p.grid_spacing_m = 10.0
 	p.grid_colour = Color(0.55, 0.88, 0.95)
 	p.grid_strength = 0.0

@@ -494,6 +494,76 @@ GLOWING = (GLOW_T, GLOW_P, GLOW_A)
 
 
 # --- export + audit ---------------------------------------------------------
+## Metres of surface one tile of the scale map covers on a PROP. The ground
+## uses 5 m (detail_source.SCALE_M) because it is a floor seen at a distance;
+## a plant is a small thing close to the same camera, so its skin has to be
+## finer or one scale swallows a whole coral fan.
+UV_TILE_M = 1.2
+
+
+def unwrap(obj):
+    """Give a prop a UV map, so the shared scale texture has somewhere to land.
+
+    These assets have never had UVs: this project had no textures at all when
+    they were written, and COLOR_0 carried everything. The seamless scale map
+    changes that — the ground, the vines and the structures are meant to read
+    as one organism's skin, and a texture needs a coordinate.
+
+    SMART PROJECT, not a cylinder or a box. A coral fan, a lumpy brain and a
+    slab of ruin have nothing in common to project along, and the pattern is
+    isotropic so the only thing that matters is that the islands are the right
+    SIZE relative to each other — which is exactly what an angle-based unwrap
+    with area-weighted packing gives. A tiny island_margin because these are
+    sampled with repeat, not packed into an atlas: the map tiles, so islands
+    running off the edge is not a defect.
+    """
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.smart_project(angle_limit=1.15, island_margin=0.002,
+                             correct_aspect=True, scale_to_bounds=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    _uv_to_metres(obj, UV_TILE_M)
+
+
+def _uv_to_metres(obj, tile_m):
+    """Rescale a packed unwrap so one UV unit is `tile_m` of real surface.
+
+    smart_project packs every object's islands into 0..1, which means a 9.3 m
+    arch and an 80 cm pod come out with the SAME number of UV units across
+    them. Sampled with a tiling texture that makes the arch's scales twelve
+    times the size of the pod's, and the two stop looking like the same
+    creature — which is the entire point of them sharing a skin.
+
+    The fix is a measurement, not a guess: take the ratio of world length to UV
+    length over every edge, use the median (islands and seams make the mean
+    useless), and scale the whole layout by it. The texture repeats, so running
+    past 1.0 costs nothing.
+    """
+    me = obj.data
+    uvs = me.uv_layers.active.data
+    ratios = []
+    for poly in me.polygons:
+        n = poly.loop_total
+        for k in range(n):
+            a = poly.loop_start + k
+            b = poly.loop_start + (k + 1) % n
+            wa = me.vertices[me.loops[a].vertex_index].co
+            wb = me.vertices[me.loops[b].vertex_index].co
+            du = (uvs[a].uv - uvs[b].uv).length
+            if du > 1e-6:
+                ratios.append((wa - wb).length / du)
+    if not ratios:
+        return
+    ratios.sort()
+    metres_per_uv = ratios[len(ratios) // 2]
+    k = metres_per_uv / tile_m
+    for d in uvs:
+        d.uv = (d.uv[0] * k, d.uv[1] * k)
+
+
 def export_glb(path):
     # export_vertex_color='ACTIVE' forces COLOR_0 out even though no material
     # node reads it. The default ('MATERIAL') exports vertex colours only when
@@ -530,6 +600,11 @@ def audit(path, budget):
 
     colours = all("COLOR_0" in prim["attributes"]
                   for prim in meshes[0]["primitives"])
+    # UVs are not optional any more: the scale map is sampled through them, and
+    # a prop exported without one samples texel (0, 0) over its whole surface —
+    # a flat wash that looks like a lighting bug, not a missing unwrap.
+    uvs = all("TEXCOORD_0" in prim["attributes"]
+              for prim in meshes[0]["primitives"])
     tris = 0
     lo = [float("inf")] * 3
     hi = [float("-inf")] * 3
@@ -551,7 +626,7 @@ def audit(path, budget):
     return {
         "tris": tris, "budget": budget, "emissive": emissive, "colours": colours,
         "ground": lo[1], "size": tuple(hi[k] - lo[k] for k in range(3)),
-        "surfaces": len(meshes[0]["primitives"]),
+        "surfaces": len(meshes[0]["primitives"]), "uvs": uvs,
     }
 
 
@@ -562,6 +637,7 @@ def main():
         mats = new_scene()
         mb = fn(mats).ground()
         obj = make_object(name, mb, mats, smooth)
+        unwrap(obj)
         mean_occ = bake_vertex_ao(obj, rays=12, reach=reach,
                                   unoccluded_materials=GLOWING)
         path = os.path.join(OUT, name + ".glb")
@@ -571,13 +647,15 @@ def main():
         # A bake that produced no occlusion at all is a bake that silently did
         # nothing — a wrong reach, a broken BVH, a mesh with no interior.
         ok = (a["tris"] <= budget and a["emissive"] > 0 and abs(a["ground"]) < 0.02
-              and a["colours"] and mean_occ > 0.01)
+              and a["colours"] and a["uvs"] and mean_occ > 0.01)
         bad += 0 if ok else 1
         rows.append((name, a, ok))
         print("  %s  %-14s %5d / %-5d tris  %d surf  %d emissive  %s  "
               "AO %.0f%%  %.2f x %.2f x %.2f m  ground %+.3f"
               % ("ok  " if ok else "FAIL", name, a["tris"], budget, a["surfaces"],
-                 a["emissive"], "COLOR_0" if a["colours"] else "NO COLOUR",
+                 a["emissive"],
+                 ("COLOR_0+UV" if a["uvs"] else "NO UV") if a["colours"]
+                 else "NO COLOUR",
                  mean_occ * 100.0, a["size"][0], a["size"][1], a["size"][2],
                  a["ground"]))
 
