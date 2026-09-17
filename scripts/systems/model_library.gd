@@ -7,6 +7,8 @@ const PAINTED_SHADER := "res://shaders/painted_prop.gdshader"
 ## imported StandardMaterial3D, which is the grey-box look.
 var painted_ramp: Texture2D
 var painted_ink := 0.35
+## How hard the machines' baked normal map bites. 0 leaves them smooth.
+var painted_machine_detail := 0.0
 ## Loads the Blender-authored glTF assets and hands out ready-to-place nodes.
 ##
 ## Two things it fixes centrally rather than per-caller:
@@ -51,7 +53,8 @@ func load_model(model_name: String) -> PackedScene:
 	# was tuned for the terrain, so a light grey machine rendered darker than
 	# the ground it stood on.
 	if painted_ramp != null:
-		apply_painted(packed, painted_ramp, painted_ink)
+		apply_painted(packed, painted_ramp, painted_ink, model_name,
+			painted_machine_detail)
 	_scenes[model_name] = packed
 	return packed
 
@@ -93,7 +96,7 @@ static func _apply_vertex_colours(packed: PackedScene) -> int:
 ## Mutates the shared cached mesh resources, like _apply_vertex_colours above,
 ## so every instance after the first gets it — node-spawned or MultiMesh.
 static func apply_painted(packed: PackedScene, ramp: Texture2D,
-		ink := 0.35) -> int:
+		ink := 0.35, model_name := "", machine_detail := 0.0) -> int:
 	var shader: Shader = load(PAINTED_SHADER)
 	if shader == null:
 		return 0
@@ -120,6 +123,14 @@ static func apply_painted(packed: PackedScene, ramp: Texture2D,
 			sm.set_shader_parameter("use_vertex_colour", has_col)
 			sm.set_shader_parameter("tone_ramp", ramp)
 			sm.set_shader_parameter("rim_ink", ink)
+			# The machines' baked detail, if this model has any. Named by
+			# model, written by tools/blender/bake_machines.py.
+			var n_path := "res://textures/machine_%s_n.png" % model_name
+			var ao_path := "res://textures/machine_%s_ao.png" % model_name
+			if ResourceLoader.exists(n_path) and ResourceLoader.exists(ao_path):
+				sm.set_shader_parameter("detail_n", load(n_path))
+				sm.set_shader_parameter("detail_ao", load(ao_path))
+				sm.set_shader_parameter("detail_strength", machine_detail)
 			m.surface_set_material(i, sm)
 			changed += 1
 	probe.free()

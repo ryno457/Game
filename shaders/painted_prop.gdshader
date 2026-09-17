@@ -30,6 +30,22 @@ uniform bool use_vertex_colour = true;
 // chroma.
 uniform float rim_ink = 0.0;
 
+// HIGH-DETAIL BAKED MAPS, from tools/blender/bake_machines.py.
+//
+// The ground's detail came from modelled vines — organic shapes at metre scale.
+// A machine's is the opposite kind: panel seams and the small catch of light
+// along a chamfer. That is what reads as MANUFACTURED, which is the whole point
+// of the machines being visually separate from the alien landscape, and none of
+// it exists in a 528-triangle procedural hull.
+//
+// These use NORMAL_MAP and so need a TANGENT. The machine models already carry
+// one; what they did NOT carry was UVs, which the bake tool unwraps and
+// re-exports.
+uniform sampler2D detail_n : hint_normal;
+uniform sampler2D detail_ao;
+uniform float detail_strength = 0.0;   // 0 skips both fetches
+uniform float detail_ao_strength = 0.7;
+
 varying vec3 v_col;
 varying vec3 v_normal_w;
 varying vec3 v_view_w;
@@ -51,6 +67,17 @@ void fragment() {
 			0.0, 1.0);
 		float line = pow(1.0 - face, 2.4) * rim_ink;
 		base = mix(base, base * vec3(0.26, 0.38, 0.42), line);
+	}
+	if (detail_strength > 0.0) {
+		NORMAL_MAP = texture(detail_n, UV).rgb;
+		NORMAL_MAP_DEPTH = detail_strength;
+		// AO into the pigment as well as the AO slot: on this dim rig the
+		// ambient term is small, so an AO that only darkens ambient barely
+		// shows on the thing it is meant to describe.
+		float o = texture(detail_ao, UV).r;
+		base *= mix(1.0, o, detail_ao_strength);
+		AO = o;
+		AO_LIGHT_AFFECT = 0.4;
 	}
 	ALBEDO = base;
 	ROUGHNESS = roughness_v;

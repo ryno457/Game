@@ -116,6 +116,9 @@ extends Resource
 ## a second geometry pass — an inverted hull would double the vertex work on a
 ## 600-unit MultiMesh.
 @export_range(0.0, 1.0) var prop_rim_ink: float = 0.35
+## How hard the machines' baked normal map bites. Panel seams and chamfers,
+## from tools/blender/bake_machines.py.
+@export_range(0.0, 4.0) var machine_detail: float = 1.6
 ## Cycles per metre. Around 2-3 reads as grit at the RTS camera height; much
 ## finer than that is invisible and shimmers when the camera pans.
 @export var detail_scale: float = 2.6
