@@ -14,10 +14,26 @@ const CHUNK := Vector2i(25, 28)
 const RAMP_WIDTH := 256
 ## The project's first texture asset. See the shader for the channel packing.
 const BRUSH_TEX := "res://textures/brush_strokes.png"
-## Baked in Blender from art/detail_source.blend. Data, not pictures: both are
+## THE LANDMASS'S SURFACE, baked in Blender. Data, not pictures: both are
 ## imported uncompressed and without source_color.
-const DETAIL_N := "res://textures/ground_detail_n.png"
-const DETAIL_C := "res://textures/ground_detail_c.png"
+##
+## These are the WHOLE-MAP VINE layout, from art/detail_vines.blend — three
+## species of vine, each with its own seed, colour and size, grown over every
+## drawn cell rather than only over the fifth of the map the material
+## classifier calls root mat.
+##
+## The earlier root-mat layout is still built and still bakes, to
+## ground_detail_n/c.png out of art/detail_source.blend:
+##
+##     tools/blender/detail_source.py 2048 1500 650 3          <- root mat
+##     tools/blender/detail_source.py 2048 1500 650 3 vines    <- these
+##
+## Switching the map back is switching these two paths. Kept as constants
+## rather than moved onto the palette because this is a choice between two
+## builds of the same surface, not a value to tune: a half-and-half map is not
+## a thing anybody wants and a knob would offer it.
+const DETAIL_N := "res://textures/ground_vines_n.png"
+const DETAIL_C := "res://textures/ground_vines_c.png"
 
 var field: Heightfield
 var fog: FogOfWar

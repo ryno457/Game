@@ -1,6 +1,9 @@
 """Render the high-detail source scene itself, in Cycles.
 
-    ~/.cache/blender-venv/bin/python tools/blender/render_detail.py [w] [h] [samples]
+    ~/.cache/blender-venv/bin/python tools/blender/render_detail.py [w] [h] [samples] [blend]
+
+`blend` is "source" (the root-mat layout, the default) or "vines" (the
+whole-map three-species layout).
 
 Writes build/shots/detail_<view>.png, one per view below.
 
@@ -36,11 +39,19 @@ argv = script_args()
 W = int(argv[0]) if argv else 1280
 H = int(argv[1]) if len(argv) > 1 else 720
 SAMPLES = int(argv[2]) if len(argv) > 2 else 48
-## Emission is capped at this for the preview only. See main().
-EMISSION_CAP = 0.30
+WHICH = argv[3] if len(argv) > 3 else "source"
+## Emission is capped at this for the preview only. See main(). ZERO, not just
+## low: an emissive surface renders at a constant colour whatever its normal
+## does, so an emissive tube has no shading at all and reads as a flat pale
+## slab. Capping to 0.3 stopped it blowing out and left it just as flat. The
+## bake never reads emission, so turning it off here costs the preview nothing
+## and is the only way to see the form underneath it.
+EMISSION_CAP = 0.0
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-BLEND = os.path.join(ROOT, "art", "detail_source.blend")
+BLEND = os.path.join(ROOT, "art",
+                     "detail_vines.blend" if WHICH == "vines"
+                     else "detail_source.blend")
 DATA = os.path.join(ROOT, "build", "biodome")
 OUT = os.path.join(ROOT, "build", "shots")
 
@@ -180,7 +191,7 @@ def main() -> int:
                                         math.sin(a) * dist))
         cam.rotation_mode = 'QUATERNION'
         cam.rotation_quaternion = (target - cam.location).to_track_quat('-Z', 'Y')
-        path = os.path.join(OUT, "detail_%s.png" % name)
+        path = os.path.join(OUT, "detail_%s_%s.png" % (WHICH, name))
         sc.render.filepath = path
         sc.render.image_settings.file_format = 'PNG'
         render(sc)

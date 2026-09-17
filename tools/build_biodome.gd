@@ -565,7 +565,7 @@ func _palette() -> BiomePalette:
 	p.detail_albedo = 0.18
 	# The baked detail carries the form now; the noise is backup.
 	p.baked_normal = 0.85
-	p.baked_colour = 0.62
+	p.baked_colour = 0.55
 	# The painted line along every vine and nodule.
 	p.baked_ink = 0.55
 	p.baked_ink_power = 2.0

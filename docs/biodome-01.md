@@ -357,11 +357,54 @@ from outside — geometry that is simply not drawn:
 What finally separated them was setting `emission` and watching the surround
 come back magenta while the lit path stayed dark.
 
+## Two vine layouts, one generator
+
+`tools/blender/detail_source.py` builds either of two surfaces, chosen by a
+fifth argument, and they write to different files so the first is still there
+to go back to:
+
+| profile | seeded on | what it is | blend | textures |
+|---|---|---|---|---|
+| `mat` (default) | the cells the classifier called VINE — a fifth of the map | three tiers of one plant: a root-mat web | `detail_source.blend` | `ground_detail_n/c.png` |
+| `vines` | **every drawn cell** | **three species**, each with its own seed, colour and size class | `detail_vines.blend` | `ground_vines_n/c.png` |
+
+```
+tools/blender/detail_source.py 2048 1500 650 3          # root mat
+tools/blender/detail_source.py 2048 1500 650 3 vines    # whole map
+```
+
+One generator with a switch, not a forked copy: everything except *where* the
+vines go and *how big* they are is identical, and a second seven-hundred-line
+script would be the same file until the day somebody fixed a bug in one of
+them. `TerrainView.DETAIL_N` / `DETAIL_C` choose which pair the landmass wears;
+the map ships on `vines`.
+
+### The three species
+
+| | seed | colour | radius | length | share of cells |
+|---|---|---|---|---|---|
+| small | 71 | `#2f6b5f` teal | 22–48 mm | 0.9–2.4 m | 80% |
+| middle | 20261 | `#2a5566` blue-teal | 55–95 mm | 2.5–5.5 m | 34% |
+| large | 918273 | `#55604f` grey-green | 105–160 mm | 5–11 m | 9% |
+
+**The seeds are independent on purpose.** Three fields sharing one random
+stream are not three species, they are one species drawn three times, and the
+giveaway is that all three thin out in the same places.
+
+**The large one is bounded by the machines, and the bound is measured.** A mat
+with a strand thicker than the drone in it stops being ground the machines
+stand on and becomes terrain they are lost in. `smallest_machine_m()` reads the
+exported glTF for the drone, guard, bulwark and turret and takes the smallest
+of them; the build asserts the largest vine stands under three quarters of it.
+Measured at build: **0.38 m against the drone's 0.78 m**. A number typed in the
+script instead would go stale the first time a chassis changed and nothing
+would notice.
+
 ## The vines are splines now
 
 Every vine used to be points and triangles emitted from Python: correct
 geometry that nobody could ever edit, because there was nothing in the .blend
-to take hold of. They are Blender **curves** now — open `art/detail_source.blend`,
+to take hold of. They are Blender **curves** now — open either .blend,
 tab into `vine_trunks`, and the vines are control points you can move, with the
 tube regenerating from them.
 

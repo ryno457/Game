@@ -27,6 +27,7 @@ to launch from; too small and the tops of the vines are missed, too large and a
 ray from one side of a ridge reaches geometry on the other. CAGE_M is set from
 the tallest vine plus a margin, not guessed.
 """
+import json
 import math
 import os
 import random
@@ -62,11 +63,65 @@ VINE_COUNT_SCALE = 1.75
 SCALE_M = 5.0
 SEED = 20260916
 
+## WHICH LAYOUT TO BUILD. Two, and they write to different files.
+##
+##   mat     the root-mat web: three tiers of one plant, seeded only on the
+##           cells the material classifier already called VINE, which is 20%
+##           of the map. What the game shipped before this.
+##   vines   THREE SPECIES over the WHOLE landmass, each with its own seed,
+##           colour and size class. A separate .blend and a separate pair of
+##           textures, so the first layout is still there to go back to.
+##
+## One generator with a switch rather than a forked copy of it: everything
+## except where the vines go and how big they are is identical, and a second
+## seven-hundred-line script would be the same file until the day somebody
+## fixed a bug in one of them.
+PROFILE = argv[4] if len(argv) > 4 else "mat"
+WHOLE_MAP = PROFILE == "vines"
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DATA = os.path.join(ROOT, "build", "biodome")
-BLEND = os.path.join(ROOT, "art", "detail_source.blend")
-OUT_N = os.path.join(ROOT, "textures", "ground_detail_n.png")
-OUT_C = os.path.join(ROOT, "textures", "ground_detail_c.png")
+MODELS = os.path.join(ROOT, "models")
+BLEND = os.path.join(ROOT, "art",
+                     "detail_vines.blend" if WHOLE_MAP else "detail_source.blend")
+OUT_N = os.path.join(ROOT, "textures",
+                     "ground_vines_n.png" if WHOLE_MAP else "ground_detail_n.png")
+OUT_C = os.path.join(ROOT, "textures",
+                     "ground_vines_c.png" if WHOLE_MAP else "ground_detail_c.png")
+
+## THE THREE SPECIES, for PROFILE = "vines".
+##
+## name, seed, colour, radius range (m), length range (m), share of the seeded
+## cells it takes, and how many splines one seeded cell produces.
+##
+## Their seeds are independent on purpose: three fields that happen to share a
+## random stream are not three species, they are one species drawn three times,
+## and the giveaway is that they all thin out in the same places.
+##
+## SIZE IS BOUNDED BY THE MACHINES. The largest vine has to stay smaller than
+## the smallest machine on the map or the mat swallows the things the player is
+## meant to be looking at — and "smaller" is checked against the models
+## themselves in _check_species_scale(), not against a number typed here that
+## would go stale the first time a chassis changed.
+## SIZED AGAINST THE BAKE, not against a plant. The first pass ran 22-48 mm,
+## 55-95 mm and 105-160 mm, which is a sensible set of vines and the wrong set
+## for this pipeline: the bake is 2048 texels over 150 m, so a texel is 7 cm
+## and the small species was a THIRD of one. It contributed noise, the middle
+## species drew about one texel wide, and the frame came back at saturation
+## 0.30 with the mat reading as scratches. Everything here is roughly doubled.
+SPECIES = [
+    # SMALL: the ground cover. Dense, fine, and the only one that reaches
+    # everywhere — the other two grow through it.
+    ("small", 71, "2f6b5f", (0.045, 0.085), (0.9, 2.4), 0.55, 3),
+    # MIDDLE: the connective web, and the one that reads as a web at all.
+    ("middle", 20261, "2b5f66", (0.100, 0.170), (2.5, 5.5), 0.28, 2),
+    # LARGE: sparse trunks. Greener and duller than the other two, so a big one
+    # reads as an older thing than the mat it lies on — but still a PLANT. At
+    # 5a6150 it measured saturation 0.18, and 1256 of the thickest tubes on the
+    # map at almost no chroma is what took the frame to 0.32 against a 0.34
+    # floor. A vine that desaturated is a stick.
+    ("large", 918273, "4a6356", (0.190, 0.270), (5.0, 11.0), 0.10, 1),
+]
 
 # Sampled from docs/reference/01-vtt-cavern-map.jpg. NOTHING here is light grey:
 # that value belongs to the machines, and a landscape that shares it hides them.
@@ -110,6 +165,7 @@ GROUND_WEED = "23423a"     # hue 163: as far toward green as the ground goes
 GROUND_RUST = "5c4635"     # warm grey, on high dry ground
 
 VINE_MAT = 4               # GroundMaterials.VINE
+VINE_MAT_SLOT = 1          # the MB material index the vine body uses
 CAGE_M = 1.4               # tallest vine ~0.9 m, plus margin
 
 
@@ -406,6 +462,94 @@ def _vine_curve_mat(name, hexs, rough=0.80, emit=None, emit_w=0.0,
     return m
 
 
+def smallest_machine_m():
+    """The smallest machine on the map, in metres, read from the models.
+
+    The large vine species has to stay under this — a mat with a strand
+    thicker than the drone in it stops being ground the machines stand on and
+    starts being terrain they are lost in. Measured off the exported glTF
+    rather than typed here, because a number typed here goes stale the first
+    time a chassis changes and nothing notices.
+    """
+    best = 1.0e9
+    for name in ("drone", "guard", "bulwark", "turret"):
+        path = os.path.join(MODELS, name + ".glb")
+        if not os.path.exists(path):
+            continue
+        with open(path, "rb") as f:
+            struct.unpack("<4sII", f.read(12))
+            n, _kind = struct.unpack("<II", f.read(8))
+            doc = json.loads(f.read(n).decode("utf-8"))
+        lo = [9e9] * 3
+        hi = [-9e9] * 3
+        for m in doc["meshes"]:
+            for prim in m["primitives"]:
+                a = doc["accessors"][prim["attributes"]["POSITION"]]
+                for k in range(3):
+                    lo[k] = min(lo[k], a["min"][k])
+                    hi[k] = max(hi[k], a["max"][k])
+        best = min(best, max(hi[k] - lo[k] for k in range(3)))
+    return best if best < 1.0e9 else 0.8
+
+
+def grow_species(mb, h, cx, cz, hs, ground, mats_by_name):
+    """Three species of vine over the WHOLE landmass, one curve each.
+
+    The root-mat layout seeds only where the material classifier already said
+    VINE, which is a fifth of the map — everywhere else is bare. This seeds
+    from every drawn cell instead, so the vines are the ground cover rather
+    than a feature on it.
+
+    Each species gets its OWN Random. Three fields sharing one stream are not
+    three species, they are one species drawn three times, and the giveaway is
+    that all three thin out in the same places.
+    """
+    out = []
+    bound = smallest_machine_m()
+    for name, seed, hexs, rad, length, share, per_cell in SPECIES:
+        srng = random.Random(seed)
+        mat = _vine_curve_mat("skin_" + name, hexs, 0.82,
+                              tile=(10.0 if name != "large" else 7.0, 1.0))
+        mats_by_name[name] = mat
+        # bevel_depth is the species' MAXIMUM radius; the per-point radius
+        # multiplier then rides between the two ends of its range.
+        cu = VineCurves("vine_" + name, rad[1], 2 if name == "large" else 1, mat)
+        cells = list(ground)
+        srng.shuffle(cells)
+        take = int(len(cells) * share)
+        for i in cells[:take]:
+            x0, y0 = i % cx, i // cx
+            for _ in range(per_cell):
+                w = srng.uniform(rad[0], rad[1])
+                pts, radii, _a = vine_run(
+                    srng, h, cx, cz, hs,
+                    x0 + srng.uniform(-1.2, 1.2), y0 + srng.uniform(-1.2, 1.2),
+                    srng.uniform(*length), w)
+                cu.add(pts, radii)
+                # Nodules only on the large species. On the other two they are
+                # smaller than a texel in the bake and cost triangles to say
+                # nothing.
+                if name == "large" and srng.random() < 0.5:
+                    k = srng.randint(1, max(1, len(pts) - 2))
+                    q = pts[k]
+                    mb.orb(VINE_MAT_SLOT, (q[0], q[1], q[2] + radii[k] * 0.4),
+                           radii[k] * srng.uniform(1.2, 1.7), 7, 5,
+                           lumps=0.25, seed=srng.random() * 40.0)
+        # The tallest thing this species puts on the ground: the tube's own
+        # diameter plus how far vine_run lifts it off the surface.
+        tall = rad[1] * 2.0 + 0.04 + 0.12 * rad[1]
+        print("PY: %-6s seed %-7d %s  r %.3f-%.3f m  %d splines  stands %.2f m"
+              % (name, seed, hexs, rad[0], rad[1], cu.splines, tall))
+        if name == "large":
+            assert tall < bound * 0.85, (
+                "large vine stands %.2f m against the smallest machine's "
+                "%.2f m — it has to stay under it" % (tall, bound))
+            print("PY: largest vine %.2f m against the smallest machine at "
+                  "%.2f m — ok" % (tall, bound))
+        out.append(cu)
+    return out
+
+
 class VineCurves:
     """One Blender CURVE holding many splines, bevelled into a real tube.
 
@@ -561,7 +705,7 @@ def build(rng, cx, cz, h, mat, hs, void):
             # exactly what it was meant to remove. A near-neutral warm grey
             # loses the chroma first and picks up the warmth second, and the
             # green band drops from 35% to 8% at a stronger weight than before.
-            base[i] += (hexcol(GROUND_SAND)[i] - base[i]) * _fit(sand, 0.30, 0.78) * 0.80
+            base[i] += (hexcol(GROUND_SAND)[i] - base[i]) * _fit(sand, 0.30, 0.78) * 0.70
             base[i] += (hexcol(GROUND_DEEP)[i] - base[i]) * _fit(deep, 0.48, 0.88) * 0.52
             # The green is now a MINORITY band and a narrow one: it appears
             # where two drifts happen to agree rather than across a third of
@@ -608,117 +752,131 @@ def build(rng, cx, cz, h, mat, hs, void):
     # took the bake past an hour and it was killed mid-pass. Same triangles, one
     # object: the per-object overhead simply goes away.
     mb = MB()
+    curve_objs = []
 
-    # THE THREE TIERS, AS CURVES. See VineCurves: one datablock each, because
-    # bevel_depth belongs to the curve and the per-vine swell rides on the
-    # control points' radius.
-    #
-    # HALF THE THICKNESS THEY WERE. Every base radius below is the old one
-    # times VINE_SCALE. The bevel resolution went UP at the same time — a
-    # 12-sided tube at 10 cm costs the same triangles as a 6-sided one at
-    # 20 cm did, and now that they are round the silhouette is worth having.
-    # Their OWN materials, not the mesh slots. The curve material reads the
-    # generated UV (see _vine_curve_mat); the MB geometry that shares these
-    # slots — nodules, clumps — has no UV at all, so one material cannot serve
-    # both without one of them sampling a texture at (0, 0) forever.
-    vine_m = _vine_curve_mat("vine_skin", VINE_BODY, 0.80, tile=(10.0, 1.0))
-    live_m = _vine_curve_mat("live_skin", LIVE_BODY, 0.70, GLOW, 2.5,
-                             tile=(10.0, 1.0))
-    trunk_c = VineCurves("vine_trunks", 0.34 * VINE_SCALE, 2, vine_m)
-    live_c = VineCurves("vine_live", 0.34 * VINE_SCALE, 2, live_m)
-    runner_c = VineCurves("vine_runners", 0.11 * VINE_SCALE, 1, vine_m)
-    filament_c = VineCurves("vine_filaments", 0.062 * VINE_SCALE, 1, vine_m)
-    want_trunks = int(VINE_TARGET * VINE_COUNT_SCALE)
-    made = 0
-    for i in seeds:
-        if made >= want_trunks:
-            break
-        if rng.random() > 0.55:
-            continue
-        x0, y0 = i % cx, i // cx
-        # A bundle, not a single vine: the reference's web is bundles of about
-        # four crests inside a 3.6 m envelope, which is what makes it BRAID.
-        for _ in range(rng.randint(2, 4)):
+    if WHOLE_MAP:
+        # THREE SPECIES OVER THE WHOLE LANDMASS. Seeded from every drawn cell
+        # rather than from the root-mat cells, so the vines ARE the ground
+        # cover instead of a feature lying on it. See SPECIES and grow_species.
+        ground_cells = [k for k in range(cx * cz) if h[k] >= void + 0.01]
+        print("PY: %d drawn cells of %d to grow over" % (len(ground_cells),
+                                                         cx * cz))
+        skins = {}
+        curve_objs = grow_species(mb, h, cx, cz, hs, ground_cells, skins)
+        made = sum(c.splines for c in curve_objs)
+        fine = mat_runs = 0
+    else:
+        # THE THREE TIERS, AS CURVES. See VineCurves: one datablock each, because
+        # bevel_depth belongs to the curve and the per-vine swell rides on the
+        # control points' radius.
+        #
+        # HALF THE THICKNESS THEY WERE. Every base radius below is the old one
+        # times VINE_SCALE. The bevel resolution went UP at the same time — a
+        # 12-sided tube at 10 cm costs the same triangles as a 6-sided one at
+        # 20 cm did, and now that they are round the silhouette is worth having.
+        # Their OWN materials, not the mesh slots. The curve material reads the
+        # generated UV (see _vine_curve_mat); the MB geometry that shares these
+        # slots — nodules, clumps — has no UV at all, so one material cannot serve
+        # both without one of them sampling a texture at (0, 0) forever.
+        vine_m = _vine_curve_mat("vine_skin", VINE_BODY, 0.80, tile=(10.0, 1.0))
+        live_m = _vine_curve_mat("live_skin", LIVE_BODY, 0.70, GLOW, 2.5,
+                                 tile=(10.0, 1.0))
+        trunk_c = VineCurves("vine_trunks", 0.34 * VINE_SCALE, 2, vine_m)
+        live_c = VineCurves("vine_live", 0.34 * VINE_SCALE, 2, live_m)
+        runner_c = VineCurves("vine_runners", 0.11 * VINE_SCALE, 1, vine_m)
+        filament_c = VineCurves("vine_filaments", 0.062 * VINE_SCALE, 1, vine_m)
+        want_trunks = int(VINE_TARGET * VINE_COUNT_SCALE)
+        made = 0
+        for i in seeds:
             if made >= want_trunks:
                 break
-            # One vine in six glows. The reference's live emerald roots are
-            # 0.8-1.2% of area; the rest of the web is a pale unlit tube, and
-            # making all of it a light source read as a neon scribble.
-            live = rng.random() < 0.16
-            pts, radii = grow_vine(live_c if live else trunk_c, mb,
-                                   LIVE if live else VINE, rng, h, cx, cz,
-                                   hs, x0 + rng.uniform(-1.8, 1.8),
-                                   y0 + rng.uniform(-1.8, 1.8),
-                                   rng.uniform(5.0, 12.0),
-                                   rng.uniform(0.20, 0.50) * VINE_SCALE)
-            # PORES. In reference 03 these amber points are everywhere, and
-            # they are the most characteristic small detail in it.
-            if rng.random() < 0.45:
-                for k in range(2, len(pts) - 1, 5):
-                    if rng.random() > 0.5:
-                        continue
-                    q = pts[k]
-                    mb.orb(POREM, (q[0], q[1], q[2] + radii[k] * 1.1),
-                           radii[k] * 0.34, 6, 4)  # emissive: left unpainted
-            made += 1
+            if rng.random() > 0.55:
+                continue
+            x0, y0 = i % cx, i // cx
+            # A bundle, not a single vine: the reference's web is bundles of about
+            # four crests inside a 3.6 m envelope, which is what makes it BRAID.
+            for _ in range(rng.randint(2, 4)):
+                if made >= want_trunks:
+                    break
+                # One vine in six glows. The reference's live emerald roots are
+                # 0.8-1.2% of area; the rest of the web is a pale unlit tube, and
+                # making all of it a light source read as a neon scribble.
+                live = rng.random() < 0.16
+                pts, radii = grow_vine(live_c if live else trunk_c, mb,
+                                       LIVE if live else VINE, rng, h, cx, cz,
+                                       hs, x0 + rng.uniform(-1.8, 1.8),
+                                       y0 + rng.uniform(-1.8, 1.8),
+                                       rng.uniform(5.0, 12.0),
+                                       rng.uniform(0.20, 0.50) * VINE_SCALE)
+                # PORES. In reference 03 these amber points are everywhere, and
+                # they are the most characteristic small detail in it.
+                if rng.random() < 0.45:
+                    for k in range(2, len(pts) - 1, 5):
+                        if rng.random() > 0.5:
+                            continue
+                        q = pts[k]
+                        mb.orb(POREM, (q[0], q[1], q[2] + radii[k] * 1.1),
+                               radii[k] * 0.34, 6, 4)  # emissive: left unpainted
+                made += 1
 
-    # A SECOND, FINER TIER. The reference's web is layered: heavy trunks with a
-    # mat of much thinner runners threaded over and under them. One tier at one
-    # thickness reads as a diagram of a web rather than a web, however dense it
-    # gets — what makes it look grown is two scales crossing each other.
-    #
-    # These are a third the radius and run shorter, so they add length and
-    # crossings without adding bulk, and they are seeded from the same cells so
-    # they land on top of the trunks rather than in the open.
-    fine = 0
-    for i in seeds:
-        if fine >= int(VINE_TARGET * VINE_COUNT_SCALE * 0.5):
-            break
-        if rng.random() > 0.45:
-            continue
-        x0, y0 = i % cx, i // cx
-        pts, radii, _ = vine_run(rng, h, cx, cz, hs,
-                                 x0 + rng.uniform(-2.4, 2.4),
-                                 y0 + rng.uniform(-2.4, 2.4),
-                                 rng.uniform(2.5, 6.0),
-                                 rng.uniform(0.06, 0.16) * VINE_SCALE)
-        runner_c.add(pts, radii)
-        fine += 1
-    print("PY: %d fine runners over the trunks" % fine)
-
-    # A THIRD TIER, AND IT GOES UNDERNEATH.
-    #
-    # The other two lie on top of each other: trunks, then runners threaded
-    # over them. That reads as a web draped on bare ground, because between
-    # the trunks there IS bare ground. In the reference there is no bare
-    # ground inside a patch — the trunks sit on a mat of much finer filament
-    # that fills every gap, and the trunks read as heavy precisely because
-    # something finer is underneath them for scale.
-    #
-    # vine_run lifts a vine by 0.04 + 0.12 * width, so at a third of the fine
-    # tier's radius these land about 5 cm off the ground with the trunks
-    # riding 30-40 cm above them. Nothing here has to be sunk deliberately;
-    # the tier is under the others because it is thinner than them.
-    #
-    # Seeded wider than the trunks (+/- 4 m against +/- 1.8) so the mat spreads
-    # into the gaps instead of bundling along the same lines.
-    mat_runs = 0
-    want_mat = int(VINE_TARGET * VINE_COUNT_SCALE * 1.5)
-    for i in seeds:
-        if mat_runs >= want_mat:
-            break
-        for _ in range(rng.randint(1, 3)):
-            if mat_runs >= want_mat:
+        # A SECOND, FINER TIER. The reference's web is layered: heavy trunks with a
+        # mat of much thinner runners threaded over and under them. One tier at one
+        # thickness reads as a diagram of a web rather than a web, however dense it
+        # gets — what makes it look grown is two scales crossing each other.
+        #
+        # These are a third the radius and run shorter, so they add length and
+        # crossings without adding bulk, and they are seeded from the same cells so
+        # they land on top of the trunks rather than in the open.
+        fine = 0
+        for i in seeds:
+            if fine >= int(VINE_TARGET * VINE_COUNT_SCALE * 0.5):
                 break
+            if rng.random() > 0.45:
+                continue
             x0, y0 = i % cx, i // cx
             pts, radii, _ = vine_run(rng, h, cx, cz, hs,
-                                     x0 + rng.uniform(-4.0, 4.0),
-                                     y0 + rng.uniform(-4.0, 4.0),
-                                     rng.uniform(1.4, 3.6),
-                                     rng.uniform(0.035, 0.09) * VINE_SCALE)
-            filament_c.add(pts, radii)
-            mat_runs += 1
-    print("PY: %d filaments in the mat under them" % mat_runs)
+                                     x0 + rng.uniform(-2.4, 2.4),
+                                     y0 + rng.uniform(-2.4, 2.4),
+                                     rng.uniform(2.5, 6.0),
+                                     rng.uniform(0.06, 0.16) * VINE_SCALE)
+            runner_c.add(pts, radii)
+            fine += 1
+        print("PY: %d fine runners over the trunks" % fine)
+
+        # A THIRD TIER, AND IT GOES UNDERNEATH.
+        #
+        # The other two lie on top of each other: trunks, then runners threaded
+        # over them. That reads as a web draped on bare ground, because between
+        # the trunks there IS bare ground. In the reference there is no bare
+        # ground inside a patch — the trunks sit on a mat of much finer filament
+        # that fills every gap, and the trunks read as heavy precisely because
+        # something finer is underneath them for scale.
+        #
+        # vine_run lifts a vine by 0.04 + 0.12 * width, so at a third of the fine
+        # tier's radius these land about 5 cm off the ground with the trunks
+        # riding 30-40 cm above them. Nothing here has to be sunk deliberately;
+        # the tier is under the others because it is thinner than them.
+        #
+        # Seeded wider than the trunks (+/- 4 m against +/- 1.8) so the mat spreads
+        # into the gaps instead of bundling along the same lines.
+        mat_runs = 0
+        want_mat = int(VINE_TARGET * VINE_COUNT_SCALE * 1.5)
+        for i in seeds:
+            if mat_runs >= want_mat:
+                break
+            for _ in range(rng.randint(1, 3)):
+                if mat_runs >= want_mat:
+                    break
+                x0, y0 = i % cx, i // cx
+                pts, radii, _ = vine_run(rng, h, cx, cz, hs,
+                                         x0 + rng.uniform(-4.0, 4.0),
+                                         y0 + rng.uniform(-4.0, 4.0),
+                                         rng.uniform(1.4, 3.6),
+                                         rng.uniform(0.035, 0.09) * VINE_SCALE)
+                filament_c.add(pts, radii)
+                mat_runs += 1
+        print("PY: %d filaments in the mat under them" % mat_runs)
+        curve_objs = [trunk_c, live_c, runner_c, filament_c]
 
     # THE DRESSING: where the colour variety comes from.
     #
@@ -767,13 +925,13 @@ def build(rng, cx, cz, h, mat, hs, void):
     # hidden, so the splines remain there to edit; see VineCurves.to_mesh_object
     # for why the bake cannot read them directly.
     tris = mb.tris
-    for c in (trunk_c, live_c, runner_c, filament_c):
+    for c in curve_objs:
         ob = c.to_mesh_object(c.ob.name + "_mesh")
         tris += len(ob.data.polygons)
-    print("PY: %d vines and %d clumps; %d splines over 4 curves; %d faces"
-          % (made, dressed,
-             trunk_c.splines + live_c.splines + runner_c.splines
-             + filament_c.splines, tris))
+    print("PY: %s profile: %d vines and %d clumps; %d splines over %d curves; "
+          "%d faces" % (PROFILE, made, dressed,
+                        sum(c.splines for c in curve_objs), len(curve_objs),
+                        tris))
 
     return low, high_ground
 
