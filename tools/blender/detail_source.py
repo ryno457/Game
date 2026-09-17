@@ -43,6 +43,7 @@ argv = script_args()
 RES_X = int(argv[0]) if argv else 2048
 VINE_TARGET = int(argv[1]) if len(argv) > 1 else 520
 CLUMP_TARGET = int(argv[2]) if len(argv) > 2 else 260
+GROUND_SUBDIV = int(argv[3]) if len(argv) > 3 else 3
 SEED = 20260916
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -63,7 +64,9 @@ OUT_C = os.path.join(ROOT, "textures", "ground_detail_c.png")
 # The reference's ground variety is not green. It is 77% teal, 17% BLUE and 4%
 # green — the drift runs toward deep blue-teal, not toward moss. Moss belongs
 # to the clumps, which are small enough not to move the median.
-GROUND_MID = "1b3534"      # hue 178, down from 1f3d3c: the whole map, darker
+GROUND_MID = "143c3c"      # hue 180. The beige drift is strong enough that
+                           # a weaker teal under it left the floor grey: the
+                           # render fell to saturation 0.34 against 0.46.
 VINE_BODY = "31534f"       # the pale structural tube: the dominant web
 LIVE_BODY = "2e6640"       # the glowing emerald roots: a small MINORITY
 GLOW = "5cc79a"
@@ -75,7 +78,7 @@ GLOW = "5cc79a"
 # GROUND STRUCTURE stays teal while the things GROWING on it carry the hue.
 # Spread these across the flats themselves and the map stops reading as one
 # place; keep them as clumps and they read as life.
-MOSS_CLUMP = "3f6a3c"      # mossy green, ref 02's floor
+MOSS_CLUMP = "3c5c42"      # mossy green, ref 02's floor — duller
 CORAL_PINK = "98496a"
 CORAL_RUST = "8e5228"      # the warm rust ref 02 has and ref 01 does not
 BRAIN_VIOLET = "5e3e88"
@@ -84,8 +87,11 @@ PORE = "ff9a3c"            # the amber ocelli all over ref 03
 # The old pair were 3e5a3a (hue 105) and 4a7a44 (hue 114) at heavy weight,
 # which is what turned the map green.
 GROUND_DEEP = "153039"     # hue 197: the blue-teal that is 17% of reference 01
-GROUND_WEED = "27473c"     # hue 160: as far toward green as the ground goes
-GROUND_RUST = "553a26"     # rare, and only on high dry ground
+# THE BEIGE. Measured off reference 01 at rgb(92, 79, 69) — see build_flora's
+# PALETTE for why the earlier "no warm hues" reading missed it entirely.
+GROUND_SAND = "5c5348"     # near-neutral, warm: see ground_paint on the route
+GROUND_WEED = "23423a"     # hue 163: as far toward green as the ground goes
+GROUND_RUST = "5c4635"     # warm grey, on high dry ground
 
 VINE_MAT = 4               # GroundMaterials.VINE
 CAGE_M = 1.4               # tallest vine ~0.9 m, plus margin
@@ -132,6 +138,30 @@ def _vertex_colour_mat(name, rough=0.92):
     return m
 
 
+def _painted_mat(name, hexs, rough=0.85, emit=None, emit_w=0.0):
+    """A flat base colour MULTIPLIED by the mesh's "paint" attribute.
+
+    The vines carry a per-vertex gradient now (see vine_paint), and a plain
+    Principled BSDF ignores it — the attribute would be written, baked over,
+    and nothing in the output would change. This is the two nodes that make it
+    count: the slot still decides WHAT the thing is made of, the attribute
+    decides how dark and how warm this particular one is.
+    """
+    m = _mat(name, hexs, rough, emit, emit_w)
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    attr = nt.nodes.new("ShaderNodeVertexColor")
+    attr.layer_name = "paint"
+    mul = nt.nodes.new("ShaderNodeMix")
+    mul.data_type = 'RGBA'
+    mul.blend_type = 'MULTIPLY'
+    mul.inputs["Factor"].default_value = 1.0
+    mul.inputs[6].default_value = hexcol(hexs)
+    nt.links.new(attr.outputs["Color"], mul.inputs[7])
+    nt.links.new(mul.outputs[2], b.inputs["Base Color"])
+    return m
+
+
 def _mat(name, hexs, rough=0.85, emit=None, emit_w=0.0):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
@@ -154,15 +184,48 @@ def load_map():
     return meta, cx, cz, h, mat
 
 
-def terrain(cx, cz, h, hs, void, name, mats, paint=None):
-    """The map as a mesh, with the heightfield's own UV."""
+def _grain(x, y, hs):
+    """Fine surface relief for the high-detail ground, in metres.
+
+    THREE BANDS, and the smallest is the point. The low-poly map is one vertex
+    per metre, so a bake off an undisplaced copy of it can only ever carry the
+    vines — the ground between them comes out perfectly smooth, which is most
+    of why the floor reads as a painted plane with things lying on it. These
+    are a 4 m swell, a 90 cm lumpiness and a 20 cm grain, and together they are
+    what a normal map is for: relief far too small to be geometry in the game
+    and far too important to leave out.
+    """
+    return ((_vnoise(x * 0.25 + 5.0, y * 0.25 + 9.0) - 0.5) * 0.115
+            + (_vnoise(x * 1.1 + 31.0, y * 1.1 + 17.0) - 0.5) * 0.055
+            + (_vnoise(x * 5.0 + 71.0, y * 5.0 + 3.0) - 0.5) * 0.022)
+
+
+def terrain(cx, cz, h, hs, void, name, mats, paint=None, subdiv=1):
+    """The map as a mesh, with the heightfield's own UV.
+
+    `subdiv` > 1 builds it at that many vertices per metre and adds _grain().
+    The BAKE TARGET stays at subdiv 1 and undisplaced — it is the low-poly the
+    cage fires at, and displacing it would bake the grain into itself and
+    cancel it out.
+    """
     me = bpy.data.meshes.new(name + "_mesh")
-    verts = [(x, z, h[z * cx + x] * hs) for z in range(cz) for x in range(cx)]
+    nx, nz = (cx - 1) * subdiv + 1, (cz - 1) * subdiv + 1
+    verts = []
+    for zi in range(nz):
+        for xi in range(nx):
+            x, y = xi / subdiv, zi / subdiv
+            z = height_at(h, cx, cz, x, y) * hs
+            if subdiv > 1:
+                z += _grain(x, y, hs)
+            verts.append((x, y, z))
     faces = []
-    for z in range(cz - 1):
-        for x in range(cx - 1):
-            q = (z * cx + x, z * cx + x + 1, (z + 1) * cx + x + 1, (z + 1) * cx + x)
-            if void > 0.0 and any(h[i] < void for i in q):
+    for zi in range(nz - 1):
+        for xi in range(nx - 1):
+            q = (zi * nx + xi, zi * nx + xi + 1,
+                 (zi + 1) * nx + xi + 1, (zi + 1) * nx + xi)
+            if void > 0.0 and any(
+                    h[min(cz - 1, int(round(verts[i][1]))) * cx
+                      + min(cx - 1, int(round(verts[i][0])))] < void for i in q):
                 continue
             faces.append(q)
     me.from_pydata(verts, [], faces)
@@ -174,6 +237,8 @@ def terrain(cx, cz, h, hs, void, name, mats, paint=None):
     uv = me.uv_layers.new(name="UVMap")
     for loop in me.loops:
         v = me.vertices[loop.vertex_index].co
+        # Metres, not vertex index: the high mesh is subdivided and the low one
+        # is not, and they have to land on the same UV or the bake is offset.
         uv.data[loop.index].uv = (v.x / (cx - 1.0), v.y / (cz - 1.0))
     if paint is not None:
         col = me.color_attributes.new("ground", 'FLOAT_COLOR', 'POINT')
@@ -225,6 +290,49 @@ def vine_run(rng, h, cx, cz, hs, x0, y0, length, width, ang=None):
     return pts, radii, ang
 
 
+def vine_paint(rng, pts, radii, live, hs):
+    """One colour per point along a vine, as a multiplier on its material.
+
+    THE VINES WERE ONE FLAT TEAL. A material slot is one colour over every
+    triangle assigned to it, so four thousand vines all came out of the bake
+    identical — and a web whose every strand is the same value reads as a
+    diagram of a web. Reference 03's are not: each tube darkens into the
+    ground at its feet, pales along its back where the light sits, and no two
+    of them are quite the same colour.
+
+    Three things vary here, and they are three different arguments:
+      - PER VINE, a hue and value jitter, so neighbours differ.
+      - ALONG the vine, a dark root and a paler tip.
+      - PER POINT, the swell: where the tube is fattest it catches more light,
+        which is the thing that makes a swelling read as a swelling.
+    """
+    warm = rng.uniform(-0.05, 0.10)          # toward beige, or away from it
+    lift = rng.uniform(0.74, 1.24)
+    rmax = max(radii) or 1.0
+    out = []
+    n = max(1, len(pts) - 1)
+    for i, p in enumerate(pts):
+        t = i / n
+        # Dark at the root, pale toward the tip, and the ends taper back down
+        # so a vine does not end on a highlight.
+        run = 0.70 + 0.55 * t - 0.25 * max(0.0, t - 0.82) / 0.18
+        fat = 0.88 + 0.34 * (radii[i] / rmax)
+        v = lift * run * fat
+        # Height: the mats down in the channels are wetter and darker than the
+        # ones over a lobe top, which is a real gradient across the whole map
+        # rather than a per-vine one.
+        v *= 0.86 + 0.28 * _fit(p[2] / max(1.0, hs), 0.30, 0.85)
+        g = 1.0 + warm * 0.4
+        r = 1.0 + warm * 1.8
+        b = 1.0 - warm * 1.2
+        if live:
+            # The glowing minority pales toward its own emission instead of
+            # toward beige, or the emissive slot fights the paint.
+            r, g, b = 0.86, 1.06, 1.0
+        out.append((v * r, v * g, v * b, 1.0))
+    return out
+
+
 def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
     """A vine AND what grows off it. Returns the trunk's points and radii.
 
@@ -235,7 +343,8 @@ def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
     rather than the detail.
     """
     pts, radii, ang = vine_run(rng, h, cx, cz, hs, x0, y0, length, width)
-    mb.tube(slot, pts, radii, 6 if depth else 7,
+    cols = vine_paint(rng, pts, radii, slot == 2, hs)
+    mb.tube(slot, pts, radii, 6 if depth else 7, ring_cols=cols,
             ridge=rng.uniform(0.08, 0.20), seed=rng.random() * 99.0)
 
     # NODULES. Swellings along the trunk, biggest where the trunk is thickest.
@@ -247,7 +356,7 @@ def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
         q = pts[k]
         r = radii[k] * rng.uniform(1.15, 1.75)
         mb.orb(slot, (q[0], q[1], q[2] + radii[k] * 0.45), r, 7, 5,
-               lumps=0.25, seed=rng.random() * 40.0)
+               col=cols[k], lumps=0.25, seed=rng.random() * 40.0)
 
     # BRANCHES, one level deep. Two levels doubles the triangle count for
     # structure the 19 px/m camera cannot resolve.
@@ -261,27 +370,30 @@ def grow_vine(mb, slot, rng, h, cx, cz, hs, x0, y0, length, width, depth=0):
     return pts, radii
 
 
-def clump(mb, slot, rng, at, r, n, squash=1.0):
+def clump(mb, slot, rng, at, r, n, squash=1.0, col=None):
     """A cluster of lobes — coral, fungus, brain growth. The dressing."""
     for _ in range(n):
         a = rng.uniform(0, math.tau)
         d = r * math.sqrt(rng.random())
         mb.orb(slot, (at[0] + math.cos(a) * d, at[1] + math.sin(a) * d,
                    at[2] + rng.uniform(0.0, r * 0.7)),
-               r * rng.uniform(0.28, 0.6), 7, 5,
+               r * rng.uniform(0.28, 0.6), 7, 5, col=col,
                squash=squash, lumps=0.3, seed=rng.random() * 70.0)
 
 
 def build(rng, cx, cz, h, mat, hs, void):
+    # Every non-emissive slot is PAINTED — its flat colour multiplied by the
+    # per-vertex attribute. The emissive two are not: a light source with a
+    # value gradient baked into it reads as a dirty bulb.
     mats = [_mat("ground", GROUND_MID, 0.92),
-            _mat("vine", VINE_BODY, 0.80),
+            _painted_mat("vine", VINE_BODY, 0.80),
             _mat("live", LIVE_BODY, 0.70, GLOW, 2.5),
-            _mat("moss", MOSS_CLUMP, 0.95),
-            _mat("coral_p", CORAL_PINK, 0.78),
-            _mat("coral_r", CORAL_RUST, 0.80),
-            _mat("brain", BRAIN_VIOLET, 0.72),
+            _painted_mat("moss", MOSS_CLUMP, 0.95),
+            _painted_mat("coral_p", CORAL_PINK, 0.78),
+            _painted_mat("coral_r", CORAL_RUST, 0.80),
+            _painted_mat("brain", BRAIN_VIOLET, 0.72),
             _mat("pore", "3a1c07", 0.40, PORE, 4.0),
-            _mat("bone", "9a9c7e", 0.86)]
+            _painted_mat("bone", "6b6052", 0.86)]
     VINE, LIVE, MOSS, CPINK, CRUST, BRAIN, POREM, BONE = 1, 2, 3, 4, 5, 6, 7, 8
 
     # THE FLOOR'S OWN COLOUR, drifting between the two references.
@@ -292,24 +404,56 @@ def build(rng, cx, cz, h, mat, hs, void):
     # takes it toward reference 02's mossy green over tens of metres, with rust
     # kept rare and only on high dry ground, which is where 02 puts it.
     def ground_paint(x, y, z):
-        weed = _vnoise(x * 0.022 + 3.1, y * 0.022 + 7.7)
-        deep = _vnoise(x * 0.045 + 19.3, y * 0.045 + 2.4)
-        warm = _vnoise(x * 0.017 + 41.0, y * 0.017 + 13.6)
+        # FIVE BANDS AT FOUR SCALES, which is what "more gradient" means here.
+        #
+        # Two low-frequency drifts decide the region's character over tens of
+        # metres; a mid band breaks those into patches at five or six metres;
+        # a fine band mottles at under a metre. A single band at one scale
+        # reads as a stain however it is tuned, because real ground varies at
+        # every scale at once — reference 03 is the whole argument for this.
+        sand = _vnoise(x * 0.024 + 61.0, y * 0.024 + 29.0)     # ~42 m
+        deep = _vnoise(x * 0.031 + 19.3, y * 0.031 + 2.4)      # ~32 m
+        weed = _vnoise(x * 0.055 + 3.1, y * 0.055 + 7.7)       # ~18 m
+        patch = _vnoise(x * 0.19 + 44.0, y * 0.19 + 88.0)      # ~5 m
+        mottle = _vnoise(x * 1.35 + 12.0, y * 1.35 + 55.0)     # ~75 cm
         base = list(hexcol(GROUND_MID))
         for i in range(3):
-            # The variation is a VALUE and hue drift inside teal, not a swing
-            # into another hue family. Weights down from 0.80 and 0.55: at
-            # those the drift stopped being variation and became the colour.
-            base[i] += (hexcol(GROUND_WEED)[i] - base[i]) * _fit(weed, 0.46, 0.86) * 0.45
-            base[i] += (hexcol(GROUND_DEEP)[i] - base[i]) * _fit(deep, 0.44, 0.84) * 0.60
-        dry = _fit(z / max(1.0, hs), 0.62, 0.92)
+            # BEIGE FIRST, and it is the largest single drift on the map now.
+            # Reference 01's floor is not one teal: the dry ground between the
+            # root mats reads warm grey, and it is the only warm thing in the
+            # picture, which is exactly why it carries.
+            # AND IT GOES VIA GREY, NOT VIA GREEN. The straight line from this
+            # teal to a saturated beige passes through hue 128 in the middle,
+            # so a strong drift toward #4e463b made a THIRD of the map green —
+            # exactly what it was meant to remove. A near-neutral warm grey
+            # loses the chroma first and picks up the warmth second, and the
+            # green band drops from 35% to 8% at a stronger weight than before.
+            base[i] += (hexcol(GROUND_SAND)[i] - base[i]) * _fit(sand, 0.30, 0.78) * 0.90
+            base[i] += (hexcol(GROUND_DEEP)[i] - base[i]) * _fit(deep, 0.48, 0.88) * 0.52
+            # The green is now a MINORITY band and a narrow one: it appears
+            # where two drifts happen to agree rather than across a third of
+            # the map, which is what it was doing.
+            base[i] += (hexcol(GROUND_WEED)[i] - base[i]) * _fit(weed, 0.62, 0.92) * 0.14
+        # Dry high ground goes warmer still, and the patch band decides where
+        # within that, so the warm areas have an edge instead of a gradient.
+        dry = _fit(z / max(1.0, hs), 0.52, 0.90)
         for i in range(3):
-            base[i] += (hexcol(GROUND_RUST)[i] - base[i]) * _fit(warm, 0.74, 0.95) * dry * 0.55
-        return (base[0], base[1], base[2], 1.0)
+            base[i] += (hexcol(GROUND_RUST)[i] - base[i]) \
+                * _fit(patch, 0.58, 0.95) * dry * 0.48
+        # And the mottle, as a value shift only — a hue that changes at 75 cm
+        # reads as noise, a value that changes at 75 cm reads as texture.
+        v = 1.0 + (mottle - 0.5) * 0.30
+        return (base[0] * v, base[1] * v, base[2] * v, 1.0)
 
     low = terrain(cx, cz, h, hs, void, "bake_target", [mats[0]])
+    # THREE VERTICES PER METRE on the high copy. The low-poly is one per metre
+    # and the bake fires at it from a cage, so every scrap of relief finer than
+    # a metre has to exist on this mesh or it exists nowhere. At subdiv 1 the
+    # ground between the vines baked perfectly flat, which is most of why the
+    # floor read as a painted plane with things lying on it.
     high_ground = terrain(cx, cz, h, hs, void, "high_ground",
-                          [_vertex_colour_mat("ground_painted")], ground_paint)
+                          [_vertex_colour_mat("ground_painted")], ground_paint,
+                          subdiv=GROUND_SUBDIV)
 
     # DENSITY, and it follows the map rather than a noise field. The classifier
     # already decided which cells are root mat; vines are seeded only there, so
@@ -357,7 +501,7 @@ def build(rng, cx, cz, h, mat, hs, void):
                         continue
                     q = pts[k]
                     mb.orb(POREM, (q[0], q[1], q[2] + radii[k] * 1.1),
-                           radii[k] * 0.34, 6, 4)
+                           radii[k] * 0.34, 6, 4)  # emissive: left unpainted
             made += 1
 
     # A SECOND, FINER TIER. The reference's web is layered: heavy trunks with a
@@ -380,8 +524,9 @@ def build(rng, cx, cz, h, mat, hs, void):
                                  y0 + rng.uniform(-2.4, 2.4),
                                  rng.uniform(2.5, 6.0),
                                  rng.uniform(0.06, 0.16))
-        mb.tube(VINE, pts, radii, 5, ridge=rng.uniform(0.10, 0.22),
-                seed=rng.random() * 99.0)
+        mb.tube(VINE, pts, radii, 5,
+                ring_cols=vine_paint(rng, pts, radii, False, hs),
+                ridge=rng.uniform(0.10, 0.22), seed=rng.random() * 99.0)
         fine += 1
     print("PY: %d fine runners over the trunks" % fine)
 
@@ -418,8 +563,9 @@ def build(rng, cx, cz, h, mat, hs, void):
             # Four sides, not five. At this radius the tube is under a
             # texel across in the bake and the extra ring buys nothing but
             # triangles — and there are four thousand of these.
-            mb.tube(VINE, pts, radii, 4, ridge=rng.uniform(0.05, 0.14),
-                    seed=rng.random() * 99.0)
+            mb.tube(VINE, pts, radii, 4,
+                    ring_cols=vine_paint(rng, pts, radii, False, hs),
+                    ridge=rng.uniform(0.05, 0.14), seed=rng.random() * 99.0)
             mat_runs += 1
     print("PY: %d filaments in the mat under them" % mat_runs)
 
@@ -435,13 +581,17 @@ def build(rng, cx, cz, h, mat, hs, void):
     # More kinds, and more of them, from reference 03 — which is dense with
     # distinct growths rather than one repeated blob: mossy cushions, coral
     # fans, warm rust nodules, violet brain masses, pale pods and teal buttons.
-    dressing = [(MOSS, 0.9, 7, 0.55, 0.30),    # mossy cushions, ref 02's floor
-                (CPINK, 0.6, 7, 0.85, 0.15),   # coral fans
-                (CRUST, 0.55, 5, 0.70, 0.13),  # the warm rust ref 01 lacks
-                (BRAIN, 1.2, 10, 0.45, 0.08),  # violet brain mass
-                (BONE, 0.7, 4, 0.35, 0.10),    # pale pods, standing taller
+    # BEIGE IS THE BIGGEST SHARE NOW AND MOSS IS A MINORITY. Reference 01 has
+    # exactly two vivid green patches in the whole picture and they are small;
+    # what it has a lot of is warm grey rubble. Moss at 0.30 made green the
+    # most saturated thing on screen, which is the opposite of that.
+    dressing = [(BONE, 0.8, 5, 0.45, 0.30),    # beige rubble and pods
+                (CPINK, 0.6, 7, 0.85, 0.13),   # coral fans
+                (CRUST, 0.55, 5, 0.70, 0.14),  # the warm rust ref 01 lacks
+                (MOSS, 0.9, 7, 0.55, 0.11),    # mossy cushions, ref 02's floor
+                (BRAIN, 1.2, 10, 0.45, 0.07),  # violet brain mass
                 (LIVE, 0.45, 5, 0.9, 0.09),    # teal glowing buttons
-                (POREM, 0.22, 3, 1.0, 0.15)]   # amber ocelli, everywhere in 03
+                (POREM, 0.22, 3, 1.0, 0.16)]   # amber ocelli, everywhere in 03
     dressed = 0
     for i in open_cells[:CLUMP_TARGET * 4]:
         if dressed >= CLUMP_TARGET:
@@ -453,7 +603,11 @@ def build(rng, cx, cz, h, mat, hs, void):
             continue
         x0, y0 = i % cx, i // cx
         z = height_at(h, cx, cz, x0, y0) * hs
-        clump(mb, slot, rng, (x0, y0, z), r * rng.uniform(0.7, 1.5), n, squash)
+        # One value per clump, so a field of them is not a field of clones.
+        v = rng.uniform(0.66, 1.30)
+        w = rng.uniform(-0.05, 0.09)
+        clump(mb, slot, rng, (x0, y0, z), r * rng.uniform(0.7, 1.5), n, squash,
+              col=(v * (1.0 + w * 1.8), v * (1.0 + w * 0.4), v * (1.0 - w * 1.2), 1.0))
         dressed += 1
 
     make_object("detail", mb, mats)

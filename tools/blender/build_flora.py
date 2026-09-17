@@ -69,16 +69,28 @@ def hexcol(h):
 # must not do is carry it at a value and a chroma nothing in the reference
 # reaches. The ROOTS in particular are teal in 01, not green; green belongs to
 # the moss clumps, which are small enough not to move the median.
+# BEIGE IS AN ACCENT, and it is the one the earlier measurement missed.
+#
+# "Every warm hue in reference 01 is 0.38% of the image" was measured over
+# SATURATED pixels only. Beige is desaturated warm, so it fell straight through
+# that test — and it is what the boulder clusters, the coral fans, the bridge
+# and the tall pale structure in reference 01 actually are. Measured properly
+# they are 0.7% of area at rgb(92, 79, 69), saturation 0.24, luma 0.32: small,
+# but the only warm thing in a teal field, so they are where the eye lands.
+#
+# So the ROCK and the hard growths go beige and the roots stay teal. Reference
+# 01's web is teal; its rubble is not.
 PALETTE = [
-    ("bone",     "68766e", None,     0.0),   # ribbed arch: stone, not old bone
+    ("bone",     "6e6153", None,     0.0),   # ribbed arch: pale beige stone
     ("husk",     "2e5750", None,     0.0),   # tendril skin — TEAL, as ref 01
     ("flesh",    "5c3d7d", None,     0.0),   # purple lobed growth
-    ("stone",    "48534f", None,     0.0),   # rock, teal-grey and not near-black
+    ("stone",    "5e564a", None,     0.0),   # rock: grey-beige, as ref 01's
     ("glow_t",   "17463f", "7fe8cf", 5.0),   # teal bioluminescence
     ("glow_p",   "301848", "a97fe0", 4.0),   # violet bioluminescence
     ("glow_a",   "543009", "f0b070", 4.0),   # amber ocelli
+    ("sand",     "7a6b56", None,     0.0),   # the beige growths: coral, pods
 ]
-BONE, HUSK, FLESH, STONE, GLOW_T, GLOW_P, GLOW_A = range(7)
+BONE, HUSK, FLESH, STONE, GLOW_T, GLOW_P, GLOW_A, SAND = range(8)
 
 
 def set_in(bsdf, name, value):
@@ -111,32 +123,60 @@ def xform(loc=(0, 0, 0), rot=(0, 0, 0), scale=1.0):
 
 
 class MB:
-    """Accumulates triangles + per-triangle material index."""
+    """Accumulates triangles + per-triangle material index.
+
+    OPTIONALLY per-vertex colour as well. A material slot is one flat colour
+    over everything assigned to it, which is all a 500-triangle prop needs; the
+    detail bake does not, because there a vine is one of four thousand and they
+    cannot all be the same teal. `col` takes a flat colour for the whole
+    primitive and `cols` a list, one per vertex, for a gradient along it.
+
+    Props pass neither and get no colour attribute at all, so the vertex-AO
+    bake still owns COLOR_0 on the exported assets exactly as before.
+    """
 
     def __init__(self):
         self.v, self.f, self.m = [], [], []
+        self.c = []
+        self.painted = False
 
-    def add(self, verts, tris, mat, M=None):
+    def add(self, verts, tris, mat, M=None, col=None, cols=None):
         off = len(self.v)
         if M is None:
             self.v.extend(tuple(p) for p in verts)
         else:
             self.v.extend(tuple(M @ Vector(p)) for p in verts)
+        if cols is not None:
+            self.c.extend(tuple(c) for c in cols)
+            self.painted = True
+        elif col is not None:
+            self.c.extend([tuple(col)] * len(verts))
+            self.painted = True
+        else:
+            self.c.extend([(1.0, 1.0, 1.0, 1.0)] * len(verts))
         for t in tris:
             self.f.append(tuple(off + i for i in t))
             self.m.append(mat)
 
-    def tube(self, mat, points, radii, sides=7, **kw):
+    def tube(self, mat, points, radii, sides=7, col=None, ring_cols=None, **kw):
+        """`ring_cols` is one colour per POINT; tube vertices are ring-major, so
+        it is expanded here rather than at every call site."""
         v, t = og.tube(points, radii, sides, **kw)
-        self.add(v, t, mat)
+        cols = None
+        if ring_cols is not None:
+            caps_extra = len(v) - len(points) * sides
+            cols = [ring_cols[min(i // sides, len(ring_cols) - 1)]
+                    for i in range(len(points) * sides)]
+            cols += [ring_cols[-1]] * max(0, caps_extra)
+        self.add(v, t, mat, col=col, cols=cols)
 
-    def orb(self, mat, at, r, segs=8, rings=5, **kw):
+    def orb(self, mat, at, r, segs=8, rings=5, col=None, **kw):
         v, t = og.sphere(r, segs, rings, **kw)
-        self.add(v, t, mat, xform(at))
+        self.add(v, t, mat, xform(at), col=col)
 
-    def shard(self, mat, at, r, h, sides=6, rot=(0, 0, 0), **kw):
+    def shard(self, mat, at, r, h, sides=6, rot=(0, 0, 0), col=None, **kw):
         v, t = og.shard(r, h, sides, **kw)
-        self.add(v, t, mat, xform(at, rot))
+        self.add(v, t, mat, xform(at, rot), col=col)
 
     def ground(self):
         """Drop the whole prop so its lowest vertex sits exactly on z = 0.
@@ -159,6 +199,15 @@ def make_object(name, mb, mats, smooth=True):
     me = bpy.data.meshes.new(name + "_mesh")
     me.from_pydata(mb.v, [], mb.f)
     me.update()
+    if mb.painted:
+        # Only when something actually painted. An empty attribute here would
+        # become the active colour layer and the vertex-AO bake would then have
+        # to fight it for COLOR_0 on every prop.
+        attr = me.color_attributes.new("paint", 'FLOAT_COLOR', 'POINT')
+        for i, c in enumerate(mb.c):
+            attr.data[i].color = c
+        me.color_attributes.active_color = attr
+        me.color_attributes.render_color_index = me.color_attributes.find("paint")
     for m in mats:
         me.materials.append(m)
     for i, mi in enumerate(mb.m):
@@ -275,7 +324,7 @@ def build_tendril(mats):
 def build_coral(mats):
     mb = MB()
     stem = [(0.0, 0.0, 0.0), (0.04, 0.05, 0.36), (0.0, -0.03, 0.72)]
-    mb.tube(HUSK, stem, [0.17, 0.13, 0.10], 6, ridge=0.08)
+    mb.tube(SAND, stem, [0.17, 0.13, 0.10], 6, ridge=0.08)
     tips = []
     for k in range(5):
         a = -0.9 + k * 0.45
@@ -283,11 +332,11 @@ def build_coral(mats):
         top = (math.sin(a) * lean, math.cos(a) * lean * 0.55, 1.22 + 0.16 * (k % 2))
         mid = og.lerp3(stem[-1], top, 0.55)
         mid = (mid[0] * 0.75, mid[1] * 0.75, mid[2] + 0.10)
-        mb.tube(HUSK, [stem[-1], mid, top], [0.10, 0.07, 0.035], 5, seed=k)
+        mb.tube(SAND, [stem[-1], mid, top], [0.10, 0.07, 0.035], 5, seed=k)
         tips.append(top)
     for k, t in enumerate(tips):
         mb.orb(GLOW_T if k % 2 == 0 else GLOW_P, t, 0.10, 6, 4, lumps=0.2, seed=k)
-    mb.orb(HUSK, (0.0, 0.0, 0.07), 0.30, 7, 4, squash=0.4, lumps=0.25)
+    mb.orb(SAND, (0.0, 0.0, 0.07), 0.30, 7, 4, squash=0.4, lumps=0.25)
     return mb
 
 
@@ -302,10 +351,10 @@ def build_pods(mats):
              (0.44, 0.22, 0.28, GLOW_T, 0.10),
              (-0.20, -0.36, 0.24, GLOW_T, 0.085)]
     for x, y, z, mat, r in spots:
-        mb.tube(HUSK, [(x * 0.35, y * 0.35, 0.0), (x * 0.8, y * 0.8, z * 0.55),
+        mb.tube(SAND, [(x * 0.35, y * 0.35, 0.0), (x * 0.8, y * 0.8, z * 0.55),
                        (x, y, z - r * 0.5)], [0.055, 0.042, 0.030], 5, seed=x)
         mb.orb(mat, (x, y, z), r, 7, 5, lumps=0.14, seed=y)
-    mb.orb(HUSK, (0.0, 0.0, 0.05), 0.34, 7, 4, squash=0.30, lumps=0.30)
+    mb.orb(SAND, (0.0, 0.0, 0.05), 0.34, 7, 4, squash=0.30, lumps=0.30)
     return mb
 
 

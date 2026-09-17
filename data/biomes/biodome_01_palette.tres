@@ -7,16 +7,16 @@
 script = ExtResource("1_yywnl")
 id = &"MOSS"
 display_name = "Open flat"
-colour = Color(0.1587348, 0.2289348, 0.2265348, 1)
-colour_alt = Color(0.25023592, 0.3396359, 0.3252359, 1)
+colour = Color(0.14151123, 0.22965123, 0.22653124, 1)
+colour_alt = Color(0.26959568, 0.3187357, 0.30313566, 1)
 roughness = 0.88
 
 [sub_resource type="Resource" id="Resource_o5cs5"]
 script = ExtResource("1_yywnl")
 id = &"ROCK"
 display_name = "Bare rock"
-colour = Color(0.23103416, 0.25923416, 0.26403415, 1)
-colour_alt = Color(0.35673752, 0.4017375, 0.40413752, 1)
+colour = Color(0.26635012, 0.24763012, 0.22345012, 1)
+colour_alt = Color(0.39846662, 0.37662658, 0.3430866, 1)
 roughness = 0.94
 stroke_scale_mult = 1.9
 
@@ -24,8 +24,8 @@ stroke_scale_mult = 1.9
 script = ExtResource("1_yywnl")
 id = &"SEDIMENT"
 display_name = "Pale basin"
-colour = Color(0.30283454, 0.40903455, 0.41083455, 1)
-colour_alt = Color(0.37008375, 0.52308375, 0.5182838, 1)
+colour = Color(0.2913616, 0.40134162, 0.3982216, 1)
+colour_alt = Color(0.36926508, 0.515905, 0.50108504, 1)
 roughness = 0.8
 vein_strength = 0.05
 stroke_scale_mult = 0.75
@@ -34,8 +34,8 @@ stroke_scale_mult = 0.75
 script = ExtResource("1_yywnl")
 id = &"LOAM"
 display_name = "Silt channel"
-colour = Color(0.15600552, 0.22620551, 0.25020552, 1)
-colour_alt = Color(0.22475095, 0.32075095, 0.34895095, 1)
+colour = Color(0.13890304, 0.23016304, 0.26136303, 1)
+colour_alt = Color(0.20146303, 0.32626304, 0.36292303, 1)
 roughness = 0.9
 vein_strength = 0.08
 stroke_scale_mult = 1.15
@@ -44,14 +44,14 @@ stroke_scale_mult = 1.15
 script = ExtResource("1_yywnl")
 id = &"VINE"
 display_name = "Root mat"
-colour = Color(0.27167177, 0.36287174, 0.35867175, 1)
-colour_alt = Color(0.38143015, 0.49003014, 0.47803015, 1)
+colour = Color(0.25021946, 0.36877945, 0.36331946, 1)
+colour_alt = Color(0.35603657, 0.49721658, 0.4816166, 1)
 vein_strength = 0.3
 stroke_scale_mult = 0.85
 
 [sub_resource type="Gradient" id="Gradient_wnwf4"]
 offsets = PackedFloat32Array(0, 0.14, 0.29, 0.43, 0.57, 0.71, 0.86, 1)
-colors = PackedColorArray(0.25627595, 0.34207594, 0.38167596, 1, 0.5079712, 0.60037124, 0.6135712, 1, 0.8107364, 0.8107364, 0.8305364, 1, 1, 1, 1, 1, 1.303474, 1.2374738, 1.2440739, 1, 1.7333211, 1.5485212, 1.5023211, 1, 2.1072583, 1.8828582, 1.8366582, 1, 2.8030388, 2.3740387, 2.294839, 1)
+colors = PackedColorArray(0.24987432, 0.34347433, 0.3866743, 1, 0.5012704, 0.6020704, 0.6164704, 1, 0.8106065, 0.8106065, 0.8322065, 1, 1, 1, 1, 1, 1.308155, 1.236155, 1.2433549, 1, 1.7468526, 1.5452527, 1.4948528, 1, 2.1236243, 1.8788245, 1.8284243, 1, 2.8342674, 2.3662672, 2.2798674, 1)
 
 [resource]
 script = ExtResource("2_4ecwt")
@@ -69,7 +69,7 @@ channel_web_threshold = 0.84
 channel_strand_width_m = 1.6
 grid_spacing_m = 10.0
 grid_colour = Color(0.55, 0.88, 0.95, 1)
-grid_strength = 0.13
+grid_strength = 0.0
 pool_glow = Color(0.16, 0.95, 0.83, 1)
 pool_glow_strength = 1.8
 pool_glow_alt = Color(0.78, 0.3, 0.96, 1)

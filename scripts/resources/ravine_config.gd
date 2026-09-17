@@ -84,4 +84,18 @@ extends Resource
 ## for why the two are separate. Measured: at 0.42 the chasm floor renders at
 ## 5/255 and the crest at 14/255, which is not a dark ravine, it is a hole.
 @export var wall_albedo: Color = Color(1.0, 1.0, 1.0)
+
+@export_group("Surface")
+## How hard the tiling rock normal bites, from tools/make_rock_detail.py.
+## Without it the walls are 5600 flat-shaded triangles over half a kilometre
+## and read as smooth haze — the ravine's silhouette was right long before its
+## surface was anything at all.
+@export var wall_detail: float = 0.0
+## How much of the rock's cavity map goes into the pigment as well as the AO
+## slot. On a rig this dim an AO that only darkens ambient barely shows.
+@export var wall_detail_ao: float = 0.65
+## How many metres of wall one tile of the rock map covers. MUST match the
+## second argument make_rock_detail.py was run with, or the rock is the wrong
+## size — the generator bakes a real relief in metres, not a unitless bump.
+@export var rock_tile_m: float = 16.0
 @export var seed: int = 20260917

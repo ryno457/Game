@@ -88,9 +88,14 @@ const VOID_BELOW := 0.16
 ## How much of the tone ramp's own hue to give back. See _palette(): the ramp
 ## tints the LIGHT and the engine then multiplies by albedo, so without this
 ## the ground's teal is applied twice.
-const RAMP_NEUTRALISE := 0.34
+const RAMP_NEUTRALISE := 0.28
 ## The same correction applied to the ground albedos. See _pigment().
-const ALBEDO_NEUTRALISE := 0.40
+## Down from 0.40 once the baked detail went beige: beige is desaturated warm,
+## so it lowers the frame's median saturation by itself, and at 0.40 on top the
+## render fell to 0.35 against the references' 0.46. The neutralise fixes a
+## DOUBLE application of hue; it is not a saturation dial, and using it as one
+## takes the chroma out of the teal that is supposed to stay teal.
+const ALBEDO_NEUTRALISE := 0.22
 
 ## The two plateaus circled on the reference, and the rest of the lobe layout
 ## read off the same image. u, v, radius in metres, top height.
@@ -386,19 +391,29 @@ func _materials() -> Array[GroundMaterial]:
 	# hue in reference 01 put together is 0.38% of the image. It becomes the
 	# silt channel, which is what that ground actually is.
 	# OPEN FLAT, the largest single material, 25% of ground.
+	# The ALT is warmer than the base rather than greener: this is the largest
+	# material on the map, so the direction its two values differ IN is the
+	# single biggest hue decision here, and green is the one thing it must not
+	# be. The beige arrives from the baked detail colour on top of this.
 	out[GroundMaterials.MOSS] = _material(GroundMaterials.MOSS, "Open flat",
-		Color(0.122, 0.239, 0.235), Color(0.204, 0.353, 0.329), 0.88, 0.0, 1.0)
+		Color(0.122, 0.235, 0.231), Color(0.259, 0.322, 0.302), 0.88, 0.0, 1.0)
 	# BARE ROCK, near-achromatic, and the only slot allowed to be grey. 0.75%.
 	# Note the ALT is teal-tinted rather than a neutral light grey. Grey belongs
 	# to the machines and to nothing else: a light grey rock is the one ground
 	# colour that would camouflage a unit standing on it.
+	# BEIGE, not teal-grey. Reference 01's boulder clusters, its bridge and its
+	# tall pale structure are all warm grey — measured at rgb(92, 79, 69) — and
+	# they are the only warm thing in the picture, which is why the eye goes
+	# to them. The earlier "no warm hues in the reference" reading was taken
+	# over SATURATED pixels only, and beige is desaturated warm, so it fell
+	# straight through the test. Still nowhere near the machines' light grey.
 	out[GroundMaterials.ROCK] = _material(GroundMaterials.ROCK, "Bare rock",
-		Color(0.216, 0.263, 0.271), Color(0.333, 0.408, 0.412), 0.94, 0.0, 1.9)
+		Color(0.271, 0.247, 0.216), Color(0.404, 0.376, 0.333), 0.94, 0.0, 1.9)
 	# PALE BASIN / shoreline, 11%. The lightest ground, and what makes the
 	# basins read from above. It tops out at L*54 — nothing in the reference's
 	# ground is brighter, which is what the old near-white sediment got wrong.
 	out[GroundMaterials.SEDIMENT] = _material(GroundMaterials.SEDIMENT, "Pale basin",
-		Color(0.247, 0.424, 0.427), Color(0.290, 0.545, 0.537), 0.80, 0.05, 0.75)
+		Color(0.267, 0.408, 0.404), Color(0.337, 0.525, 0.506), 0.80, 0.05, 0.75)
 	# SILT CHANNEL, the blue-grey wet apron between lobes, 19%.
 	out[GroundMaterials.LOAM] = _material(GroundMaterials.LOAM, "Silt channel",
 		Color(0.118, 0.235, 0.275), Color(0.173, 0.333, 0.380), 0.90, 0.08, 1.15)
@@ -561,11 +576,16 @@ func _palette() -> BiomePalette:
 	p.channel_below = CHANNEL_BELOW
 	p.channel_web_threshold = WEB
 	p.channel_strand_width_m = STRAND_W
-	# The survey grid from the reference. Ten metres reads as a useful ruler
-	# from the overhead camera without turning the ground into graph paper.
+	# THE SURVEY GRID IS OFF. It came from reference 01, which is a VTT battle
+	# map — a thing printed with a grid because a person moves miniatures on
+	# it by the square. This is not that: nothing in the game snaps to ten
+	# metres, so the grid was describing a rule that does not exist, and over a
+	# floor that now carries real surface detail it read as graph paper laid on
+	# top of the art. The spacing and colour stay so it can be turned back on
+	# for a debug readout; the strength is what switches it.
 	p.grid_spacing_m = 10.0
 	p.grid_colour = Color(0.55, 0.88, 0.95)
-	p.grid_strength = 0.13
+	p.grid_strength = 0.0
 	return p
 
 
@@ -768,7 +788,10 @@ func _ravine() -> RavineConfig:
 	c.gully_relief_m = 6.5
 	c.gully_scale = 0.075
 	c.edge_wander_m = 7.0
-	c.round_over_m = 46.0
+	# Sooner than the wall takes to reach full height (34 m), or the rect's
+	# corners are at the crest before any of the rounding has happened and
+	# the surround reads as a box however rough its surface is.
+	c.round_over_m = 24.0
 	c.extent_m = 420.0
 	c.wall_cell_m = 3.4
 	c.floor_cell_m = 7.0
@@ -782,7 +805,14 @@ func _ravine() -> RavineConfig:
 	c.crest_colour = Color(0.330, 0.400, 0.420)
 	c.moonlit_colour = Color(0.500, 0.560, 0.620)
 	# Measured, not chosen. See RavineConfig.wall_albedo.
-	c.wall_albedo = Color(1.0, 1.0, 1.0)
+	# 0.62, not white: at white the walls rendered BRIGHTER than the ground
+	# they enclose, which reads as a lit box around a dark map.
+	c.wall_albedo = Color(0.62, 0.62, 0.62)
+	# The tiling rock. Strong: this is a normal map standing in for a
+	# surface that has no geometry at all.
+	c.wall_detail = 1.0
+	c.wall_detail_ao = 0.45
+	c.rock_tile_m = 16.0
 	c.seed = 20260917
 	return c
 

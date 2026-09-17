@@ -101,9 +101,33 @@ def high_poly(objs):
         b.segments = BEVEL_SEGMENTS
         b.limit_method = 'ANGLE'
         b.angle_limit = 0.52          # 30 degrees: real edges, not curvature
+        # SUBDIVIDE FAR ENOUGH TO CARRY GRAIN. Simple subdivision at level 1
+        # only existed to give the bevel somewhere to land; at level 3 the
+        # surface has enough vertices for a displacement to mean anything,
+        # which is what the fine bump below needs. A 528-triangle hull becomes
+        # about 34k, which is nothing for a bake that runs once.
         sub = h.modifiers.new("sub", 'SUBSURF')
         sub.subdivision_type = 'SIMPLE'
-        sub.levels = sub.render_levels = 1
+        sub.levels = sub.render_levels = 3
+        # THE FINE BUMP. Two bands: a 12 cm cast-and-machined roughness and a
+        # 2 cm grain. Without it a machine bakes as glass with chamfers — the
+        # normal map carries the edges and nothing at all between them, and a
+        # flat panel at arm's length is exactly where the eye looks for
+        # material. Tiny on purpose: 1.2 mm and 0.35 mm. This is a texture, not
+        # a dent, and anything bigger reads as damage. Measured: at 1.2 mm over a
+        # 12 cm feature the surface tilts 1.1 degrees and 1% of the map's
+        # texels lean at all, which is indistinguishable from no bump. 3.5 mm
+        # tilts 3.3 degrees, which is a cast finish.
+        for name, size, depth in (("grain_a", 0.12, 0.0035),
+                                  ("grain_b", 0.025, 0.0010)):
+            tex = bpy.data.textures.new(name + "_" + h.name, 'CLOUDS')
+            tex.noise_scale = size
+            tex.noise_depth = 2
+            d = h.modifiers.new(name, 'DISPLACE')
+            d.texture = tex
+            d.texture_coords = 'LOCAL'
+            d.mid_level = 0.5
+            d.strength = depth
         highs.append(h)
     return highs
 

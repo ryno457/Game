@@ -357,6 +357,92 @@ from outside — geometry that is simply not drawn:
 What finally separated them was setting `emission` and watching the surround
 come back magenta while the lit path stayed dark.
 
+## Beige, and the measurement that missed it
+
+"Every warm hue in reference 01 put together is 0.38% of the image" was true
+and misleading. It was measured over **saturated** pixels, and the reference's
+warm content is not saturated: its boulder clusters, its bridge, its coral fans
+and its tall pale structure are *beige* — measured properly, 0.7% of area at
+rgb(92, 79, 69), saturation 0.24, luma 0.32. Desaturated warm fell straight
+through a test that only looked at saturated pixels, and the palette was built
+on the conclusion that the reference had no warm in it at all.
+
+So the rock ground material, the arch, the ruins, the coral and the pods are
+beige now, and the floor's largest colour drift is toward a warm near-grey.
+
+**The cost, stated plainly:** the rendered frame now measures saturation 0.35
+against the references' 0.46. Beige is desaturated by definition, so asking the
+map for more of it asks it for less chroma, and the two cannot both go up.
+Lowering the ramp and albedo neutralise constants to 0.20 and 0.08 — most of
+the way to switching them off — moved it by 0.01, because the baked detail
+colour mixes in at 0.62 and is 41% near-grey; it, not those constants, sets the
+frame's chroma. The dial that would actually move it is the beige itself.
+
+**The drift goes via grey, not via green**, and that is the whole trick. The
+straight line in RGB from this map's teal to a saturated beige passes through
+hue 128 at its midpoint, so the first attempt — a strong drift toward `#4e463b`
+— turned a third of the map green, which is exactly what it was meant to
+remove. A near-neutral warm grey loses the chroma first and picks up the warmth
+second: the green band fell from 35% to 8% at a *stronger* weight.
+
+Tuned numerically rather than by baking. `ground_paint` is pure arithmetic over
+the heightfield, so a forty-line harness evaluates it over the whole map and
+prints the hue histogram in a second; the ten-minute bake only ran once the
+numbers were right.
+
+## The survey grid is off
+
+It came from reference 01, which is a VTT battle map — printed with a grid
+because a person moves miniatures on it by the square. Nothing in this game
+snaps to ten metres, so the grid described a rule that does not exist, and over
+a floor that now carries real surface detail it read as graph paper laid over
+the art. `grid_spacing_m` and `grid_colour` stay so it can be switched back on
+as a debug readout.
+
+## Surface detail, in three places
+
+The floor, the ravine and the machines each needed a fine bump and each needed
+a different answer.
+
+**The floor** bakes from modelled geometry, because its detail *is* geometry —
+vines, pores, clumps, things with a shape somebody decided. What it was
+missing is that the high-detail copy of the ground was the same one-vertex-per-
+metre mesh as the bake target, so everything between the vines baked perfectly
+flat. It is built at three vertices per metre now with three bands of relief:
+a 4 m swell, a 90 cm lumpiness and a 20 cm grain. Texels leaning more than 8%
+went from 5% of the map to 26%.
+
+**The ravine** gets a generated tiling map instead (`tools/make_rock_detail.py`),
+tiled every 16 m, and the tile size lives on the config beside the wall so the
+two cannot disagree — the generator bakes a relief in real metres, not a
+unitless bump, so a UV divisor that does not match it makes the rock the wrong
+size.
+Rock at half a metre is fractal and the same everywhere, so modelling it would
+be modelling noise and baking it would be a ten-minute round trip for a result
+a closed-form function gives exactly — this runs in a second. It must tile, and
+the tiling is asserted: not "the opposite edges are equal", which would fail a
+map that tiles perfectly, but "the wrap step is no larger than an ordinary
+step", because a seam *is* a step out of scale with its neighbours.
+
+**The machines** bake from a bevelled, subdivided copy of the low-poly, and
+that copy was subdivided only enough to hold the bevel. At that density a
+displacement has nothing to displace, so a machine baked as glass with
+chamfers: the normal map carried the edges and nothing at all between them. It
+now subdivides three levels and carries two displacement bands at 1.2 mm and
+0.35 mm — a texture, not a dent. Anything bigger reads as damage.
+
+## The vines are painted
+
+A material slot is one flat colour over every triangle assigned to it, which is
+all a 500-triangle prop needs. Four thousand vines is not that: they all came
+out of the bake identical, and a web whose every strand is the same value reads
+as a diagram of a web. `MB` carries optional per-vertex colour now, and
+`vine_paint` varies three things that are three different arguments — a hue and
+value jitter per vine so neighbours differ, a dark root and pale tip along each
+one, and a lift where the tube swells, which is what makes a swelling read as
+a swelling. Props pass no colour and so get no colour attribute at all, leaving
+`COLOR_0` to the vertex-AO bake exactly as before.
+
 ## Scatter: order is priority
 
 `Dressing.place` keeps **one shared `taken` list**, so each entry has to find

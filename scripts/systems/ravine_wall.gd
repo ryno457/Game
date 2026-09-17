@@ -28,6 +28,8 @@ extends Node3D
 ## so this is not obviously the more expensive of the two.
 
 const SHADER := "res://shaders/painted_prop.gdshader"
+const ROCK_N := "res://textures/rock_detail_n.png"
+const ROCK_AO := "res://textures/rock_detail_ao.png"
 
 var tris := 0
 
@@ -82,7 +84,21 @@ func _material(cfg: RavineConfig, ramp: Texture2D) -> ShaderMaterial:
 	# that fills the horizon every distant slope is at a grazing angle and the
 	# whole surround would go dark.
 	mat.set_shader_parameter("rim_ink", 0.0)
-	mat.set_shader_parameter("detail_strength", 0.0)
+	# THE ROCK. One tiling map over the whole surround, sampled off the UVs the
+	# meshes already carry (world metres / rock_tile_m, see _floor_mesh). The
+	# ravine is 5600 flat triangles over half a kilometre, so without this its
+	# surface is whatever the fog leaves of a smooth slope, which at this
+	# distance is nothing. Generated rather than baked: rock at half a metre is
+	# fractal and the same everywhere, so modelling it would be modelling noise.
+	var n: Texture2D = load(ROCK_N) if ResourceLoader.exists(ROCK_N) else null
+	var ao: Texture2D = load(ROCK_AO) if ResourceLoader.exists(ROCK_AO) else null
+	if n != null and ao != null and cfg.wall_detail > 0.0:
+		mat.set_shader_parameter("detail_n", n)
+		mat.set_shader_parameter("detail_ao", ao)
+		mat.set_shader_parameter("detail_strength", cfg.wall_detail)
+		mat.set_shader_parameter("detail_ao_strength", cfg.wall_detail_ao)
+	else:
+		mat.set_shader_parameter("detail_strength", 0.0)
 	return mat
 
 
@@ -136,7 +152,7 @@ func _floor_mesh(cfg: RavineConfig, map_size_m: Vector2) -> ArrayMesh:
 				# channel, and these values converted land at 0.002, which
 				# quantises to zero. The overall level lives in wall_albedo.
 				st.set_color(cfg.deep_colour)
-				st.set_uv(Vector2(px, pz) / 32.0)
+				st.set_uv(Vector2(px, pz) / cfg.rock_tile_m)
 				st.add_vertex(Vector3(px, y, pz))
 	st.generate_normals()
 	# TANGENTS, and they are not optional. painted_prop.gdshader writes
@@ -238,7 +254,7 @@ func _ring_vertex(st: SurfaceTool, cfg: RavineConfig, centre: Vector2,
 	col = col.lerp(cfg.crest_colour, clampf((k - 0.45) / 0.55, 0.0, 1.0))
 	col = col.lerp(cfg.moonlit_colour, pow(flank, 2.0) * k * 0.72)
 	st.set_color(col)
-	st.set_uv(Vector2(along, s) / 32.0)
+	st.set_uv(Vector2(along, s) / cfg.rock_tile_m)
 	st.add_vertex(Vector3(p.x, ys.x, p.y))
 
 
