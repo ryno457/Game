@@ -124,6 +124,37 @@ extends Resource
 ## and a machine wearing the landscape's skin is the one thing that would undo
 ## the contrast the light grey exists to create.
 @export_range(0.0, 4.0) var scale_detail: float = 1.0
+
+@export_group("Reflections")
+## Reflection probes over the pools. See WaterProbes.
+##
+## OFF, AND MEASURED OFF. The reasoning for switching them on was sound — the
+## terrain shader drops the ground to roughness 0.12 under the waterline, so
+## the pools are the only glossy surface on the map, and a glossy surface with
+## nothing to reflect is just a darker matte one. The frame disagrees. Rendered
+## with and without, back to back: the pool changes by a mean of 0.97 out of
+## 255 and a maximum of 5. It is invisible.
+##
+## Two reasons, and both are properties of THIS map rather than of the feature.
+## The pools are light SOURCES — pool_glow at strength 1.8 through EMISSION —
+## and an emissive surface swamps anything reflected onto it. And what there is
+## to reflect is a night sky at luma 0.05 over ground at 0.22, so the probe is
+## faithfully reflecting almost nothing.
+##
+## Left in the codebase and switched off rather than deleted: four probes cost
+## four cubemaps of VRAM and six face renders each at load, which is not worth
+## paying for a change nobody can see — but the day this map gets a bright
+## thing near water, turning this on is the whole job.
+@export var reflection_enabled: bool = false
+@export_range(0.0, 2.0) var reflection_intensity: float = 1.0
+## How tall the probe's box is. It has to reach above the water far enough to
+## contain what is worth reflecting — the rim, and whatever is standing on it.
+@export var reflection_height_m: float = 9.0
+## How far past the pool's own edge the box reaches, for the same reason.
+@export var reflection_margin_m: float = 3.0
+## Beyond this the probe stops contributing, so a pool at the far edge of the
+## map is not re-projecting itself onto ground it cannot see.
+@export var reflection_max_distance_m: float = 60.0
 ## Cycles per metre. Around 2-3 reads as grit at the RTS camera height; much
 ## finer than that is invisible and shimmers when the camera pans.
 @export var detail_scale: float = 2.6

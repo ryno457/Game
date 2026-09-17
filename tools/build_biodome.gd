@@ -585,6 +585,14 @@ func _palette() -> BiomePalette:
 	# for a debug readout; the strength is what switches it.
 	# The shared skin on everything that grew. See BiomePalette.scale_detail.
 	p.scale_detail = 1.0
+	# Reflection probes on the pools — OFF. They work and they are correctly
+	# placed; measured on a frame they move the pool by at most 5/255.
+	# See BiomePalette.reflection_enabled for the numbers and the reason.
+	p.reflection_enabled = false
+	p.reflection_intensity = 1.0
+	p.reflection_height_m = 9.0
+	p.reflection_margin_m = 3.0
+	p.reflection_max_distance_m = 60.0
 	p.grid_spacing_m = 10.0
 	p.grid_colour = Color(0.55, 0.88, 0.95)
 	p.grid_strength = 0.0

@@ -357,6 +357,46 @@ from outside — geometry that is simply not drawn:
 What finally separated them was setting `emission` and watching the surround
 come back magenta while the lit path stayed dark.
 
+## The two GI options Forward Mobile will run, and what happened to them
+
+Pulled out of the engine binary rather than the docs (which this machine's
+egress policy blocks): the complete list of renderer-availability warnings in
+4.7.2 says Mobile does **not** run SDFGI, SSAO, SSIL, SSR, volumetric fog,
+subsurface scattering, transmittance, auto-exposure, TAA or FSR. What it does
+run, beyond the three light nodes and their shadows, is **LightmapGI** and
+**ReflectionProbe**.
+
+**LightmapGI cannot be used on this map.** Three independent blockers, all
+verified: the terrain mesh is generated at load by `TerrainView`, so there is
+nothing in the scene for the editor to bake; it carries no UV2, which a
+lightmap needs; and `LightmapGI.bake()` is not exposed to scripting in this
+build (only `set_bake_quality` / `get_bake_quality` are), so a headless
+pipeline cannot drive it either. All three would have to change together, and
+the first one means pre-generating the terrain as a saved mesh resource — which
+gives up the procedural-seed-plus-ops rule the map is built on.
+
+**ReflectionProbe works, is correctly placed, and does nothing.**
+`WaterProbes` finds the pools by flood-filling the heightfield's own water
+mask — four probes, sized to each pool, found rather than authored so that
+changing the map moves them. The reasoning for wanting them was sound: the
+terrain shader drops the ground to roughness 0.12 and specular 0.6 under the
+waterline, so the pools are the only glossy surface on the map.
+
+The frame disagrees. Rendered with and without, back to back, **the pool
+changes by a mean of 0.97/255 and a maximum of 5** — half its pixels change by
+*something* and 13% by more than 2/255, which is invisible. Two reasons, and
+both are properties of this map rather than of the feature: the pools are light
+*sources* (`pool_glow` at strength 1.8, through EMISSION) and an emissive
+surface swamps anything reflected onto it; and what there is to reflect is a
+night sky at luma 0.05 over ground at 0.22, so the probe is faithfully
+reflecting almost nothing.
+
+So it ships **off**. Four probes cost four cubemaps of VRAM and six face
+renders each at load, and CLAUDE.md's live risk is that the frame budget is
+already unmeasured on the current build — that is not a bill to pay for a
+change nobody can see. The code stays, because the day this map gets a bright
+thing near water, `reflection_enabled` is the whole job.
+
 ## Two vine layouts, one generator
 
 `tools/blender/detail_source.py` builds either of two surfaces, chosen by a
