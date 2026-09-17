@@ -145,8 +145,13 @@ WHAT YOU ARE LOOKING AT
   Bottom right what the drone is working on
 
 WHAT TO DO
-  Drag         pan the camera
-  Tap ground   move the module
+  Drag         pan the camera. The camera follows the module on a LEASH: your
+               pan is left where you put it until the module walks far enough
+               out that it would leave the screen.
+  Tap ground   the module WALKS there. It does not appear there. It takes
+               real seconds, it slides along edges it cannot cross, and it
+               can be caught out of position — which is the point of a body
+               that carries your mass.
   Tap a machine    select it; tap more to add them to the selection
   Tap empty ground clears the selection
   TRENCH       toggle, then drag to dig. Digging costs no mass, only time.
@@ -154,8 +159,33 @@ WHAT TO DO
   Reforge      bottom left, when something is selected. It offers everything
                that pooled mass could become. Two machines reach things one
                cannot.
-  Tap a big debris piece  sends the drone to free it. THIS STARTS A FIGHT.
   QUALITY      cycles High -> Medium -> Low, and RESTARTS the timings.
+
+THE HIVE — FOUR WAYS TO START A FIGHT, AND FOUR WAYS TO END ONE
+  The map starts QUIET. Two large creatures roam it in the open and
+  everything else is underground. Every fight is something you did, and
+  every one of them has an off switch you can reach:
+
+    1. Tap a big debris piece   the drone goes to free it, and they come
+                                while it works. Freeing it ENDS the attack.
+    2. Walk near an alien plant it wakes and keeps calling. Backing away
+                                does NOT stop it — only KILLING IT does.
+    3. Step on bare ground      some of it has three or four buried under
+                                it. One group, then that patch is spent.
+    4. Walk up to a roamer      it calls escorts while you are close.
+                                KILL THE BIG ONE and the escorts stop.
+
+  Anything that comes up spends about a second and a half CLIMBING OUT
+  before it can move. That is your warning, and it is deliberate.
+
+  WHAT TO TELL ME: whether the off switches READ. Killing a plant should
+  feel like you turned something off. If a fight just seems to stop on its
+  own, or you cannot tell which thing is producing the aliens chewing on
+  you, that is the bug — not the numbers.
+
+  Known thin: freeing a large piece takes about 26 s against a 45 s wave
+  interval, so trigger 1 currently delivers exactly ONE group. It is the
+  lightest of the four. Tell me if it should bite harder.
 
 QUALITY PRESETS
   High    4x MSAA, full resolution, terrain surface detail on
