@@ -1,18 +1,19 @@
 [gd_resource type="Resource" script_class="BiomePalette" format=3]
 
-[ext_resource type="Script" path="res://scripts/resources/ground_material.gd" id="1_yywnl"]
-[ext_resource type="Script" path="res://scripts/resources/biome_palette.gd" id="2_4ecwt"]
+[ext_resource type="Texture2D" path="res://textures/canopy_cookie.png" id="1_4ecwt"]
+[ext_resource type="Script" path="res://scripts/resources/ground_material.gd" id="2_pk5fx"]
+[ext_resource type="Script" path="res://scripts/resources/biome_palette.gd" id="3_o5cs5"]
 
-[sub_resource type="Resource" id="Resource_pk5fx"]
-script = ExtResource("1_yywnl")
+[sub_resource type="Resource" id="Resource_ap7rc"]
+script = ExtResource("2_pk5fx")
 id = &"MOSS"
 display_name = "Open flat"
 colour = Color(0.14151123, 0.22965123, 0.22653124, 1)
 colour_alt = Color(0.26959568, 0.3187357, 0.30313566, 1)
 roughness = 0.88
 
-[sub_resource type="Resource" id="Resource_o5cs5"]
-script = ExtResource("1_yywnl")
+[sub_resource type="Resource" id="Resource_sgg00"]
+script = ExtResource("2_pk5fx")
 id = &"ROCK"
 display_name = "Bare rock"
 colour = Color(0.26635012, 0.24763012, 0.22345012, 1)
@@ -20,8 +21,8 @@ colour_alt = Color(0.39846662, 0.37662658, 0.3430866, 1)
 roughness = 0.94
 stroke_scale_mult = 1.9
 
-[sub_resource type="Resource" id="Resource_ap7rc"]
-script = ExtResource("1_yywnl")
+[sub_resource type="Resource" id="Resource_l3g72"]
+script = ExtResource("2_pk5fx")
 id = &"SEDIMENT"
 display_name = "Pale basin"
 colour = Color(0.2913616, 0.40134162, 0.3982216, 1)
@@ -30,8 +31,8 @@ roughness = 0.8
 vein_strength = 0.05
 stroke_scale_mult = 0.75
 
-[sub_resource type="Resource" id="Resource_sgg00"]
-script = ExtResource("1_yywnl")
+[sub_resource type="Resource" id="Resource_wnwf4"]
+script = ExtResource("2_pk5fx")
 id = &"LOAM"
 display_name = "Silt channel"
 colour = Color(0.13890304, 0.23016304, 0.26136303, 1)
@@ -40,8 +41,8 @@ roughness = 0.9
 vein_strength = 0.08
 stroke_scale_mult = 1.15
 
-[sub_resource type="Resource" id="Resource_l3g72"]
-script = ExtResource("1_yywnl")
+[sub_resource type="Resource" id="Resource_cjwpb"]
+script = ExtResource("2_pk5fx")
 id = &"VINE"
 display_name = "Root mat"
 colour = Color(0.25021946, 0.36877945, 0.36331946, 1)
@@ -49,14 +50,14 @@ colour_alt = Color(0.35603657, 0.49721658, 0.4816166, 1)
 vein_strength = 0.3
 stroke_scale_mult = 0.85
 
-[sub_resource type="Gradient" id="Gradient_wnwf4"]
+[sub_resource type="Gradient" id="Gradient_g84nf"]
 offsets = PackedFloat32Array(0, 0.14, 0.29, 0.43, 0.57, 0.71, 0.86, 1)
 colors = PackedColorArray(0.24987432, 0.34347433, 0.3866743, 1, 0.5012704, 0.6020704, 0.6164704, 1, 0.8106065, 0.8106065, 0.8322065, 1, 1, 1, 1, 1, 1.308155, 1.236155, 1.2433549, 1, 1.7468526, 1.5452527, 1.4948528, 1, 2.1236243, 1.8788245, 1.8284243, 1, 2.8342674, 2.3662672, 2.2798674, 1)
 
 [resource]
-script = ExtResource("2_4ecwt")
+script = ExtResource("3_o5cs5")
 display_name = "Biodome 01"
-materials = Array[ExtResource("1_yywnl")]([SubResource("Resource_pk5fx"), SubResource("Resource_o5cs5"), SubResource("Resource_ap7rc"), SubResource("Resource_sgg00"), SubResource("Resource_l3g72")])
+materials = Array[ExtResource("2_pk5fx")]([SubResource("Resource_ap7rc"), SubResource("Resource_sgg00"), SubResource("Resource_l3g72"), SubResource("Resource_wnwf4"), SubResource("Resource_cjwpb")])
 col_pool = Color(0.03, 0.165, 0.16, 1)
 col_rough = Color(0.185, 0.275, 0.215, 1)
 col_ground = Color(0.29, 0.355, 0.33, 1)
@@ -88,6 +89,7 @@ baked_normal = 0.85
 baked_colour = 0.55
 baked_ink = 0.55
 baked_ink_power = 2.0
+cast_tex_0 = ExtResource("1_4ecwt")
 canopy_energy = 20.0
 canopy_colour = Color(1, 0, 1, 1)
 detail_scale = 1.4
@@ -100,7 +102,7 @@ shore_pale = 0.5
 tube_radius_m = 0.55
 sun_azimuth_deg = -47.999996
 sun_elevation_deg = 38.000004
-tone_ramp = SubResource("Gradient_wnwf4")
+tone_ramp = SubResource("Gradient_g84nf")
 terminator_k = 1.45
 shadow_strength = 0.65
 curv_gain = 0.6

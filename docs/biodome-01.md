@@ -357,6 +357,66 @@ from outside — geometry that is simply not drawn:
 What finally separated them was setting `emission` and watching the surround
 come back magenta while the lit path stayed dark.
 
+## The depth map, and three cast layers
+
+**The third baked map.** A normal map says which way a surface tilts and a
+colour map says what it is made of; neither says how far above the floor it is,
+and that is the one thing the ground needs in order to cast its own detail onto
+itself. A vine lying on the floor and a vine painted on the floor have
+identical normals.
+
+Cycles has no displacement bake, so it goes through **POSITION** — the world
+coordinate of the high-poly at each low-poly texel — into a float buffer,
+because the map is 150 m across and an 8-bit position bake would quantise the
+whole thing into six-centimetre steps.
+
+**The bake's scale is measured, not assumed.** The POSITION pass comes back
+uniformly *four times too large* in this Blender build: texel centres that
+should read x = 37.5, 74.8, 112.0 read 149.95, 299.15, 448.04. Dividing by four
+would work today and break silently the day that changes, and a depth map wrong
+by a constant looks exactly like a map of taller vines. So the factor is
+recovered from the data — every texel's true world X and Y are known in closed
+form, because the unwrap is `(x / width, z / depth)` — fitted on both axes
+independently and asserted to agree. It reads 4.0000 on both. If the bake is
+ever fixed upstream this reads 1.0 and nothing else changes.
+
+**The surface is sampled at the baked position, not the texel's nominal one.**
+A cage ray leaves along the low-poly's normal, so on steep ground it lands a
+metre or two downhill of the texel it belongs to. Measured against where the
+texel nominally is, that lateral slide reads as relief and puts a phantom bank
+on every slope; measured against where the ray actually landed, it cancels
+exactly. The first version's 99th percentile error was 6.8 m, with strays at
+154 m.
+
+**And the range is the relief, not the cage.** Normalised over `CAGE_M` (1.4 m,
+which is how far a ray may *travel*) the whole map landed in the bottom 15% of
+the 8 bits and came out as speckle. `DEPTH_RANGE_M` is 0.90 — the tallest
+species plus a margin — and the fraction that clips is asserted under 2%
+(currently 0.98%). Measured: 77% of texels hit, height above ground median
+0.028 m, 95th 0.393 m.
+
+**What it buys.** A short march toward the moon across the depth map: at each
+step the ray has climbed by the step times the tangent of the sun's elevation,
+and if the mat is taller than the ray is high, the fragment is behind it. Six
+taps over 0.75 m. Only a height field can put a shadow on the floor *beside* a
+vine — bump shading can only turn the vine's own surface away from the light —
+and that shadow is most of what says the mat is lying on the ground rather than
+printed on it.
+
+It is a **modest** effect at this camera: 3.5% of the frame moves by more than
+2/255. That is not a disappointment, it is the scale — at 48 m and ~19 px/m, a
+5 cm vine's shadow is about a pixel. `cast_shadow_strength` and
+`cast_shadow_reach_m` are the dials.
+
+**Three cast layers, not one.** The canopy is a *cast map* — something overhead
+deciding how much light reaches the floor — and there is never only one thing
+overhead. Layer 0 is the biodome's roof; 1 and 2 are free, each with its own
+texture, scale, drift and scroll speed, and they multiply, so two half-shading
+layers leave a quarter the way real occluders stack. Three fixed slots rather
+than an array of samplers, because Godot's support for those varies by renderer
+and this has to run on Mobile. Each layer costs one fetch and only when its
+strength is above zero.
+
 ## The canopy, and a light cookie that could not be tested
 
 A cookie is a texture a light looks through — Godot calls the slot

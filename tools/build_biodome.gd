@@ -586,9 +586,16 @@ func _palette() -> BiomePalette:
 	# The shared skin on everything that grew. See BiomePalette.scale_detail.
 	p.scale_detail = 1.0
 	# The canopy cookie. See CanopyLight and tools/make_canopy_cookie.py.
-	p.canopy_strength = 0.55
-	p.canopy_scale_m = 46.0
-	p.canopy_drift = Vector2(11.0, 7.0)
+	p.cast_tex_0 = load("res://textures/canopy_cookie.png")
+	p.cast_strength = Vector3(0.55, 0.0, 0.0)
+	p.cast_scale_m = Vector3(46.0, 120.0, 17.0)
+	p.cast_drift_01 = Vector4(11.0, 7.0, 0.0, 0.0)
+	p.cast_scroll_mps = Vector3(0.0, 0.0, 0.0)
+	# The mat casting onto the floor, off the baked depth map.
+	p.depth_range_m = 0.90
+	p.cast_shadow_strength = 0.55
+	p.cast_shadow_steps = 6
+	p.cast_shadow_reach_m = 0.75
 	p.canopy_enabled = false
 	p.canopy_energy = 20.0
 	p.canopy_colour = Color(1.0, 0.0, 1.0)

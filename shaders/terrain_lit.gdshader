@@ -271,10 +271,45 @@ uniform sampler2D detail_colour_tex : source_color, filter_linear_mipmap, repeat
 // second light at all — cheaper than the thing it stands in for, and the only
 // version this machine can prove. The design brief says the player is inside a
 // SEALED BIODOME and nothing in the frame has ever said so.
-uniform sampler2D canopy_tex : filter_linear_mipmap, repeat_enable;
-uniform float canopy_strength = 0.0;    // 0 skips the fetch entirely
-uniform float canopy_scale_m = 46.0;    // metres per tile of the lattice
-uniform vec2 canopy_drift = vec2(0.0);  // shifts the lattice over the map
+// THE DEPTH MAP, baked beside the normal and the colour in detail_source.py.
+//
+// A normal map says which way a surface tilts and a colour map says what it is
+// made of; neither says how FAR above the floor it is, and that is the one
+// thing the ground needs in order to cast its own detail onto itself. A vine
+// lying on the floor and a vine painted on the floor have identical normals.
+uniform sampler2D depth_map : filter_linear_mipmap, repeat_disable;
+// What one unit of it means, in metres. Must match detail_source.DEPTH_RANGE_M
+// or every height in the march is wrong by a constant.
+uniform float depth_range_m = 0.9;
+// How dark a fragment goes when the mat stands between it and the moon. 0
+// skips the march and its texture fetches entirely.
+uniform float cast_shadow_strength = 0.0;
+uniform int cast_shadow_steps = 6;
+uniform float cast_shadow_reach_m = 0.75;
+// The moon, flattened: which way the light comes FROM across the ground, and
+// the tangent of its elevation, which is how fast the ray climbs. Fed from
+// LightingRig so this cannot disagree with the light that is actually there.
+uniform vec2 sun_dir_xz = vec2(0.74, 0.67);
+uniform float sun_tan_elevation = 0.78;
+
+// THREE OF THEM, not one. The canopy is a cast map — something overhead
+// deciding how much light reaches the floor — and there is never only one
+// thing overhead. Layer 0 is the biodome's roof; 1 and 2 are free, and the
+// obvious uses are a slow-drifting cloud band and a second, finer lattice at
+// a different scale so the roof does not read as one repeating stamp.
+//
+// Three fixed slots rather than an array of samplers: Godot's support for
+// sampler arrays varies by renderer and this has to run on Mobile. Each layer
+// costs one fetch and only when its strength is above zero.
+uniform sampler2D cast_tex_0 : filter_linear_mipmap, repeat_enable;
+uniform sampler2D cast_tex_1 : filter_linear_mipmap, repeat_enable;
+uniform sampler2D cast_tex_2 : filter_linear_mipmap, repeat_enable;
+uniform vec3 cast_strength = vec3(0.0);   // per layer; 0 skips that fetch
+uniform vec3 cast_scale_m = vec3(46.0);   // metres per tile, per layer
+uniform vec4 cast_drift_01 = vec4(0.0);   // xy shifts layer 0, zw layer 1
+uniform vec2 cast_drift_2 = vec2(0.0);
+// Metres per second each layer slides. A roof does not move; weather does.
+uniform vec3 cast_scroll_mps = vec3(0.0);
 uniform float baked_normal = 0.0;   // 0 skips both fetches entirely
 uniform float baked_colour = 0.0;
 // INK ALONG EVERY BAKED FORM, from the normal map already in hand.
@@ -609,12 +644,51 @@ void fragment() {
 	// The glow is fogged too — unexplored pools must not give the map away.
 	float seen = clamp(textureLod(fog_map, v_world.xz / field_size_m, 0.0).r, 0.0, 1.0);
 	v_seen = seen;
-	// The canopy overhead, sampled where this fragment stands.
+	// EVERYTHING OVERHEAD, multiplied together. Each layer is how much light
+	// that layer lets through, so they compose the way real occluders do:
+	// two half-shading layers leave a quarter, not nothing.
 	v_canopy = 1.0;
-	if (canopy_strength > 0.0) {
-		float sky = texture(canopy_tex,
-			(v_world.xz + canopy_drift) / max(1.0, canopy_scale_m)).r;
-		v_canopy = mix(1.0, sky, canopy_strength);
+	if (cast_strength.x > 0.0) {
+		vec2 uv = (v_world.xz + cast_drift_01.xy + vec2(TIME * cast_scroll_mps.x))
+			/ max(1.0, cast_scale_m.x);
+		v_canopy *= mix(1.0, texture(cast_tex_0, uv).r, cast_strength.x);
+	}
+	if (cast_strength.y > 0.0) {
+		vec2 uv = (v_world.xz + cast_drift_01.zw + vec2(TIME * cast_scroll_mps.y))
+			/ max(1.0, cast_scale_m.y);
+		v_canopy *= mix(1.0, texture(cast_tex_1, uv).r, cast_strength.y);
+	}
+	if (cast_strength.z > 0.0) {
+		vec2 uv = (v_world.xz + cast_drift_2 + vec2(TIME * cast_scroll_mps.z))
+			/ max(1.0, cast_scale_m.z);
+		v_canopy *= mix(1.0, texture(cast_tex_2, uv).r, cast_strength.z);
+	}
+
+	// AND THE GROUND CASTING ONTO ITSELF. March toward the moon across the
+	// depth map: at each step the ray has climbed by the step times the
+	// tangent of the sun's elevation, and if the mat is taller than the ray is
+	// high, this fragment is behind it.
+	//
+	// This is the thing a normal map cannot do. Bump shading makes a vine's
+	// own surface turn away from the light; only a height field can make the
+	// vine put a shadow on the floor BESIDE it, and that shadow is most of
+	// what tells the eye the mat is lying on the ground rather than printed
+	// on it.
+	if (cast_shadow_strength > 0.0 && detail_fade > 0.0) {
+		float step_m = cast_shadow_reach_m / float(cast_shadow_steps);
+		float here = texture(depth_map, v_world.xz / field_size_m).r
+			* depth_range_m;
+		float blocked = 0.0;
+		for (int i = 1; i <= cast_shadow_steps; i++) {
+			float d = float(i) * step_m;
+			vec2 at = v_world.xz + sun_dir_xz * d;
+			float tall = texture(depth_map, at / field_size_m).r * depth_range_m;
+			// The ray's height above the ground it started on, plus a bias so
+			// a fragment does not shadow itself on its own texel.
+			float ray = here + d * sun_tan_elevation + 0.015;
+			blocked = max(blocked, clamp((tall - ray) / 0.10, 0.0, 1.0));
+		}
+		v_canopy *= 1.0 - blocked * cast_shadow_strength * detail_fade;
 	}
 	base = mix(fog_tint, base, seen);
 

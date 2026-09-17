@@ -160,6 +160,7 @@ func _ready() -> void:
 	TerrainBuilder.classify_materials(field, palette.void_below, palette.channel_below,
 		palette.channel_web_threshold, 2.5, 3.0, palette.channel_strand_width_m)
 	terrain.apply_palette(palette)
+	terrain.set_sun(load(LIGHT_CFG))
 	# The ravine the map sits in. Added before anything else so it is the first
 	# opaque thing behind the terrain in the depth sort. It is what shows
 	# through every fragment the terrain shader discards, so without it the

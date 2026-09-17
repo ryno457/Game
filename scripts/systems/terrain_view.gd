@@ -36,6 +36,9 @@ const DETAIL_N := "res://textures/ground_vines_n.png"
 const DETAIL_C := "res://textures/ground_vines_c.png"
 ## The biodome canopy, thrown across the floor as a light multiplier.
 const CANOPY := "res://textures/canopy_cookie.png"
+## Baked beside the normal and the colour: how far the detail stands off the
+## ground, so the mat can cast onto the floor.
+const DETAIL_D := "res://textures/ground_vines_d.png"
 
 var field: Heightfield
 var fog: FogOfWar
@@ -84,6 +87,20 @@ func setup(p_field: Heightfield, p_fog: FogOfWar, shader: Shader) -> void:
 ## Repaint the ground for a biodome. Separate from setup() because the palette
 ## is a look, not a shape — the same heightfield is the same map whether it is
 ## lit like a quarry or like the inside of something alive.
+## Where the moon is, flattened onto the ground and as a climb rate.
+##
+## The depth march needs both and neither belongs in the palette: they are
+## properties of the LIGHT, and the one thing this project has already paid for
+## twice is two places disagreeing about where the sun is.
+func set_sun(cfg: LightingConfig) -> void:
+	if _mat == null:
+		return
+	var angles := LightingRig.sun_angles(cfg)
+	_mat.set_shader_parameter("sun_dir_xz", LightingRig.sun_ground_dir(cfg))
+	_mat.set_shader_parameter("sun_tan_elevation",
+		tan(deg_to_rad(clampf(angles.y, 4.0, 86.0))))
+
+
 func apply_palette(p: BiomePalette) -> void:
 	if p == null or _mat == null:
 		return
@@ -111,10 +128,25 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("baked_ink", p.baked_ink)
 	_mat.set_shader_parameter("baked_ink_power", p.baked_ink_power)
 	_mat.set_shader_parameter("detail_normal_tex", load(DETAIL_N))
-	_mat.set_shader_parameter("canopy_tex", load(CANOPY))
-	_mat.set_shader_parameter("canopy_strength", p.canopy_strength)
-	_mat.set_shader_parameter("canopy_scale_m", p.canopy_scale_m)
-	_mat.set_shader_parameter("canopy_drift", p.canopy_drift)
+	# The cast layers. Layer 0 falls back to the canopy when nothing is set,
+	# so a palette that predates these fields still gets a roof.
+	_mat.set_shader_parameter("cast_tex_0",
+		p.cast_tex_0 if p.cast_tex_0 != null else load(CANOPY))
+	_mat.set_shader_parameter("cast_tex_1", p.cast_tex_1)
+	_mat.set_shader_parameter("cast_tex_2", p.cast_tex_2)
+	_mat.set_shader_parameter("cast_strength", p.cast_strength)
+	_mat.set_shader_parameter("cast_scale_m", p.cast_scale_m)
+	_mat.set_shader_parameter("cast_drift_01", p.cast_drift_01)
+	_mat.set_shader_parameter("cast_drift_2", p.cast_drift_2)
+	_mat.set_shader_parameter("cast_scroll_mps", p.cast_scroll_mps)
+	if ResourceLoader.exists(DETAIL_D):
+		_mat.set_shader_parameter("depth_map", load(DETAIL_D))
+		_mat.set_shader_parameter("depth_range_m", p.depth_range_m)
+		_mat.set_shader_parameter("cast_shadow_strength", p.cast_shadow_strength)
+		_mat.set_shader_parameter("cast_shadow_steps", p.cast_shadow_steps)
+		_mat.set_shader_parameter("cast_shadow_reach_m", p.cast_shadow_reach_m)
+	else:
+		_mat.set_shader_parameter("cast_shadow_strength", 0.0)
 	_mat.set_shader_parameter("detail_colour_tex", load(DETAIL_C))
 	_mat.set_shader_parameter("detail_scale", p.detail_scale)
 	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m)

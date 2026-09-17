@@ -129,14 +129,41 @@ extends Resource
 ## Moonlight through the biodome's roof, as a light cookie. See CanopyLight:
 ## the map has never looked sealed, and a hex lattice thrown across the floor
 ## says it costs no geometry at all.
-## How hard the canopy darkens the light under a rib. This is the one that
-## ships — see terrain_lit.gdshader, which applies it in world space because
+## THREE CAST LAYERS — things overhead deciding how much light reaches the
+## floor. Layer 0 is the biodome's roof; the rest are free. They MULTIPLY, so
+## two half-shading layers leave a quarter, which is how real occluders stack.
+## See terrain_lit.gdshader, which applies them in world space because
 ## light_projector could not be made to work on this machine.
-@export_range(0.0, 1.0) var canopy_strength: float = 0.55
-## Metres of ground per tile of the lattice. The texture is 9 hexes across, so
-## this over 9 is how wide one panel of the roof is.
-@export var canopy_scale_m: float = 46.0
-@export var canopy_drift := Vector2(11.0, 7.0)
+@export var cast_tex_0: Texture2D
+@export var cast_tex_1: Texture2D
+@export var cast_tex_2: Texture2D
+## Per layer. Zero skips that layer's texture fetch entirely.
+@export var cast_strength := Vector3(0.55, 0.0, 0.0)
+## Metres of ground per tile, per layer. The canopy texture is 9 hexes across,
+## so 46 m makes one panel of the roof about 5 m wide.
+@export var cast_scale_m := Vector3(46.0, 120.0, 17.0)
+## xy shifts layer 0 over the map, zw shifts layer 1.
+@export var cast_drift_01 := Vector4(11.0, 7.0, 0.0, 0.0)
+@export var cast_drift_2 := Vector2(0.0, 0.0)
+## Metres per second each layer slides. A roof does not move; weather does.
+@export var cast_scroll_mps := Vector3(0.0, 0.0, 0.0)
+
+@export_group("Cast shadow")
+## What one unit of the baked depth map means, in metres. MUST match
+## detail_source.DEPTH_RANGE_M or every height in the march is off by a
+## constant and the mat shadows the wrong distance.
+@export var depth_range_m: float = 0.9
+## How dark the ground goes where the mat stands between it and the moon.
+## This is the thing a normal map cannot do: bump shading turns a vine's own
+## surface away from the light, but only a height field puts a shadow on the
+## floor BESIDE the vine, and that shadow is most of what says the mat is lying
+## on the ground rather than printed on it. Zero skips the march.
+@export_range(0.0, 1.0) var cast_shadow_strength: float = 0.55
+## Taps along the march. Each one is a texture fetch, so this is the cost.
+@export_range(2, 16) var cast_shadow_steps: int = 6
+## How far the march reaches, in metres. Past the tallest thing in the mat it
+## only costs.
+@export var cast_shadow_reach_m: float = 0.75
 
 ## THE PROJECTOR VERSION, off. CanopyLight builds a real SpotLight3D carrying
 ## the same texture in light_projector, which is how Godot means this to be

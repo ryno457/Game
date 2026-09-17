@@ -35,6 +35,7 @@ import struct
 import sys
 
 import bpy
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _bl import cycles_cpu, script_args          # noqa: E402
@@ -88,6 +89,8 @@ OUT_N = os.path.join(ROOT, "textures",
                      "ground_vines_n.png" if WHOLE_MAP else "ground_detail_n.png")
 OUT_C = os.path.join(ROOT, "textures",
                      "ground_vines_c.png" if WHOLE_MAP else "ground_detail_c.png")
+OUT_D = os.path.join(ROOT, "textures",
+                     "ground_vines_d.png" if WHOLE_MAP else "ground_detail_d.png")
 
 ## THE THREE SPECIES, for PROFILE = "vines".
 ##
@@ -167,6 +170,12 @@ GROUND_RUST = "5c4635"     # warm grey, on high dry ground
 VINE_MAT = 4               # GroundMaterials.VINE
 VINE_MAT_SLOT = 1          # the MB material index the vine body uses
 CAGE_M = 1.4               # tallest vine ~0.9 m, plus margin
+## What one unit of the DEPTH map means, in metres. Not the cage: the cage is
+## how far a ray may travel to find geometry, and the relief it finds is a
+## fraction of that. Normalised over CAGE_M the whole map landed in the bottom
+## 15% of the 8 bits and came out as speckle. This is the tallest species plus
+## a margin, and the fraction that clips is reported at bake time.
+DEPTH_RANGE_M = 0.90
 
 
 def _vnoise(x, y):
@@ -936,6 +945,118 @@ def build(rng, cx, cz, h, mat, hs, void):
     return low, high_ground
 
 
+def _bake_depth(low, res_x, res_y, node, mat, sources):
+    """How far the detail stands off the ground, in metres, as an 8-bit map.
+
+    THE THIRD MAP. A normal map says which way a surface tilts and a colour map
+    says what it is made of; neither says how FAR above the floor it is, and
+    that is the one thing the ground needs to cast its own detail onto itself.
+    A vine lying on the floor and a vine painted on the floor have identical
+    normals.
+
+    Cycles has no displacement bake, so this goes through POSITION — the world
+    coordinate of the high-poly surface at each texel of the low-poly — into a
+    FLOAT buffer, because the map is 150 m across and an 8-bit position bake
+    would quantise the whole thing into six centimetre steps. The height above
+    the ground is then that Z minus the heightfield's own Z at the same texel,
+    which is exact rather than inferred: the unwrap is (x / width, z / depth),
+    so a texel's map coordinate is known in closed form.
+    """
+    img = bpy.data.images.new("bake_pos", res_x, res_y, alpha=False,
+                              float_buffer=True)
+    node.image = img
+    mat.node_tree.nodes.active = node
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in sources:
+        o.select_set(True)
+    low.select_set(True)
+    bpy.context.view_layer.objects.active = low
+    bpy.ops.object.bake(type='POSITION')
+
+    px = np.array(img.pixels[:], dtype=np.float32).reshape(res_y, res_x, 4)
+    meta, cx, cz, h, _mat = load_map()
+    hs = meta["height_scale_m"]
+    hf = np.array(h, dtype=np.float32).reshape(cz, cx)
+    # The texel centres, in map coordinates. Row 0 of a Blender image is V = 0,
+    # which is map y = 0, so no flip is needed — but it is the kind of thing
+    # that is silently upside down for a week, so it is asserted below.
+    ys = (np.arange(res_y) + 0.5) / res_y * (cz - 1.0)
+    xs = (np.arange(res_x) + 0.5) / res_x * (cx - 1.0)
+    gx, gy = np.meshgrid(xs, ys)
+    # THE BAKE'S SCALE IS NOT TRUSTED, IT IS MEASURED.
+    #
+    # This POSITION pass comes back uniformly four times too large in this
+    # Blender build — texel centres that should read x = 37.5, 74.8, 112.0 read
+    # 149.95, 299.15, 448.04. Dividing by four would work today and break
+    # silently the day that changes, and a depth map wrong by a constant looks
+    # exactly like a map of taller vines.
+    #
+    # So the factor is recovered from the data: every texel's true world X and
+    # Y are known in closed form, because the unwrap is (x / width, z / depth).
+    # Fitting the ratio on both axes independently and requiring them to agree
+    # turns an unexplained constant into a checked one — if the bake ever comes
+    # back correctly scaled this reads 1.0 and nothing else has to change.
+    solid = (gx > 5.0) & (gy > 5.0) & (px[..., 0] > 1.0) & (px[..., 1] > 1.0)
+    assert solid.sum() > 64, "position bake produced almost nothing to fit"
+    kx = float(np.median(px[..., 0][solid] / gx[solid]))
+    ky = float(np.median(px[..., 1][solid] / gy[solid]))
+    assert abs(kx - ky) < 0.02 * max(kx, ky), (
+        "the position bake's X and Y scales disagree (%.4f vs %.4f) — it is "
+        "not a uniform scale and this correction does not apply" % (kx, ky))
+    k = 0.5 * (kx + ky)
+    px = px / k
+
+    # THE SURFACE IS SAMPLED AT THE BAKED POSITION, not at the texel's nominal
+    # one. A cage ray leaves along the LOW-POLY's normal, so on steep ground it
+    # lands a metre or two downhill of the texel it belongs to; measuring the
+    # height against where the texel nominally is would read that lateral slide
+    # as relief and put a phantom bank on every slope. Against where the ray
+    # actually landed, the slide cancels exactly.
+    bx = np.clip(px[..., 0], 0.0, cx - 1.001)
+    by = np.clip(px[..., 1], 0.0, cz - 1.001)
+    x0 = bx.astype(np.int32)
+    y0 = by.astype(np.int32)
+    fx = bx - x0
+    fy = by - y0
+    surface = ((hf[y0, x0] * (1 - fx) + hf[y0, x0 + 1] * fx) * (1 - fy)
+               + (hf[y0 + 1, x0] * (1 - fx) + hf[y0 + 1, x0 + 1] * fx) * fy) * hs
+
+    # A ray that hit nothing comes back at the origin. Alpha cannot say so —
+    # the image is opaque, so it is 1 even where nothing was hit.
+    hit = (px[..., 0] > 0.01) | (px[..., 1] > 0.01)
+    inside = float(np.mean((px[..., 0] <= cx) & (px[..., 1] <= cz)))
+    assert inside > 0.95, (
+        "only %.0f%% of corrected positions land inside the map — the scale "
+        "fit is wrong" % (100.0 * inside))
+    print("PY: position bake scale %.4f (x %.4f, y %.4f); %.0f%% of corrected "
+          "positions land inside the map" % (k, kx, ky, 100.0 * inside))
+    above = np.where(hit, px[..., 2] - surface, 0.0)
+    clipped = float(np.mean(above > DEPTH_RANGE_M))
+    depth = np.clip(above / DEPTH_RANGE_M, 0.0, 1.0)
+    out = np.stack([depth] * 3 + [np.ones_like(depth)], -1)
+    dimg = bpy.data.images.new("bake_depth", res_x, res_y, alpha=False)
+    dimg.pixels = out.reshape(-1).tolist()
+    dimg.filepath_raw = OUT_D
+    dimg.file_format = 'PNG'
+    dimg.save()
+    lit = above[hit]
+    print("PY: depth %.0f%% of texels hit; height above ground median %.3f m, "
+          "95th %.3f m, 99.9th %.3f m; %.2f%% clips the %.2f m range"
+          % (100.0 * hit.mean(),
+             float(np.median(lit)) if lit.size else 0.0,
+             float(np.percentile(lit, 95)) if lit.size else 0.0,
+             float(np.percentile(lit, 99.9)) if lit.size else 0.0,
+             100.0 * clipped, DEPTH_RANGE_M))
+    assert clipped < 0.02, (
+        "%.1f%% of the depth map clips — DEPTH_RANGE_M is too small for what "
+        "the scene actually grows" % (100.0 * clipped))
+    # A depth map that is all zero is a bake that silently did nothing, and it
+    # looks exactly like a map of perfectly flat ground.
+    assert lit.size and float(np.percentile(lit, 99)) > 0.05, \
+        "depth bake produced no relief — the POSITION pass found nothing"
+    print("PY: wrote %s" % OUT_D)
+
+
 def bake(low, res_x, res_y):
     sc = bpy.context.scene
     # A NORMAL bake is geometric, not a light integration, so samples buy
@@ -977,6 +1098,7 @@ def bake(low, res_x, res_y):
         print("PY: wrote %s" % path)
 
     _bake('NORMAL', OUT_N)
+    _bake_depth(low, res_x, res_y, node, mat, sources)
 
     def _colour_only():
         sc.render.bake.use_pass_direct = False
