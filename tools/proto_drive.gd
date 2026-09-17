@@ -159,8 +159,59 @@ func _process(_delta: float) -> bool:
 		"%.0f mass lying on the ground" % scrapped)
 
 	# --- pacing: quiet until the player commits ------------------------------
-	_ok("no attack while only scavenging", not scene.waves.is_active() and scene.aliens.is_empty(),
-		"%d hostiles after %.0fs of play" % [scene.aliens.size(), t + 5.5])
+	# ATTACKERS, not `aliens`. This check used to read aliens.is_empty(), which
+	# was the same thing right up until the Hive put two roaming creatures and
+	# five plant nests on the map at worldgen. Those are landmarks with hit
+	# points: they are meant to be standing there from the first frame, and
+	# counting them as an attack made a correctly quiet opening look like a
+	# failure.
+	var kinds: Array[StringName] = [&"roamer", &"nest"]
+	var standing: Array = scene.aliens.filter(
+		func(a): return a.get("kind", &"small") in kinds)
+	var attackers: int = scene.aliens.size() - standing.size()
+	_ok("no attack while only scavenging",
+		not scene.waves.is_active() and attackers == 0,
+		"%d attackers after %.0fs of play" % [attackers, t + 5.5])
+	_ok("but the hive is already on the map", standing.size() > 0,
+		"%d roaming, %d plant nests, %d buried patches"
+			% [scene.hive.roamers.size(), scene.hive.plants.size(),
+				scene.hive.patches.size()])
+
+	# --- the module WALKS: it does not appear where you tapped ---------------
+	# The bug this replaces: a tap set module_pos directly, so the module was
+	# re-placed rather than moved and read as respawning. The test for "it
+	# walks" is that it is measurably PART WAY there after part of the journey.
+	var from: Vector2 = scene.module_pos
+	var goal := from
+	for _t in 60:
+		var c := from + Vector2(cos(_t * 0.7), sin(_t * 0.7)) * 22.0
+		if scene.field.is_passable(c):
+			goal = c
+			break
+	scene.module_goal = goal
+	var trip := from.distance_to(goal)
+	scene.step(DT)
+	var after_one: float = from.distance_to(scene.module_pos)
+	_ok("one step moves it one step, not the whole way",
+		after_one > 0.0 and after_one < trip * 0.5,
+		"%.2f m of a %.0f m trip in one %.2f s step" % [after_one, trip, DT])
+	_ok("and one step is about what its speed promises",
+		absf(after_one - scene.tune.module_speed_mps * DT) < 0.05,
+		"%.2f m, speed x dt is %.2f"
+			% [after_one, scene.tune.module_speed_mps * DT])
+
+	var walk := DT
+	while walk < trip / scene.tune.module_speed_mps * 3.0 + 5.0 \
+			and scene.module_pos.distance_to(goal) > scene.tune.module_arrive_m:
+		scene.step(DT)
+		walk += DT
+	_ok("but it does arrive", scene.module_pos.distance_to(goal)
+			<= scene.tune.module_arrive_m,
+		"%.0f m in %.1f s, straight line would be %.1f"
+			% [trip, walk, trip / scene.tune.module_speed_mps])
+	# It must never end up somewhere it could not have walked to.
+	_ok("and it never stands on impassable ground",
+		scene.field.is_passable(scene.module_pos), "")
 
 	# --- the commitment: free a stuck piece ----------------------------------
 	var large := -1
@@ -221,6 +272,49 @@ func _process(_delta: float) -> bool:
 	_ok("scenery is culled to what has been explored",
 		scene._scenery_drawn > 0 and scene._scenery_drawn < scene._scenery_total,
 		"%d of %d drawn" % [scene._scenery_drawn, scene._scenery_total])
+
+	# --- the camera follows on a leash, it is not welded on ------------------
+	# Welding the rig to the module is what walking first did, and it made the
+	# pan gesture useless: the player dragged the view somewhere and the next
+	# simulation step dragged it straight back. A nudge smaller than the leash
+	# has to survive; a module that walks out of the leash has to be chased.
+	scene.module_goal = scene.module_pos
+	var nudge: float = scene.tune.camera_leash_m * 0.5
+	scene.rig.position += Vector3(nudge, 0.0, 0.0)
+	var panned_to: Vector3 = scene.rig.position
+	for i in 20:
+		scene._present(DT)
+	_ok("a pan inside the leash is left alone",
+		scene.rig.position.distance_to(panned_to) < 0.01,
+		"held %.1f m off centre" % nudge)
+
+	# Now put the module well outside it and let the rig chase.
+	var far: Vector2 = scene.module_pos
+	for _t in 400:
+		var c: Vector2 = scene.module_pos + Vector2(cos(_t * 0.37), sin(_t * 0.37)) \
+			* (scene.tune.camera_leash_m * 2.5)
+		if scene.field.is_passable(c):
+			far = c
+			break
+	scene.module_goal = far
+	var chase := 0.0
+	while chase < 30.0 and scene.module_pos.distance_to(far) \
+			> scene.tune.module_arrive_m:
+		scene.step(DT)
+		scene._present(DT)
+		chase += DT
+	var lag: float = scene.module_pos.distance_to(
+		Vector2(scene.rig.position.x, scene.rig.position.z))
+	# The bound is NOT the leash. The follow is a spring pulling at
+	# slack * camera_follow, so a module walking flat out settles where that
+	# pull equals its speed — leash + speed/follow, not leash. Asserting the
+	# leash alone failed by exactly that 2.6 m, which is the spring working,
+	# not the leash breaking.
+	var settle: float = scene.tune.module_speed_mps / scene.tune.camera_follow
+	_ok("but the module is never allowed off the leash",
+		lag <= scene.tune.camera_leash_m + settle + 0.5,
+		"%.1f m from the view centre: %.0f leash + %.1f the spring gives back"
+			% [lag, scene.tune.camera_leash_m, settle])
 
 	var before_units: int = scene.built.size()
 	scene._stress()

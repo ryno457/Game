@@ -113,6 +113,104 @@ Two mistakes the first render caught that no headless check could have:
    0.26 rib now, and the ocelli sit *on* the outer struts instead of floating
    inside where the ribs hid them.
 
+## The hive: four ways to wake it, four ways to stop it
+
+The map starts quiet. **Two** large creatures roam it in the open and
+everything else is underground. Waking it is always something the player did,
+and every source has an **off switch they can reach**:
+
+| # | What wakes it | What stops it | Who owns it |
+|---|---|---|---|
+| 1 | Digging a large debris piece | the piece comes free | `WaveDirector` |
+| 2 | Walking near an alien plant | the plant is destroyed | `Hive` |
+| 3 | Stepping on a burrow patch | one group, then spent | `Hive` |
+| 4 | Approaching a roaming creature | the creature is killed | `Hive` |
+
+The off switch is the whole design, not a nicety. A source that cannot be
+switched off is a timer wearing a costume: the player cannot answer it, only
+outlast it, and the brief is explicit that waves on a clock is what v1 got
+wrong. `tools/hive_check.gd` therefore spends most of its 22 assertions on the
+*stopping*, not on the firing — that a dead plant stays dead while the player
+stands on its corpse, that a spent patch gives nothing for another minute,
+that a killed creature's escorts stop coming.
+
+Placement rules worth keeping: the two roamers start at least two territories
+apart (67 m on the shipped seed, for a 26 m territory) so meeting one is a
+decision about which way to go rather than a patrol you are inside of; nests
+are chosen from the dressing's **own** `flora_brain` placements, so a nest is
+always a plant you can see and walk up to, never an invisible box that happens
+to sit near one; patches are spaced 18 m apart so one step cannot trip three;
+and nothing at all is placed within 22 m of the landing site.
+
+### The things that were nearly wrong
+
+**The trigger test counted nothing, and passed.** The debris check read
+
+```gdscript
+var spawns := 0
+w.spawn_due.connect(func(_n, _i): spawns += 1)
+```
+
+GDScript lambdas capture by **value**, so the lambda incremented a copy and the
+outer `spawns` stayed at zero forever. All three debris assertions were
+comparing 0 to 0 and two of them were phrased so that passed. A one-element
+`Array`, captured by reference, is the fix — which is the idiom
+`tools/proto_drive.gd` was already using for its mass counter.
+
+**And once it counted, the window was wrong.** The check asked for two groups
+in 30 s when `interval_s` is 45: the first group lands at 11 s and the second
+at 56, so the window could never have held two. Windows in that check are
+written in **intervals** now, not in seconds.
+
+That leaves a real balance observation, recorded rather than acted on because
+it is a feel question: a large piece takes `large_free_s` = 26 s to free and
+the wave interval is 45 s, so **a large dig delivers exactly one group**. The
+ramp in `WaveDirector.group_size()` never gets a second group to act on. The
+check now asserts only what must be true for the trigger to mean anything —
+that the first group arrives *before* the dig finishes, or the fight would
+begin after the prize was already won.
+
+**`_open_point()` sampled cells and fed them to a metres API.** `is_passable()`
+takes world metres; the sampler drew from `[4, cells_x - 4]`. Identical today
+because `cell_size_m` is 1.0, and it would have stayed invisible until the day
+that changed, when every roamer, nest and patch would have bunched into one
+corner of the map.
+
+**The Hive holds ids, not indices.** Dead aliens are removed from the scene's
+flat `aliens` array, which shifts every index after them. A roamer holding
+index 12 would silently start reading somebody else's hit points the first
+time anything in front of it died — and the symptom would be escorts that stop
+for no reason, which is indistinguishable from the feature working.
+
+## The module walks
+
+Tapping the ground used to set `module_pos` directly. The module was not
+moving, it was being **re-placed**, which is exactly why it read as respawning
+wherever you tapped. A tap now sets `module_goal` and `_walk_module` drives
+there at `module_speed_mps`, sliding along a blocked edge rather than stopping
+dead — the map is full of rims that clip a straight line by half a metre, and a
+body that halts on one reads as broken.
+
+The cost is the point: the module can now be caught out of position, which is
+what a body carrying your mass is for.
+
+### The camera was welded to it
+
+The first version of the walk set `rig.position` — and `rig` is the **camera**
+pivot, not the module. The module's mesh is placed separately in `_present`.
+Two things were wrong with that. `step()` is documented sim-only and a camera
+is presentation; and re-centring every frame the module moved meant the pan
+gesture was wiped out on the next simulation step, so the player could not look
+anywhere while walking.
+
+`_follow_module` does it in presentation instead, on a **leash**: inside
+`camera_leash_m` of the view centre a pan is left exactly where the player put
+it, and past it the rig eases along. The bound on how far the module can get is
+not the leash — the follow is a spring pulling at `slack * camera_follow`, so a
+module walking flat out settles where that pull equals its speed, at
+`leash + speed / follow`. Asserting the leash alone failed by exactly that
+2.6 m, which is the spring working, not the leash breaking.
+
 ## Not built
 
 - **Nothing is deformable but the ground.** Props do not react to a trench dug

@@ -16,6 +16,7 @@ const PALETTE := "res://data/biomes/biodome_01_palette.tres"
 const DRESSING := "res://data/biomes/biodome_01_dressing.tres"
 const MASS_CFG := "res://data/gameplay/mass.tres"
 const WAVES := "res://data/waves/biodome_01.tres"
+const HIVE := "res://data/gameplay/hive.tres"
 const OPTIONS_DIR := "res://data/gameplay/build_options/"
 const TERRAIN_SHADER := "res://shaders/terrain_lit.gdshader"
 const LIGHT_CFG := "res://data/gameplay/lighting.tres"
@@ -83,6 +84,8 @@ var specs: Dictionary = {}
 var tune: ProtoConfig
 
 var module_pos := Vector2.ZERO
+## Where the player last tapped. The module drives toward it; see _walk_module.
+var module_goal := Vector2.ZERO
 var drone_pos := Vector2.ZERO
 var drone_state := "idle"          # idle | outbound | working | returning
 var drone_target := -1
@@ -105,6 +108,13 @@ var merging: Array[Dictionary] = []
 var selected: Array[int] = []
 var _next_uid := 1
 var aliens: Array[Dictionary] = []
+## Ids are handed out once and never reused. The Hive holds ids rather than
+## indices because dead aliens are removed and every index after them shifts.
+var _next_alien_uid := 1
+var hive: Hive
+var hive_cfg: HiveConfig
+## Where the dressing put the alien plants, for the Hive to choose nests from.
+var _plant_spots: Array[Vector2] = []
 var wrecks: Array[Dictionary] = []
 
 var _mm_debris: MultiMeshInstance3D
@@ -193,11 +203,22 @@ func _ready() -> void:
 	waves.wave_began.connect(func(_s, _i): _say("THEY HAVE NOTICED — hold until it is free"))
 	waves.wave_ended.connect(func(_s): _say("THE PIECE IS FREE — the attack breaks off"))
 
+	# THE HIVE. Two creatures in the open and everything else underground until
+	# the player wakes it: see HiveConfig for the four ways that happens and
+	# the off switch each one has.
+	hive_cfg = load(HIVE)
+	hive = Hive.new(hive_cfg, field, 20260918)
+	hive.brood_due.connect(_brood)
+	hive.woke.connect(_hive_woke)
 	_load_options()
 	module_pos = map.spawn
+	module_goal = module_pos
 	drone_pos = module_pos + Vector2(3.0, 0.0)
 	_scatter_debris()
 	_dress(map.spawn)
+	# AFTER the dressing, because the plant nests are chosen from the plants it
+	# just placed, and after the debris so a patch does not land under a piece.
+	_populate_hive(map.spawn)
 	_make_instancers()
 	_build_menu()
 
@@ -301,6 +322,13 @@ func _dress(landing: Vector2) -> void:
 	if plan == null:
 		return
 	var placed := Dressing.place(field, plan, landing)
+	# The alien plants, kept for the Hive to pick nests from. A nest is always
+	# a plant the player can see and walk up to, never an invisible box that
+	# happens to sit near one.
+	_plant_spots.clear()
+	for t in placed.get(&"flora_brain", []):
+		var tr: Transform3D = t
+		_plant_spots.append(Vector2(tr.origin.x, tr.origin.z))
 	for entry in plan.entries:
 		var spots: Array = placed.get(entry.model, [])
 		if spots.is_empty():
@@ -625,12 +653,15 @@ func _process(delta: float) -> void:
 ## renderer. That is both the only way to test it and what CLAUDE.md means by a
 ## deterministic sim: presentation reads this state, it never writes it.
 func step(delta: float) -> void:
+	_walk_module(delta)
 	_drone(delta)
 	_assembly(delta)
 	_merges(delta)
 	_units(delta)
 	_hostiles(delta)
 	waves.tick(delta)
+	# The three sources the Hive owns. The debris dig is WaveDirector's, above.
+	hive.tick(delta, module_pos, _alien_alive, _alien_pos)
 
 	# Fog runs at 15 Hz, not 60. A pass touches a few thousand cells and
 	# nothing about a reveal needs per-frame fidelity — a source would have to
@@ -1159,15 +1190,140 @@ func _nearest_alien(from: Vector2, rng: float) -> int:
 	return best
 
 
-func _spawn_hostiles(count: int, intensity: float) -> void:
+## One alien, of whatever kind, at a place. Every source goes through here so
+## that ids, emerge timers and the record's shape are decided once.
+##
+## `emerge` is why an alien does not simply appear: for its first second and a
+## half it is climbing out and cannot move. An alien that arrives at full speed
+## reads as spawned; one that heaves itself out of the ground reads as having
+## been there all along, and it gives the player a beat to react.
+func _add_alien(at: Vector2, hp: float, kind: StringName,
+		emerge := -1.0) -> int:
 	var cfg := field.cfg
+	var uid := _next_alien_uid
+	_next_alien_uid += 1
+	aliens.append({
+		"uid": uid,
+		"pos": Vector2(clampf(at.x, 2.0, cfg.cells_x - 2.0),
+			clampf(at.y, 2.0, cfg.cells_z - 2.0)),
+		"hp": hp, "cd": 0.0, "kind": kind,
+		"emerge": hive_cfg.emerge_s if emerge < 0.0 else emerge,
+	})
+	return uid
+
+
+func _alien_alive(uid: int) -> bool:
+	for a in aliens:
+		if int(a.uid) == uid:
+			return float(a.hp) > 0.0
+	return false
+
+
+## Which roamer an id belongs to, or -1. Two of them, so a scan is the whole
+## implementation.
+func _roamer_slot(uid: int) -> int:
+	for i in hive.roamers.size():
+		if int(hive.roamers[i].alien) == uid:
+			return i
+	return -1
+
+
+func _alien_pos(uid: int) -> Vector2:
+	for a in aliens:
+		if int(a.uid) == uid:
+			return a.pos
+	return Vector2.ZERO
+
+
+## THE DEBRIS WAVE, and it comes up through the ground like everything else.
+##
+## It used to walk in from a ring 46-60 m out, which is the one source that did
+## not match the rest: the hive is underground, so an alarm should bring it up
+## near the thing that raised it. Burrow patches within reach of the module are
+## used first; the old ring is the fallback for a module standing somewhere
+## with nothing buried nearby.
+## Put the hive on the map, and give its roamers and nests bodies.
+##
+## A roamer and a nest are ALIENS, not a separate kind of thing: one flat array
+## with a `kind` on each record means targeting, splash, damage, the death
+## sweep and the renderer all already handle them. A parallel list would need
+## every one of those again and would drift from it within a week.
+func _populate_hive(landing: Vector2) -> void:
+	var made := hive.place(_plant_spots, landing, tune.module_reveal_m)
+	for i in (made.roamers as Array).size():
+		var at: Vector2 = made.roamers[i]
+		hive.bind_roamer(i, _add_alien(at, hive_cfg.roamer_hp, &"roamer", 0.0))
+	for i in (made.plants as Array).size():
+		var at: Vector2 = made.plants[i]
+		hive.bind_plant(i, _add_alien(at, hive_cfg.plant_hp, &"nest", 0.0))
+	print("hive: %d roaming, %d plant nests, %d buried patches"
+		% [hive.roamers.size(), hive.plants.size(), hive.patches.size()])
+
+
+## A source called something up. Every brood in the game comes through here.
+func _brood(at: Vector2, count: int, source: StringName) -> void:
+	var radius := hive_cfg.patch_brood_radius_m
+	if source == &"roamer":
+		radius = hive_cfg.roamer_brood_radius_m
+	elif source == &"plant":
+		radius = hive_cfg.plant_brood_radius_m
 	for i in count:
-		var a := _rng.randf() * TAU
-		var p := module_pos + Vector2(cos(a), sin(a)) * lerpf(
-			tune.spawn_ring_m.x, tune.spawn_ring_m.y, _rng.randf())
-		p.x = clampf(p.x, 2.0, cfg.cells_x - 2.0)
-		p.y = clampf(p.y, 2.0, cfg.cells_z - 2.0)
-		aliens.append({"pos": p, "hp": waves.hostile_hp(), "cd": 0.0})
+		_add_alien(hive.emerge_point(at, radius), waves.hostile_hp(), &"small")
+
+
+func _hive_woke(source: StringName, _at: Vector2) -> void:
+	if source == &"plant":
+		_say("SOMETHING IN THE PLANT — kill it or it keeps calling")
+	elif source == &"patch":
+		_say("THE GROUND OPENED — they were already here")
+
+
+func _spawn_hostiles(count: int, intensity: float) -> void:
+	var near: Array[Vector2] = []
+	for q in hive.patches:
+		var at: Vector2 = q.pos
+		if at.distance_to(module_pos) <= hive_cfg.burrow_reach_m:
+			near.append(at)
+	for i in count:
+		var p: Vector2
+		if near.is_empty():
+			var a := _rng.randf() * TAU
+			p = module_pos + Vector2(cos(a), sin(a)) * lerpf(
+				tune.spawn_ring_m.x, tune.spawn_ring_m.y, _rng.randf())
+		else:
+			p = hive.emerge_point(near[_rng.randi() % near.size()], 4.0)
+		_add_alien(p, waves.hostile_hp(), &"small")
+
+
+## Drive the module toward where the player tapped.
+##
+## Slides along a blocked edge rather than stopping dead, the same rule the
+## aliens use: a body that halts the moment its straight line is blocked reads
+## as broken, and the map is full of rims that clip a straight line by half a
+## metre.
+func _walk_module(delta: float) -> void:
+	var to := module_goal - module_pos
+	var d := to.length()
+	if d <= tune.module_arrive_m:
+		return
+	var step := to / d * minf(tune.module_speed_mps * delta, d)
+	var next := module_pos + step
+	if field.is_passable(next):
+		module_pos = next
+	else:
+		var side := Vector2(-to.y, to.x).normalized() * tune.module_speed_mps * delta
+		if field.is_passable(module_pos + side):
+			module_pos += side
+		elif field.is_passable(module_pos - side):
+			module_pos -= side
+		else:
+			module_goal = module_pos      # boxed in; stop asking
+	# NO CAMERA HERE. This used to set rig.position, which is the CAMERA pivot,
+	# not the module — the module's mesh is placed in _present. Two things were
+	# wrong with it: step() is documented sim-only and a camera is presentation,
+	# and re-centring every frame the module moved meant a pan was wiped out on
+	# the next step, so the player could not look anywhere while walking.
+	# _follow_module does it instead, on a leash.
 
 
 func _hostiles(delta: float) -> void:
@@ -1176,8 +1332,31 @@ func _hostiles(delta: float) -> void:
 		if al.hp <= 0.0:
 			aliens.remove_at(i)
 			continue
+		# CLIMBING OUT. Not movable, not yet a threat, and visibly arriving.
+		if float(al.get("emerge", 0.0)) > 0.0:
+			al.emerge = float(al.emerge) - delta
+			continue
 		al.cd -= delta
 		var apos: Vector2 = al.pos
+		var kind: StringName = al.get("kind", &"small")
+		# A NEST DOES NOT MOVE AND DOES NOT BITE. It is a plant with hit points
+		# standing where the dressing already put one; its whole threat is what
+		# it calls up, which is why killing it is the off switch.
+		if kind == &"nest":
+			continue
+		# A ROAMER HAS TERRITORY, not a target. It walks its own ground and
+		# the escorts are the threat; chasing the player across the map would
+		# make two large creatures into two pursuers, which is a different and
+		# much worse encounter.
+		if kind == &"roamer":
+			var goal := hive.roamer_goal(_roamer_slot(int(al.uid)), apos)
+			var away := goal - apos
+			var dist := away.length()
+			if dist > 0.5:
+				var nxt := apos + away / dist * tune.alien_speed_mps * 0.45 * delta
+				if field.is_passable(nxt):
+					al.pos = nxt
+			continue
 		var target := module_pos
 		var best := apos.distance_to(module_pos)
 		for u in built:
@@ -1230,6 +1409,7 @@ func _present(delta: float) -> void:
 	module.scale = Vector3.ONE * _module_scale
 	_set_module_form(_form_for_mass())
 	module.position = Vector3(module_pos.x, terrain.height_at(module_pos), module_pos.y)
+	_follow_module(delta)
 	drone.position = Vector3(drone_pos.x, terrain.height_at(drone_pos) + 5.5, drone_pos.y)
 	for r in drone.find_children("rotor_*", "Node3D", true, false):
 		(r as Node3D).rotate_y(delta * 26.0)
@@ -1369,6 +1549,21 @@ func _sync_aliens() -> void:
 		if not n.visible:
 			continue
 		n.position = Vector3(p.x, terrain.height_at(p), p.y)
+		# A roamer is the biggest living thing on the map and a nest is a
+		# plant; both are aliens in the array and both have to LOOK like what
+		# they are, or the player cannot tell which one killing stops a brood.
+		var kind: StringName = a.get("kind", &"small")
+		var sc := 1.0
+		if kind == &"roamer":
+			sc = tune.roamer_scale
+		elif kind == &"nest":
+			sc = tune.nest_scale
+		# Sunk while it climbs out, so emerging is something you can watch.
+		var em := float(a.get("emerge", 0.0))
+		if em > 0.0:
+			n.position.y -= sc * 0.9 * clampf(em / maxf(0.01, hive_cfg.emerge_s),
+				0.0, 1.0)
+		n.scale = Vector3.ONE * sc
 		var to := module_pos - p
 		if to.length_squared() > 0.01:
 			n.rotation.y = atan2(to.x, to.y)
@@ -1532,6 +1727,24 @@ func _frame_camera() -> void:
 	camera.fov = tune.camera_fov_deg
 
 
+## Keep the module in view without nailing the view to it.
+##
+## A camera hard-locked to the module cannot be panned: every sim step would
+## snap it back. A camera that never follows loses the module the moment it
+## walks. So: a leash. Inside camera_leash_m of the view centre the player's
+## pan is left exactly where they put it; past it the rig eases along, which
+## is also the signal that the module is about to leave the screen.
+func _follow_module(delta: float) -> void:
+	var off := module_pos - Vector2(rig.position.x, rig.position.z)
+	var slack := off.length() - tune.camera_leash_m
+	if slack <= 0.0:
+		return
+	var pull := off.normalized() * slack * clampf(
+		tune.camera_follow * delta, 0.0, 1.0)
+	rig.position += Vector3(pull.x, 0.0, pull.y)
+	_frame_camera()
+
+
 # --- input -------------------------------------------------------------------
 var _drag := false
 var _panned := false
@@ -1607,6 +1820,9 @@ func _tap(screen: Vector2) -> void:
 		_dig(p, 0.35)          # a tap is a short bite; drag digs continuously
 		return
 	if field.is_passable(p):
-		module_pos = p
-		rig.position = Vector3(p.x, 0.0, p.y)
-		_frame_camera()
+		# A GOAL, NOT A POSITION. Setting module_pos here is what made the
+		# module read as respawning wherever you tapped: it was not moving, it
+		# was being re-placed, and the camera cut with it. _walk_module drives
+		# it there now, which also means it can be caught out of position —
+		# which is the whole point of a body that carries your mass.
+		module_goal = p

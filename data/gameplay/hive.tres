@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="HiveConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/hive_config.gd" id="1_hive"]
+
+[resource]
+script = ExtResource("1_hive")
+display_name = "Biodome 01"
+roamer_count = 2
+roamer_hp = 260.0
+roamer_speed_mps = 2.1
+roamer_wander_m = 26.0
+roamer_notice_m = 30.0
+roamer_brood_interval_s = 9.0
+roamer_brood_count = 3
+roamer_brood_radius_m = 4.5
+plant_nest_count = 5
+plant_hp = 120.0
+plant_notice_m = 11.0
+plant_brood_interval_s = 7.0
+plant_brood_count = 2
+plant_brood_radius_m = 3.0
+patch_count = 14
+patch_notice_m = 6.0
+patch_count_min = 3
+patch_count_max = 4
+patch_brood_radius_m = 3.5
+patch_spacing_m = 18.0
+emerge_s = 1.5
+burrow_reach_m = 26.0

@@ -47,6 +47,14 @@ extends Resource
 ## is 58 vertical, 100.4 horizontal. Anything reproducing this camera has to
 ## set the VERTICAL angle or it will frame a different shot.
 @export var camera_fov_deg: float = 58.0
+## How far the module may drift from the centre of the view before the camera
+## starts moving to keep up, and how fast it closes that gap.
+##
+## The camera used to be welded to the module, which made the pan gesture
+## useless — it was undone on the next simulation step. Zero here restores the
+## weld; a value larger than the screen means the camera never follows at all.
+@export var camera_leash_m: float = 16.0
+@export var camera_follow: float = 2.5
 
 @export_group("Models")
 @export var module_model: String = "module_forms"
@@ -69,6 +77,21 @@ extends Resource
 @export var alien_attack_cd_s: float = 1.0
 @export var alien_radius_m: float = 0.55
 @export var spawn_ring_m: Vector2 = Vector2(46.0, 60.0)
+## How much bigger a roaming creature is than a swarmer, and how much slower.
+## Two of them walk the map in the open; see HiveConfig.
+@export var roamer_scale: float = 2.6
+## A nest is a plant, so it does not move and it does not bite. It is a thing
+## with hit points standing where the dressing already put a plant.
+@export var nest_scale: float = 1.7
+
+@export_group("The module")
+## THE MODULE WALKS. It used to teleport: a tap set module_pos and the camera
+## jumped, which is why it read as respawning rather than moving. Tapping now
+## sets a goal and it drives there, which also means it can be caught out of
+## position — the whole point of a body that carries your mass.
+@export var module_speed_mps: float = 6.5
+## How close counts as arrived.
+@export var module_arrive_m: float = 0.6
 
 @export_group("Convoy")
 ## Fallback station-keeping when a BuildOption does not override it.
