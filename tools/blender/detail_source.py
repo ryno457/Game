@@ -53,10 +53,20 @@ OUT_C = os.path.join(ROOT, "textures", "ground_detail_c.png")
 
 # Sampled from docs/reference/01-vtt-cavern-map.jpg. NOTHING here is light grey:
 # that value belongs to the machines, and a landscape that shares it hides them.
-GROUND_MID = "1f3d3c"
-VINE_BODY = "39605e"       # the pale structural tube: the dominant web
-LIVE_BODY = "367141"       # the glowing emerald roots: a small MINORITY
-GLOW = "68d9aa"
+#
+# MEASURED, AND CORRECTED. The previous pass drifted the ground toward moss and
+# olive to get "more colour variation", and overshot into a different hue
+# family: the baked colour map came out at median hue 147 degrees with 40% of
+# it in the greens, and the frame it produced measured 156 degrees against
+# reference 01's 188. Green was 57% of the render and 4% of the reference.
+#
+# The reference's ground variety is not green. It is 77% teal, 17% BLUE and 4%
+# green — the drift runs toward deep blue-teal, not toward moss. Moss belongs
+# to the clumps, which are small enough not to move the median.
+GROUND_MID = "1b3534"      # hue 178, down from 1f3d3c: the whole map, darker
+VINE_BODY = "31534f"       # the pale structural tube: the dominant web
+LIVE_BODY = "2e6640"       # the glowing emerald roots: a small MINORITY
+GLOW = "5cc79a"
 # The DRESSING, and this is where the colour variety lives.
 #
 # Reference 01 measures as almost monochrome — 69-80% of its saturated pixels
@@ -65,13 +75,17 @@ GLOW = "68d9aa"
 # GROUND STRUCTURE stays teal while the things GROWING on it carry the hue.
 # Spread these across the flats themselves and the map stops reading as one
 # place; keep them as clumps and they read as life.
-MOSS_CLUMP = "4a7a44"      # mossy green, ref 02's floor
-CORAL_PINK = "b05a7a"
-CORAL_RUST = "a8622e"      # the warm rust ref 02 has and ref 01 does not
-BRAIN_VIOLET = "6f4a9c"
+MOSS_CLUMP = "3f6a3c"      # mossy green, ref 02's floor
+CORAL_PINK = "98496a"
+CORAL_RUST = "8e5228"      # the warm rust ref 02 has and ref 01 does not
+BRAIN_VIOLET = "5e3e88"
 PORE = "ff9a3c"            # the amber ocelli all over ref 03
-GROUND_OLIVE = "3e5a3a"    # the drift toward ref 02
-GROUND_RUST = "6b4a30"     # rare, and only on high dry ground
+# THE GROUND'S OWN TWO DRIFTS, and both stay inside the reference's hue family.
+# The old pair were 3e5a3a (hue 105) and 4a7a44 (hue 114) at heavy weight,
+# which is what turned the map green.
+GROUND_DEEP = "153039"     # hue 197: the blue-teal that is 17% of reference 01
+GROUND_WEED = "27473c"     # hue 160: as far toward green as the ground goes
+GROUND_RUST = "553a26"     # rare, and only on high dry ground
 
 VINE_MAT = 4               # GroundMaterials.VINE
 CAGE_M = 1.4               # tallest vine ~0.9 m, plus margin
@@ -278,16 +292,19 @@ def build(rng, cx, cz, h, mat, hs, void):
     # takes it toward reference 02's mossy green over tens of metres, with rust
     # kept rare and only on high dry ground, which is where 02 puts it.
     def ground_paint(x, y, z):
-        moss = _vnoise(x * 0.022 + 3.1, y * 0.022 + 7.7)
-        olive = _vnoise(x * 0.045 + 19.3, y * 0.045 + 2.4)
+        weed = _vnoise(x * 0.022 + 3.1, y * 0.022 + 7.7)
+        deep = _vnoise(x * 0.045 + 19.3, y * 0.045 + 2.4)
         warm = _vnoise(x * 0.017 + 41.0, y * 0.017 + 13.6)
         base = list(hexcol(GROUND_MID))
         for i in range(3):
-            base[i] += (hexcol(MOSS_CLUMP)[i] - base[i]) * _fit(moss, 0.40, 0.80) * 0.80
-            base[i] += (hexcol(GROUND_OLIVE)[i] - base[i]) * _fit(olive, 0.52, 0.88) * 0.55
+            # The variation is a VALUE and hue drift inside teal, not a swing
+            # into another hue family. Weights down from 0.80 and 0.55: at
+            # those the drift stopped being variation and became the colour.
+            base[i] += (hexcol(GROUND_WEED)[i] - base[i]) * _fit(weed, 0.46, 0.86) * 0.45
+            base[i] += (hexcol(GROUND_DEEP)[i] - base[i]) * _fit(deep, 0.44, 0.84) * 0.60
         dry = _fit(z / max(1.0, hs), 0.62, 0.92)
         for i in range(3):
-            base[i] += (hexcol(GROUND_RUST)[i] - base[i]) * _fit(warm, 0.70, 0.93) * dry * 0.70
+            base[i] += (hexcol(GROUND_RUST)[i] - base[i]) * _fit(warm, 0.74, 0.95) * dry * 0.55
         return (base[0], base[1], base[2], 1.0)
 
     low = terrain(cx, cz, h, hs, void, "bake_target", [mats[0]])
@@ -367,6 +384,44 @@ def build(rng, cx, cz, h, mat, hs, void):
                 seed=rng.random() * 99.0)
         fine += 1
     print("PY: %d fine runners over the trunks" % fine)
+
+    # A THIRD TIER, AND IT GOES UNDERNEATH.
+    #
+    # The other two lie on top of each other: trunks, then runners threaded
+    # over them. That reads as a web draped on bare ground, because between
+    # the trunks there IS bare ground. In the reference there is no bare
+    # ground inside a patch — the trunks sit on a mat of much finer filament
+    # that fills every gap, and the trunks read as heavy precisely because
+    # something finer is underneath them for scale.
+    #
+    # vine_run lifts a vine by 0.04 + 0.12 * width, so at a third of the fine
+    # tier's radius these land about 5 cm off the ground with the trunks
+    # riding 30-40 cm above them. Nothing here has to be sunk deliberately;
+    # the tier is under the others because it is thinner than them.
+    #
+    # Seeded wider than the trunks (+/- 4 m against +/- 1.8) so the mat spreads
+    # into the gaps instead of bundling along the same lines.
+    mat_runs = 0
+    want_mat = int(VINE_TARGET * 1.5)
+    for i in seeds:
+        if mat_runs >= want_mat:
+            break
+        for _ in range(rng.randint(1, 3)):
+            if mat_runs >= want_mat:
+                break
+            x0, y0 = i % cx, i // cx
+            pts, radii, _ = vine_run(rng, h, cx, cz, hs,
+                                     x0 + rng.uniform(-4.0, 4.0),
+                                     y0 + rng.uniform(-4.0, 4.0),
+                                     rng.uniform(1.4, 3.6),
+                                     rng.uniform(0.035, 0.09))
+            # Four sides, not five. At this radius the tube is under a
+            # texel across in the bake and the extra ring buys nothing but
+            # triangles — and there are four thousand of these.
+            mb.tube(VINE, pts, radii, 4, ridge=rng.uniform(0.05, 0.14),
+                    seed=rng.random() * 99.0)
+            mat_runs += 1
+    print("PY: %d filaments in the mat under them" % mat_runs)
 
     # THE DRESSING: where the colour variety comes from.
     #

@@ -11,7 +11,7 @@
 # as a sheet of pale haze.
 #
 # This is the actual engine. Real terrain shader, real tone ramp, real AO and
-# curvature, real ink pass, real cloud deck, real HUD, real tonemapper, and the
+# curvature, real ink pass, real ravine wall, real HUD, real tonemapper, and the
 # Forward MOBILE renderer that actually ships rather than Forward+.
 #
 # It needs a rasteriser, and this machine has no GPU, so it uses:
@@ -27,6 +27,9 @@ RES="${3:-2400x1080}"
 # against a painting, which has no fog; leave it off for a shot of what the
 # player actually sees on frame one.
 REVEAL="${4:-}"
+# Pass "wide=2.5" as the 5th arg to pull the camera back by that factor, for a
+# shot of the map's surround rather than of the ground under the module.
+WIDE="${5:-}"
 GODOT="${GODOT:-$HOME/.cache/sentinel-godot/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -51,6 +54,6 @@ xvfb-run -a -s "-screen 0 ${RES}x24" "$GODOT" \
 	--rendering-method mobile \
 	--resolution "$RES" \
 	--script tools/screenshot.gd \
-	-- "$OUT" "$FRAMES" "$REVEAL" 2>&1 | grep -vE "ALSA|alsa|snd_|audio driver|init_output_device" || true
+	-- "$OUT" "$FRAMES" "$REVEAL" "$WIDE" 2>&1 | grep -vE "ALSA|alsa|snd_|audio driver|init_output_device" || true
 
 echo "  -> build/shots/$OUT"

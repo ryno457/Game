@@ -18,6 +18,7 @@ import bpy, sys, os, json, struct, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mathutils import Matrix, Vector
 from _bl import script_args, render, cycles_cpu
+import _ravine
 
 argv = script_args()
 DATA = argv[0] if argv else "build/biodome"
@@ -131,37 +132,13 @@ nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 mesh.materials.append(gmat)
 
-# --- the weather ------------------------------------------------------------
-# The peaks stand over a cloud deck, not over space. One plane with a noise
-# material: the game does the same thing in a fragment shader, and the point of
-# this render is the silhouette of the range against it.
-cl = meta.get("clouds")
-if cl:
-    bpy.ops.mesh.primitive_plane_add(size=cl["extent_m"] * 2.0)
-    deck = bpy.context.object
-    deck.name = "cloud_sea"
-    deck.location = (CX * 0.5, CZ * 0.5, cl["height_m"])
-    cmat = bpy.data.materials.new("cloud")
-    cmat.use_nodes = True
-    cnt = cmat.node_tree
-    cb = cnt.nodes["Principled BSDF"]
-    cb.inputs["Roughness"].default_value = 1.0
-    noise = cnt.nodes.new("ShaderNodeTexNoise")
-    noise.inputs["Scale"].default_value = cl["scale"] * 900.0
-    noise.inputs["Detail"].default_value = 6.0
-    noise.inputs["Roughness"].default_value = 0.62
-    ramp = cnt.nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = max(0.0, cl["coverage"] - cl["softness"])
-    ramp.color_ramp.elements[0].color = rgb(cl["deep"])
-    ramp.color_ramp.elements[1].position = min(1.0, cl["coverage"] + cl["softness"])
-    ramp.color_ramp.elements[1].color = rgb(cl["lit"])
-    cnt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
-    cnt.links.new(ramp.outputs["Color"], cb.inputs["Base Color"])
-    # A little emission so the deck reads as bright weather lit from above
-    # rather than as a grey floor in shadow.
-    cnt.links.new(ramp.outputs["Color"], cb.inputs["Emission Color"])
-    cb.inputs["Emission Strength"].default_value = 0.30
-    deck.data.materials.append(cmat)
+# --- the ravine -------------------------------------------------------------
+# The map sits on the floor of a mountain ravine, not over a cloud deck. See
+# tools/blender/_ravine.py: this is a coarse basin at the game's own heights,
+# not the noise-displaced ring ravine_wall.gd builds. The point of this render
+# is the silhouette of the range against its surround, and for that the values
+# and the heights are what matter.
+_ravine.build(meta["ravine"], CX, CZ)
 
 # --- the dressing -----------------------------------------------------------
 # Imported once and linked, so 230 props cost 230 object headers and six

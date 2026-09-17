@@ -7,16 +7,16 @@
 script = ExtResource("1_yywnl")
 id = &"MOSS"
 display_name = "Open flat"
-colour = Color(0.122, 0.239, 0.235, 1)
-colour_alt = Color(0.204, 0.353, 0.329, 1)
+colour = Color(0.1587348, 0.2289348, 0.2265348, 1)
+colour_alt = Color(0.25023592, 0.3396359, 0.3252359, 1)
 roughness = 0.88
 
 [sub_resource type="Resource" id="Resource_o5cs5"]
 script = ExtResource("1_yywnl")
 id = &"ROCK"
 display_name = "Bare rock"
-colour = Color(0.216, 0.263, 0.271, 1)
-colour_alt = Color(0.333, 0.408, 0.412, 1)
+colour = Color(0.23103416, 0.25923416, 0.26403415, 1)
+colour_alt = Color(0.35673752, 0.4017375, 0.40413752, 1)
 roughness = 0.94
 stroke_scale_mult = 1.9
 
@@ -24,8 +24,8 @@ stroke_scale_mult = 1.9
 script = ExtResource("1_yywnl")
 id = &"SEDIMENT"
 display_name = "Pale basin"
-colour = Color(0.247, 0.424, 0.427, 1)
-colour_alt = Color(0.29, 0.545, 0.537, 1)
+colour = Color(0.30283454, 0.40903455, 0.41083455, 1)
+colour_alt = Color(0.37008375, 0.52308375, 0.5182838, 1)
 roughness = 0.8
 vein_strength = 0.05
 stroke_scale_mult = 0.75
@@ -34,8 +34,8 @@ stroke_scale_mult = 0.75
 script = ExtResource("1_yywnl")
 id = &"LOAM"
 display_name = "Silt channel"
-colour = Color(0.118, 0.235, 0.275, 1)
-colour_alt = Color(0.173, 0.333, 0.38, 1)
+colour = Color(0.15600552, 0.22620551, 0.25020552, 1)
+colour_alt = Color(0.22475095, 0.32075095, 0.34895095, 1)
 roughness = 0.9
 vein_strength = 0.08
 stroke_scale_mult = 1.15
@@ -44,14 +44,14 @@ stroke_scale_mult = 1.15
 script = ExtResource("1_yywnl")
 id = &"VINE"
 display_name = "Root mat"
-colour = Color(0.224, 0.376, 0.369, 1)
-colour_alt = Color(0.325, 0.506, 0.486, 1)
+colour = Color(0.27167177, 0.36287174, 0.35867175, 1)
+colour_alt = Color(0.38143015, 0.49003014, 0.47803015, 1)
 vein_strength = 0.3
 stroke_scale_mult = 0.85
 
 [sub_resource type="Gradient" id="Gradient_wnwf4"]
 offsets = PackedFloat32Array(0, 0.14, 0.29, 0.43, 0.57, 0.71, 0.86, 1)
-colors = PackedColorArray(0.22, 0.35, 0.41, 1, 0.47, 0.61, 0.63, 1, 0.81, 0.81, 0.84, 1, 1, 1, 1, 1, 1.33, 1.23, 1.24, 1, 1.81, 1.53, 1.46, 1, 2.2, 1.86, 1.79, 1, 2.98, 2.33, 2.21, 1)
+colors = PackedColorArray(0.25627595, 0.34207594, 0.38167596, 1, 0.5079712, 0.60037124, 0.6135712, 1, 0.8107364, 0.8107364, 0.8305364, 1, 1, 1, 1, 1, 1.303474, 1.2374738, 1.2440739, 1, 1.7333211, 1.5485212, 1.5023211, 1, 2.1072583, 1.8828582, 1.8366582, 1, 2.8030388, 2.3740387, 2.294839, 1)
 
 [resource]
 script = ExtResource("2_4ecwt")
@@ -111,7 +111,7 @@ stroke_stretch = 1.0
 stroke_depth = 0.62
 paint_tone = 0.7
 canvas_grain = 0.0
-ink_colour = Color(0.02, 0.052, 0.058, 1)
+ink_colour = Color(0.038, 0.047, 0.052, 1)
 ink_strength = 0.55
 ink_silhouette = 0.02
 ink_crease = 0.006

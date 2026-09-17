@@ -4,9 +4,10 @@ extends SceneTree
 ##   godot --headless --path . --script tools/build_biodome.gd
 ##
 ## The reference is the top-down survey map in the brief: rounded plateaus
-## joined by narrow necks, glowing basins in the hollows, and cloud where the
-## ground runs out. This is a HIGH MOUNTAIN RANGE seen from above — the peaks
-## stand over a cloud deck, not over space.
+## joined by narrow necks, glowing basins in the hollows, and a chasm where the
+## ground runs out. The mass sits on the floor of a MOUNTAIN RAVINE: past the
+## chasm the walls climb well above the highest ground on the map. See
+## RavineConfig for why that surround is its own mesh and not more heightfield.
 ##
 ## That changes what a map IS. The default state of the world is now "no ground
 ## here": the base noise sits far below the palette's `void_below`, nothing is
@@ -19,7 +20,7 @@ extends SceneTree
 const MAP_OUT := "res://data/terrain/biodome_map_01.tres"
 const PALETTE_OUT := "res://data/biomes/biodome_01_palette.tres"
 const DRESSING_OUT := "res://data/biomes/biodome_01_dressing.tres"
-const CLOUDS_OUT := "res://data/biomes/biodome_01_clouds.tres"
+const RAVINE_OUT := "res://data/biomes/biodome_01_ravine.tres"
 const TERRAIN_CFG := "res://data/terrain/biodome_01.tres"
 ## Read, not duplicated. The bake's sun angles are derived from this.
 const LIGHTING := "res://data/gameplay/lighting.tres"
@@ -84,6 +85,12 @@ const STRAND_W := 1.6
 const OUTLINE_SUBDIV := 4
 ## Ground below this is not drawn at all.
 const VOID_BELOW := 0.16
+## How much of the tone ramp's own hue to give back. See _palette(): the ramp
+## tints the LIGHT and the engine then multiplies by albedo, so without this
+## the ground's teal is applied twice.
+const RAMP_NEUTRALISE := 0.34
+## The same correction applied to the ground albedos. See _pigment().
+const ALBEDO_NEUTRALISE := 0.40
 
 ## The two plateaus circled on the reference, and the rest of the lobe layout
 ## read off the same image. u, v, radius in metres, top height.
@@ -174,7 +181,7 @@ func _initialize() -> void:
 	var map := _map()
 	_save(map, MAP_OUT)
 	_save(_palette(), PALETTE_OUT)
-	_save(_clouds(), CLOUDS_OUT)
+	_save(_ravine(), RAVINE_OUT)
 	var plan := _dressing()
 	_save(plan, DRESSING_OUT)
 	_check(map, plan)
@@ -218,7 +225,7 @@ func _run(ops: Array[Dictionary], pts: Array, r: float, level: float,
 
 func _map() -> TerrainMap:
 	var m := TerrainMap.new()
-	m.display_name = "Biodome 01 — the cloud shelf"
+	m.display_name = "Biodome 01 — the ravine floor"
 	m.terrain = load(TERRAIN_CFG)
 	m.noise_seed = 20260916
 	m.base_level = 0.055
@@ -306,13 +313,37 @@ func _map() -> TerrainMap:
 ## of pale sage and teal, the rims are a dark root mat, bare rock shows on the
 ## steep parts and the ridge tops, and there is pale sediment at every
 ## waterline. Each is TWO values a painter would have mixed, not one flat fill.
+## AND THEN PULLED OFF SOME OF THEIR CHROMA. Same correction as the tone ramp's,
+## and for the same reason, stated from the other side.
+##
+## Every colour below was sampled off a FINISHED PAINTING — a pixel that has
+## already had the light's colour applied to it. Used as an ALBEDO it gets that
+## hue a second time when the engine multiplies by the tone ramp, and a third
+## when the baked detail colour (sampled the same way) mixes in, and again at
+## every ink stage, each of which cuts red hardest.
+##
+## Measured on a frame: the darkest fifth of the crop sat at saturation 0.83
+## against reference 01's 0.65, with red collapsed to 0.05 where green and blue
+## sat at 0.27. Every luma band was over by 0.08-0.18 — a constant compounding,
+## not one wrong colour.
+##
+## Mixing toward each colour's own luma leaves the VALUE structure — which is
+## what was actually measured off the reference, and what decides whether the
+## frame reads — exactly where it was.
+static func _pigment(c: Color) -> Color:
+	var grey := c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722
+	return Color(lerpf(c.r, grey, ALBEDO_NEUTRALISE),
+		lerpf(c.g, grey, ALBEDO_NEUTRALISE),
+		lerpf(c.b, grey, ALBEDO_NEUTRALISE), c.a)
+
+
 func _material(id: int, mname: String, col: Color, alt: Color,
 		rough: float, vein: float, stroke: float) -> GroundMaterial:
 	var m := GroundMaterial.new()
 	m.id = StringName(GroundMaterials.NAMES[id].to_upper())
 	m.display_name = mname
-	m.colour = col
-	m.colour_alt = alt
+	m.colour = _pigment(col)
+	m.colour_alt = _pigment(alt)
 	m.roughness = rough
 	m.vein_strength = vein
 	m.stroke_scale_mult = stroke
@@ -474,7 +505,7 @@ func _palette() -> BiomePalette:
 	                       # 21x21 sheet — a whole texture tap to deliver a constant
 	# Ink. The reference has linework around every shape; this is depth-only
 	# because the normal buffer does not exist on the Mobile renderer.
-	p.ink_colour = Color(0.020, 0.052, 0.058)
+	p.ink_colour = Color(0.038, 0.047, 0.052)
 	# Turned down from 0.80 / 0.010 / 0.0026: at those values the cliffs inked
 	# as a solid dark wash rather than a line, because a rim's second
 	# difference is enormous compared with a plateau's. Ink is a line.
@@ -524,7 +555,7 @@ func _palette() -> BiomePalette:
 	p.baked_ink = 0.55
 	p.baked_ink_power = 2.0
 	p.threshold_line_strength = 0.85
-	# Below this nothing is drawn and the cloud deck shows through. See
+	# Below this nothing is drawn and the ravine floor shows through. See
 	# VOID_BELOW for why it sits under impassable_below rather than on it.
 	p.void_below = VOID_BELOW
 	p.channel_below = CHANNEL_BELOW
@@ -595,6 +626,27 @@ func _painted_light(p: BiomePalette) -> void:
 		Color(2.98, 2.33, 2.21),   # 6ba5a8, the brightest the reference goes
 	])
 	g.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_LINEAR
+	# AND THEN PULLED OFF ITS OWN CHROMA, by a third.
+	#
+	# The stops above are the reference's colours divided by its commonest one,
+	# so each one carries that colour's hue as well as its value. But this ramp
+	# is a multiplier on LIGHT_COLOR, and the engine multiplies the result by
+	# ALBEDO afterwards — so a teal light lands on a teal ground and the frame
+	# gets the hue TWICE. Measured: the render sits at saturation 0.61 against
+	# reference 01's 0.52 and 04's 0.42, evenly over shadows and highlights,
+	# which is the signature of a constant compounding rather than of any one
+	# colour being wrong.
+	#
+	# Mixing each stop toward its own grey removes the second helping and
+	# leaves the VALUE ramp — the part that was actually measured, and the part
+	# that decides whether the frame reads as a painting — untouched.
+	var cols := PackedColorArray()
+	for c in g.colors:
+		var grey := c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722
+		cols.append(Color(lerpf(c.r, grey, RAMP_NEUTRALISE),
+			lerpf(c.g, grey, RAMP_NEUTRALISE),
+			lerpf(c.b, grey, RAMP_NEUTRALISE)))
+	g.colors = cols
 	p.tone_ramp = g
 	p.tone_ramp_strength = 1.0
 	p.terminator_k = 1.45
@@ -690,26 +742,48 @@ func _view() -> Dictionary:
 	}
 
 
-## The weather under the map. Height is in world metres: the terrain's lowest
-## DRAWN ground is void_below * height_scale_m, so the deck has to sit below
-## that or the peaks paddle in it instead of standing over it.
-func _clouds() -> CloudConfig:
-	var c := CloudConfig.new()
+## The mountain ravine the map sits in, replacing the cloud deck.
+##
+## Heights are world metres from y = 0, and the two that matter are tied to the
+## terrain rather than typed: the floor has to sit below the lowest DRAWN
+## ground (void_below * height_scale_m) or the map paddles in it, and the crest
+## has to clear the highest ground (height_scale_m) or the walls stand below
+## what they enclose. Both are read off the terrain config here, once.
+func _ravine() -> RavineConfig:
+	var c := RavineConfig.new()
 	var cfg: TerrainConfig = load(TERRAIN_CFG)
 	c.display_name = "Biodome 01"
-	c.height_m = VOID_BELOW * cfg.height_scale_m - 16.0
-	c.extent_m = 520.0
-	c.lit_colour = Color(0.80, 0.90, 0.99)
-	c.shadow_colour = Color(0.16, 0.26, 0.40)
-	c.deep_colour = Color(0.035, 0.070, 0.125)
-	c.horizon_colour = Color(0.26, 0.50, 0.60)
-	c.cloud_scale = 0.013
-	c.coverage = 0.46
-	c.softness = 0.28
-	c.scroll_mps = 0.55
-	c.relief = 0.60
-	c.fade_start_m = 190.0
-	c.fade_end_m = 430.0
+	# 12 m below the lowest drawn ground. Deep enough that the chasm reads as a
+	# drop at the overhead camera rather than as a dark stripe painted on.
+	c.floor_y_m = VOID_BELOW * cfg.height_scale_m - 12.0
+	c.floor_width_m = 13.0
+	c.floor_relief_m = 2.2
+	# Half again the map's own height. The reference's walls are the tallest
+	# thing in frame by a long way; at the map's own height they read as a kerb.
+	c.crest_y_m = cfg.height_scale_m * 1.65
+	c.rise_run_m = 34.0
+	c.rise_curve = 1.85
+	c.ridge_relief_m = 16.0
+	c.ridge_scale = 0.018
+	c.gully_relief_m = 6.5
+	c.gully_scale = 0.075
+	c.edge_wander_m = 7.0
+	c.round_over_m = 46.0
+	c.extent_m = 420.0
+	c.wall_cell_m = 3.4
+	c.floor_cell_m = 7.0
+	# MEASURED OFF THE FRAME, not chosen. At half these values the wall
+	# rendered at luma 0.04 — (2, 9, 18) out of 255 — which is the same value
+	# as the night sky behind it, so the range had no silhouette at all and the
+	# ravine could only be found by knowing it was there. Reference 04 is a
+	# moonlit ravine: its walls are DARK, but they are darker than something.
+	c.deep_colour = Color(0.050, 0.075, 0.082)
+	c.rock_colour = Color(0.170, 0.225, 0.232)
+	c.crest_colour = Color(0.330, 0.400, 0.420)
+	c.moonlit_colour = Color(0.500, 0.560, 0.620)
+	# Measured, not chosen. See RavineConfig.wall_albedo.
+	c.wall_albedo = Color(1.0, 1.0, 1.0)
+	c.seed = 20260917
 	return c
 
 
@@ -746,7 +820,7 @@ func _dressing() -> BiomeDressing:
 	d.seed = 20260915
 	d.landing_clear_m = 11.0
 	# Every band now starts ABOVE the world edge (0.16). Anything below that is
-	# not ground, it is cloud, and a prop placed there would hang in the air.
+	# not ground, it is the chasm, and a prop placed there would hang in mid-air.
 	#
 	# The rim band is the important one. In the reference the roots and vines
 	# ARE the island edges — they ring each plateau where it falls away — so
@@ -766,8 +840,28 @@ func _dressing() -> BiomeDressing:
 		# Landmarks, on the flat tops where there is room for them. The two
 		# share the same band and the same land, so their budgets have to be
 		# read together: about 1600 legal square metres between them.
-		_entry("flora_arch", 6, 0.46, 0.78, 0.62, 10.0, 1.30, 2.40, 0.10, 5, 22.0),
-		_entry("flora_brain", 4, 0.48, 0.86, 0.68, 10.0, 1.10, 1.95, 0.15, 4, 20.0),
+		# THE RUINS, and they are first because they are the biggest thing
+		# that stands on this map. Reference 02's verticality is angular and
+		# BUILT — slabs, broken walls, leaning monoliths along the ridges —
+		# and every other prop here grew. A landscape of nothing but grown
+		# forms has no hard vertical edge anywhere in it, which is what "the
+		# landscape is flat" reads as from a 70 degree camera.
+		#
+		# Clustered hard (4 groups, 26 m) rather than strewn: a ruin is the
+		# remains of one thing, so they come in fields, and a field of them is
+		# what makes a skyline instead of six lumps.
+		# BANDED OFF THE RIM, at 0.50 and up — the plate level, which is the
+		# lowest ground that is not a cliff shoulder. The rim band belongs
+		# to the roots: in the reference the vines ARE the island edges, and
+		# "the rims are rooted" checks exactly that. Placement is one shared
+		# `taken` list and these three run first, so anything they are allowed
+		# to stand on, they take from the tendrils and coral — banded from 0.44
+		# they cost ten rim props and the check caught it. Banded from 0.56
+		# instead there was only 2737 legal square metres for all three and
+		# they could not place what they promised; 0.50 is where both hold.
+		_entry("alien_ruin", 14, 0.50, 0.86, 0.72, 7.0, 0.80, 1.55, 0.18, 4, 26.0),
+		_entry("flora_arch", 11, 0.50, 0.78, 0.62, 9.0, 1.10, 2.10, 0.10, 5, 22.0),
+		_entry("flora_brain", 6, 0.50, 0.86, 0.68, 9.0, 1.10, 1.95, 0.15, 4, 20.0),
 		# Rock on the high ground. Band starts at 0.52, not 0.60: the flat-top
 		# op takes six hundredths off every island centre, so almost nothing
 		# outside the four ridge stamps was ever above 0.60.
@@ -1014,7 +1108,7 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 	_ok("the scatter finds room for what it promised", short.is_empty(),
 		"%d of %d props placed" % [got, plan.total_props()])
 
-	# Nothing hanging in the cloud, nothing on top of the player.
+	# Nothing hanging over the chasm, nothing on top of the player.
 	var on_landing := 0
 	var floating := 0
 	var rimmed := 0
@@ -1030,7 +1124,7 @@ func _check(map: TerrainMap, plan: BiomeDressing) -> void:
 				rimmed += 1
 	_ok("nothing grows on the landing site", on_landing == 0,
 		"%.0f m clear" % plan.landing_clear_m)
-	_ok("nothing is left hanging in the cloud", floating == 0,
+	_ok("nothing is left hanging over the chasm", floating == 0,
 		"%d below the world edge" % floating)
 	# A bare rim means the banding is wrong even when every other check passes,
 	# so this floor stays — but it moved from 40 to 25 when the roots stopped
@@ -1131,7 +1225,7 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		props.append({"model": model, "at": rows})
 
 	var pal := _palette()
-	var cloud := _clouds()
+	var rav := _ravine()
 	var meta := FileAccess.open(OUT + "/biodome_01.json", FileAccess.WRITE)
 	meta.store_string(JSON.stringify({
 		"cells_x": cfg.cells_x, "cells_z": cfg.cells_z,
@@ -1140,14 +1234,15 @@ func _export_preview(map: TerrainMap, plan: BiomeDressing) -> void:
 		"landing": [_landing().x, _landing().y],
 		"void_below": VOID_BELOW,
 		"grid_spacing_m": pal.grid_spacing_m,
-		"clouds": {
-			"height_m": cloud.height_m, "extent_m": cloud.extent_m,
-			"lit": cloud.lit_colour.to_html(false),
-			"shadow": cloud.shadow_colour.to_html(false),
-			"deep": cloud.deep_colour.to_html(false),
-			"horizon": cloud.horizon_colour.to_html(false),
-			"scale": cloud.cloud_scale, "coverage": cloud.coverage,
-			"softness": cloud.softness,
+		"ravine": {
+			"floor_y_m": rav.floor_y_m, "floor_width_m": rav.floor_width_m,
+			"crest_y_m": rav.crest_y_m, "rise_run_m": rav.rise_run_m,
+			"rise_curve": rav.rise_curve, "extent_m": rav.extent_m,
+			"ridge_relief_m": rav.ridge_relief_m,
+			"deep": rav.deep_colour.to_html(false),
+			"rock": rav.rock_colour.to_html(false),
+			"crest": rav.crest_colour.to_html(false),
+			"moonlit": rav.moonlit_colour.to_html(false),
 		},
 		# Exported so tools/paint_preview.py reads the SAME numbers the shader
 		# gets. It used to keep its own copy and they drifted within an hour.

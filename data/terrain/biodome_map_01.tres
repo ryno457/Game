@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("1_ilbly")
-display_name = "Biodome 01 — the cloud shelf"
+display_name = "Biodome 01 — the ravine floor"
 terrain = ExtResource("2_hhai3")
 noise_seed = 20260916
 base_level = 0.055

@@ -28,7 +28,7 @@ const MERGE_RULES := "res://data/gameplay/merge.tres"
 ## budget and Medium holds it, the cost was 4x MSAA; if Medium misses too, it
 ## is the terrain shader or the prop count. Two presets would only say "the
 ## expensive one is expensive".
-const CLOUDS := "res://data/biomes/biodome_01_clouds.tres"
+const RAVINE := "res://data/biomes/biodome_01_ravine.tres"
 const QUALITY := ["res://data/gameplay/quality_high.tres",
 	"res://data/gameplay/quality_medium.tres",
 	"res://data/gameplay/quality_low.tres"]
@@ -159,9 +159,14 @@ func _ready() -> void:
 	TerrainBuilder.classify_materials(field, palette.void_below, palette.channel_below,
 		palette.channel_web_threshold, 2.5, 3.0, palette.channel_strand_width_m)
 	terrain.apply_palette(palette)
-	# The weather under the map. Added before anything else so it is the first
-	# opaque thing behind the terrain in the depth sort.
-	add_child(CloudSea.build(load(CLOUDS)))
+	# The ravine the map sits in. Added before anything else so it is the first
+	# opaque thing behind the terrain in the depth sort. It is what shows
+	# through every fragment the terrain shader discards, so without it the
+	# notches and the surround render as clear colour.
+	add_child(RavineWall.build(load(RAVINE),
+		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m),
+		TerrainView.ramp_texture(palette),
+		LightingRig.sun_ground_dir(load(LIGHT_CFG))))
 	ink = InkPass.build()
 	ink.apply(palette)
 	add_child(ink)

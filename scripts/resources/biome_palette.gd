@@ -34,7 +34,7 @@ extends Resource
 
 @export_group("The edge of the world")
 ## Ground below this is NOT DRAWN — the map becomes peaks of a high range
-## standing above a cloud deck rather than a continuous valley. Zero keeps the
+## standing over a chasm rather than a continuous valley. Zero keeps the
 ## ground continuous, which is what a normal map wants.
 ##
 ## Distinct from `impassable_below`, which is where units may not walk. This

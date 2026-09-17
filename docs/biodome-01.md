@@ -264,7 +264,7 @@ build runs.** That is what the three presets are for.
 
 ---
 
-# Rebuild: peaks above a cloud deck
+# Rebuild: the floor of a ravine
 
 > Replaces the valley described above. Same file, same tools, different map.
 
@@ -275,7 +275,7 @@ came out of that, and they were yours, not mine:
 1. **Landscape**, matching the UI mockup.
 2. **Mass stays the only resource.** The mockup's SHIP PARTS and ESSENCE were
    filler; the conservation rule is untouched.
-3. **Islands rather than a continuous valley** — and *clouds* underneath, not
+3. **Islands rather than a continuous valley** — and a *chasm* underneath, not
    space. These are peaks of a very high range, not a floating rock.
 
 ## What changed in the map
@@ -304,18 +304,58 @@ map unreachable with nothing else noticing. So the check builds a real
 site — is reachable. It also measures each neck's walkable width, because a
 land bridge wide enough to walk around is not a chokepoint.
 
-## The cloud deck
+## The ravine, which replaced the cloud deck
 
-One plane under the map, one fragment program: four octaves of scrolling noise
-cut into billows by a coverage threshold, with a fake sun term from the noise
-gradient. Two layers shearing against each other at different speeds — a single
-scrolling field reads as a printed sheet being dragged sideways.
+The map used to be peaks standing over weather: one plane under it, one
+fragment program, four octaves of scrolling noise cut into billows. The brief
+changed to a moonlit mountain ravine, and a scrolling cloud plane cannot be
+tuned into that — it is a different object. `RavineWall` builds it in two
+pieces:
 
-Four octaves is more than anything else in this project pays for. It earns it:
-the deck is most of the screen in the gaps between peaks.
+- **The floor**, a coarse plane under the whole map. The terrain shader
+  discards every fragment below `void_below`, so the map is full of holes; this
+  is what shows through them, and it is the bottom of the cleft.
+- **The ring**, a band outside the map frame that stays at floor height for
+  `floor_width_m` and then climbs to the crest. The flat part is the chasm, the
+  climb is the wall.
 
-It never casts shadows (a plane that size would fill the atlas by itself) and
-never receives GI.
+**Why it is not more heightfield.** The traced outline reaches to within three
+metres of the map frame on the west side, so there is no room outside it for a
+wall; and the terrain grid is what the flow field, the material classifier and
+the whole-map detail bake all run over, so widening it to make room costs 1.7x
+on every one of them. Nothing walks on the ravine, nothing is placed on it and
+nothing paths through it, so it is scenery with its own coarse mesh — about 9k
+triangles in two draw calls — and the heightfield is left exactly as it was.
+
+**The rectangle is the point, and so is losing it.** Every row is the map's
+rect inflated by `s` in both axes, which is what keeps the chasm a constant
+width on all four sides; a circular ring around a 150 x 112 map leaves a 20 m
+gap at the middle of the long sides. But carried all the way out that also
+leaves four right angles on the skyline, so past the wall foot the ring blends
+toward a circle and the foot itself wanders by a low-frequency band. Without
+those two the surround reads as a picture frame, which is the first thing the
+eye finds at the overhead camera.
+
+It never casts shadows (a caster this size would fill the atlas by itself) and
+never receives GI. It is lit by `painted_prop.gdshader` — the same `light()`
+the ground and the machines use, because two lighting models in one frame is a
+bug this project has already paid for once.
+
+**Three things about it cost a day between them**, all of which look identical
+from outside — geometry that is simply not drawn:
+
+1. `painted_prop.gdshader` writes `NORMAL_MAP` inside a branch this material
+   never takes, but `NORMAL_MAP_USED` is decided at compile time, so the vertex
+   stage reads `TANGENT` on every mesh the shader touches. A SurfaceTool mesh
+   has none until `generate_tangents()` is called, and one without renders
+   black with no error anywhere.
+2. `COLOR_0` is eight bits per channel. Vertex colours converted to linear put
+   the cleft floor at 0.002, which quantises to zero.
+3. The winding decides both the culling and the normals `generate_normals()`
+   produces, so getting it wrong is invisible rather than inside-out.
+
+What finally separated them was setting `emission` and watching the surround
+come back magenta while the lit path stayed dark.
 
 ## Scatter: order is priority
 

@@ -161,8 +161,8 @@ uniform float vein_sharpness = 9.0;
 uniform float threshold_line_strength = 0.85;
 
 // THE EDGE OF THE WORLD. Ground below this height is not drawn at all, so the
-// map reads as peaks of a very high range standing above a cloud sea rather
-// than as a continuous valley floor. Everything below it is cloud.
+// map reads as ground that runs out over a chasm rather than as a continuous
+// valley floor. Everything below it is the ravine, drawn by RavineWall.
 //
 // Distinct from `impassable_below`, which is a GAMEPLAY threshold (units may
 // not walk there). This one is purely "is there ground here", and it sits
@@ -604,12 +604,20 @@ void fragment() {
 	if (baked_colour > 0.0) {
 		base = mix(base, v_baked, baked_colour * detail_fade);
 	}
-	// The line. A dark, SATURATED version of the surface's own colour, not
-	// black — a black outline reads as clip art, and the reference's ink
-	// holds real chroma (its measured outline is #17383A, not #000).
+	// The line. A dark version of the surface's OWN colour, not black — a
+	// black outline reads as clip art, and the reference's ink holds real
+	// chroma (its measured outline is #17383A, not #000).
+	//
+	// The multiplier is near-achromatic on purpose. It used to be
+	// (0.30, 0.42, 0.46), which re-applies the ink's teal on top of a base
+	// that is already teal — and since it cuts red hardest, the ink was the
+	// largest single contributor to red collapsing to 0.05 in the dark band
+	// while green and blue held 0.27. The chroma the ink needs is already in
+	// the base it multiplies; all this has to supply is the darkness. Same
+	// luma as before, a quarter of the chroma.
 	if (baked_ink > 0.0) {
 		float line = pow(v_flank, baked_ink_power) * baked_ink;
-		vec3 dark = base * vec3(0.30, 0.42, 0.46);
+		vec3 dark = base * vec3(0.38, 0.41, 0.43);
 		base = mix(base, dark, line);
 	}
 

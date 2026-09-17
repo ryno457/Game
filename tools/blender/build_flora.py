@@ -23,7 +23,7 @@ What this is NOT: the reference painting has millions of implied polygons and
 volumetric god-rays. This is the mobile reading of it — silhouette, palette and
 glow, at a few hundred triangles a piece.
 """
-import bpy, sys, os, math, struct, json
+import bpy, sys, os, math, random, struct, json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mathutils import Matrix, Vector
@@ -58,14 +58,25 @@ def hexcol(h):
 # with no readable form at all — the "black plants" complaint, and it was an
 # albedo problem rather than a lighting one. Nothing here is light grey, which
 # belongs to the machines.
+# MEASURED AGAINST REFERENCE 01, not chosen. Every value here was too light
+# and too saturated, and the frame said so: median saturation 0.61 against the
+# reference's 0.52, with the props the loudest thing in it — a pale olive arch
+# at luma 0.61 standing on ground at 0.22, and mossy green tendrils at hue 114
+# on a map whose median hue is 174.
+#
+# The dressing still carries the hue variety (see docs/reference/README.md —
+# the ground follows 01, the dressing supplies 02 and 03's colour). What it
+# must not do is carry it at a value and a chroma nothing in the reference
+# reaches. The ROOTS in particular are teal in 01, not green; green belongs to
+# the moss clumps, which are small enough not to move the median.
 PALETTE = [
-    ("bone",     "9a9c7e", None,     0.0),   # pale ribbed arch, olive-tinted
-    ("husk",     "4a7a44", None,     0.0),   # MOSSY GREEN tendril skin, ref 02
-    ("flesh",    "8a5ab8", None,     0.0),   # purple lobed growth
-    ("stone",    "55605e", None,     0.0),   # rock, teal-grey and not near-black
-    ("glow_t",   "1d5b52", "2ff0d0", 6.0),   # teal bioluminescence
-    ("glow_p",   "3d1f5c", "b061ff", 5.0),   # violet bioluminescence
-    ("glow_a",   "6b3a12", "ff9a3c", 5.0),   # amber ocelli
+    ("bone",     "68766e", None,     0.0),   # ribbed arch: stone, not old bone
+    ("husk",     "2e5750", None,     0.0),   # tendril skin — TEAL, as ref 01
+    ("flesh",    "5c3d7d", None,     0.0),   # purple lobed growth
+    ("stone",    "48534f", None,     0.0),   # rock, teal-grey and not near-black
+    ("glow_t",   "17463f", "7fe8cf", 5.0),   # teal bioluminescence
+    ("glow_p",   "301848", "a97fe0", 4.0),   # violet bioluminescence
+    ("glow_a",   "543009", "f0b070", 4.0),   # amber ocelli
 ]
 BONE, HUSK, FLESH, STONE, GLOW_T, GLOW_P, GLOW_A = range(7)
 
@@ -170,55 +181,65 @@ def new_scene():
 # ARCH — the ribbed bone gateway. The landmark prop; everything else dresses it
 # =============================================================================
 def build_arch(mats):
+    """A SPIRE TOWER, as in reference 03 — not an arch.
+
+    It was an arch: span 2.9 and rise 4.1, so 5.8 m wide by 4.1 m tall, a ratio
+    of 0.71:1. Measured off the reference, the same class of object there is the
+    dominant VERTICAL element at about 3.85:1 — roughly 12-19 m tall on a 3-5 m
+    footprint. A squat hoop where the painting has a tower.
+
+    At PropScatter's 1.30-2.40 scale the proportions below land at 9-17 m tall
+    on a 2.3-4.3 m base, which is that, and it is the cheapest verticality
+    available while the ravine is unbuilt: the map is a heightfield with gentle
+    domes, so anything that stands UP has to be a prop.
+    """
     mb = MB()
-    span, rise = 2.9, 4.1
+    rise, foot = 7.2, 0.95
 
-    # Three struts, spread WIDE and ribbed hard. The first pass sat them 0.55 m
-    # apart with a 0.10 ridge and the render came back as one smooth grey tube:
-    # at RTS distance the struts have to be separated by more than their own
-    # diameter before the gaps between them read as fenestration at all.
-    struts = []
-    for k, (dy, bow, rad) in enumerate([(-1.05, -0.35, 0.155),
-                                        (0.05, 0.12, 0.185),
-                                        (1.12, 0.38, 0.140)]):
-        pts = og.arc((-span, dy, 0.0), (span * 0.92, dy * 0.7, 0.0),
-                     rise * (1.0 - 0.09 * k), 11, bow=bow)
-        radii = [rad * (0.55 + 0.9 * math.sin(i / 10.0 * math.pi) ** 0.5) + 0.05
-                 for i in range(11)]
-        radii[0] = radii[-1] = rad * 1.7           # splayed feet
-        mb.tube(BONE, pts, radii, 7, ridge=0.26, seed=k * 3.0)
-        struts.append(pts)
+    # Three trunks twisting up around a common axis, splaying at the foot and
+    # converging near the top. The twist is what makes the fenestration read
+    # from any angle instead of only side-on.
+    trunks = []
+    for k in range(3):
+        a0 = k * math.tau / 3.0
+        pts, radii = [], []
+        n = 13
+        for i in range(n):
+            t = i / (n - 1.0)
+            a = a0 + t * 1.5                       # the twist
+            r = foot * (1.0 - 0.72 * t) + 0.10
+            pts.append((math.cos(a) * r, math.sin(a) * r, t * rise))
+            # Swell low, pinch at the waist, flare again at the crown.
+            sw = 0.52 + 0.48 * math.sin(t * math.pi * 1.7 + 0.5)
+            radii.append(0.135 * sw * (1.0 - 0.45 * t) + 0.045)
+        radii[0] *= 2.1                            # splayed foot
+        mb.tube(BONE, pts, radii, 7, ridge=0.24, seed=k * 3.0)
+        trunks.append(pts)
 
-    # Cross ribs. The gaps between them are the fenestration — at this budget a
-    # real hole would cost more triangles than the whole prop has.
-    for i in range(1, 11, 2):
-        for a, b in ((0, 1), (1, 2)):
-            p, q = struts[a][i], struts[b][i]
-            mb.tube(BONE, [p, q], [0.070, 0.070], 5, caps=True, seed=i)
+    # Cross ribs between the trunks. The gaps ARE the fenestration: a real hole
+    # would cost more triangles than the whole prop is allowed.
+    for i in range(2, 12, 2):
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            p, q = trunks[a][i], trunks[b][i]
+            mb.tube(BONE, [p, q], [0.052, 0.052], 5, caps=True, seed=i + a)
 
-    # Ocelli: the glowing eye-spots. Set ON the outer struts rather than
-    # floating in the middle of the arch, where the ribs hid them completely.
-    for i, mat, r in ((3, GLOW_A, 0.22), (5, GLOW_T, 0.26), (7, GLOW_A, 0.19)):
-        for side in (0, 2):
-            p = struts[side][i]
-            out = 0.16 if side == 2 else -0.16
-            mb.orb(mat, (p[0], p[1] + out, p[2]), r, 8, 5, lumps=0.12, seed=i + side)
-    for i in (2, 9):
-        p = struts[1][i]
-        mb.orb(GLOW_T, (p[0], p[1], p[2] + 0.20), 0.15, 6, 4, seed=i)
+    # A crown: the spike cluster every tower in the reference carries.
+    for k in range(3):
+        a = k * math.tau / 3.0 + 0.6
+        base = (math.cos(a) * 0.16, math.sin(a) * 0.16, rise * 0.97)
+        tip = (math.cos(a) * 0.40, math.sin(a) * 0.40, rise * 1.28)
+        mb.tube(BONE, [base, tip], [0.075, 0.012], 5, caps=True, seed=k)
 
-    # Root flare where it meets the ground, so it grows out rather than
-    # balancing on two sticks.
-    for pts in (struts[0], struts[2]):
-        for end in (pts[0], pts[-1]):
-            mb.orb(BONE, (end[0], end[1], 0.14), 0.38, 7, 4,
-                   squash=0.42, lumps=0.22, seed=end[0])
+    # Ocelli, the glowing eye-spots, set ON the trunks and up the height so the
+    # tower reads as lit from top to bottom rather than only at its foot.
+    for i, mat, r in ((3, GLOW_A, 0.13), (5, GLOW_T, 0.15), (7, GLOW_A, 0.12),
+                      (9, GLOW_T, 0.13), (11, GLOW_A, 0.10)):
+        p = trunks[i % 3][i]
+        mb.orb(mat, (p[0] * 1.25, p[1] * 1.25, p[2]), r, 7, 5, lumps=0.18,
+               seed=float(i))
     return mb
 
 
-# =============================================================================
-# TENDRIL — the snaking glowing vine that ties the whole image together
-# =============================================================================
 def build_tendril(mats):
     mb = MB()
     pts, radii = [], []
@@ -314,13 +335,91 @@ def build_brain(mats):
 # SPIRE — dark rock, the only thing in the biodome that is not alive
 # =============================================================================
 def build_spire(mats):
+    """A rock needle. Taller and thinner than it was, for the same reason the
+    arch changed: with the ravine unbuilt, props are the only verticality the
+    map has, and a 2.35 m stub does not break a skyline."""
     mb = MB()
-    mb.shard(STONE, (0.0, 0.0, 0.0), 0.62, 2.35, 7, taper=0.16, lean=0.22, seed=1.0)
-    mb.shard(STONE, (0.46, 0.20, 0.0), 0.34, 1.25, 6, taper=0.20, lean=-0.14, seed=4.0)
-    mb.shard(STONE, (-0.38, -0.26, 0.0), 0.27, 0.86, 5, taper=0.25, lean=0.10, seed=9.0)
-    # One vein of light in the rock, so it belongs to this map and not another.
-    mb.tube(GLOW_T, [(-0.10, 0.18, 0.12), (0.06, 0.22, 0.84), (0.18, 0.12, 1.42)],
-            [0.045, 0.032, 0.020], 5)
+    mb.shard(STONE, (0.0, 0.0, 0.0), 0.52, 4.60, 7, taper=0.11, lean=0.26, seed=1.0)
+    mb.shard(STONE, (0.44, 0.19, 0.0), 0.30, 2.55, 6, taper=0.16, lean=-0.18, seed=4.0)
+    mb.shard(STONE, (-0.36, -0.25, 0.0), 0.24, 1.60, 5, taper=0.22, lean=0.13, seed=9.0)
+    # Veins of light in the rock, so it belongs to this map and not another.
+    mb.tube(GLOW_T, [(-0.10, 0.18, 0.15), (0.06, 0.22, 1.60), (0.18, 0.12, 2.90)],
+            [0.045, 0.034, 0.018], 5)
+    mb.orb(GLOW_T, (0.12, 0.16, 2.05), 0.085, 6, 4, lumps=0.2, seed=3.0)
+    return mb
+
+
+def _slab(mb, mat, at, size, rot=(0, 0, 0), chip=0.10, seed=0.0):
+    """One weathered rectangular block, origin at the centre of its base.
+
+    Eight vertices, jittered. A clean box reads as a crate; the jitter is what
+    makes it stone, and it is cheaper than any amount of bevelling. Deliberately
+    NOT smooth-shaded — see PROPS: a stone slab with smoothed normals reads as
+    a melted candle.
+    """
+    hx, hy, hz = size[0] * 0.5, size[1] * 0.5, size[2]
+    rnd = random.Random(int(seed * 1000) + 77)
+    v = []
+    for sz in (0.0, 1.0):
+        for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            j = chip * (0.4 + 0.6 * sz)     # the top is the weathered end
+            v.append((sx * hx * (1.0 + rnd.uniform(-j, j)),
+                      sy * hy * (1.0 + rnd.uniform(-j, j)),
+                      sz * hz + rnd.uniform(-j, j) * hz * 0.12))
+    t = [(0, 1, 2), (0, 2, 3),          # base
+         (4, 6, 5), (4, 7, 6),          # top
+         (0, 4, 5), (0, 5, 1), (1, 5, 6), (1, 6, 2),
+         (2, 6, 7), (2, 7, 3), (3, 7, 4), (3, 4, 0)]
+    mb.add(v, t, mat, xform(at, rot))
+
+
+def build_ruin(mats):
+    """An alien ruin: tilted monoliths and a broken wall, from reference 02.
+
+    THIS IS NOT A PLANT, and that is the point. Reference 02's verticality
+    comes from angular built things — slabs, broken walls, leaning monoliths
+    standing along the ridges — and the map has none of that. Every prop it
+    carries grew: tendrils, coral, pods, brains, needles. A landscape made
+    entirely of grown forms has no straight line anywhere in it, which is
+    exactly what "the landscape is flat" describes from overhead, because
+    nothing casts a hard vertical edge.
+
+    Stone, not light grey. Grey belongs to the machines: a ruin at the
+    machines' value would camouflage a unit standing beside it, which is the
+    same rule the rock ground material follows.
+    """
+    mb = MB()
+    # The tall one. Leaning, because a plumb monolith reads as placed and a
+    # leaning one reads as abandoned.
+    _slab(mb, STONE, (0.0, 0.0, -0.10), (1.35, 0.62, 5.40),
+          rot=(0.10, 0.055, 0.32), chip=0.13, seed=0.4)
+    # Its broken-off top, fallen at the foot. Same stone, so the eye reads the
+    # pair as one object that failed rather than two objects.
+    _slab(mb, STONE, (1.42, 0.50, 0.0), (1.15, 0.58, 0.95),
+          rot=(1.31, 0.18, -0.55), chip=0.16, seed=1.7)
+    # A second, shorter monolith set back and turned the other way.
+    _slab(mb, STONE, (-1.35, 0.85, -0.05), (0.95, 0.52, 3.20),
+          rot=(-0.13, 0.09, -0.74), chip=0.12, seed=2.9)
+    # The wall it all belonged to: a low run with a gap bitten out of it.
+    _slab(mb, STONE, (-0.35, -1.55, -0.05), (3.10, 0.48, 1.45),
+          rot=(0.02, -0.035, 0.12), chip=0.10, seed=3.6)
+    _slab(mb, STONE, (2.05, -1.35, -0.05), (1.20, 0.46, 0.80),
+          rot=(0.05, 0.12, 0.26), chip=0.18, seed=4.3)
+    # Rubble at the base, which is what tells you it is a ruin and not a shape.
+    rnd = random.Random(8)
+    for _ in range(5):
+        a = rnd.uniform(0, math.tau)
+        d = rnd.uniform(0.9, 2.6)
+        mb.shard(STONE, (math.cos(a) * d, math.sin(a) * d, 0.0),
+                 rnd.uniform(0.16, 0.34), rnd.uniform(0.25, 0.55), 5,
+                 rot=(rnd.uniform(0.3, 1.2), 0.0, a), taper=0.5,
+                 seed=rnd.random() * 20.0)
+    # Light in the cracks. The ruin belongs to THIS map, and the same teal in
+    # the seams is what says so — the rock spire carries it for the same reason.
+    mb.tube(GLOW_T, [(-0.16, 0.10, 0.35), (-0.05, 0.16, 2.30), (0.10, 0.22, 4.30)],
+            [0.040, 0.030, 0.016], 5)
+    mb.orb(GLOW_T, (-0.02, 0.18, 1.35), 0.075, 6, 4, lumps=0.25, seed=6.0)
+    mb.orb(GLOW_T, (-1.28, 0.92, 2.05), 0.065, 6, 4, lumps=0.25, seed=11.0)
     return mb
 
 
@@ -336,6 +435,7 @@ PROPS = [
     ("flora_pods", build_pods, 420, True, 0.8),
     ("flora_brain", build_brain, 900, True, 1.6),
     ("rock_spire", build_spire, 200, False, 1.8),
+    ("alien_ruin", build_ruin, 900, False, 2.6),
 ]
 
 ## Material slots left at full brightness by the AO bake. COLOR_0 multiplies

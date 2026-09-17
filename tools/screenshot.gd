@@ -10,7 +10,7 @@ extends SceneTree
 ## DIFFERENT RENDERER — Blender's Cycles, or a numpy port of the shader's own
 ## arithmetic. Both are useful and both have lied at least once. This one is
 ## the actual engine: the real terrain shader with its tone ramp, AO, curvature
-## and tube shading, the real ink pass, the real cloud deck, the real HUD, the
+## and tube shading, the real ink pass, the real ravine wall, the real HUD, the
 ## real tonemapper.
 ##
 ## `--headless` cannot do this. It runs the dummy rasteriser, which compiles no
@@ -43,6 +43,15 @@ func _initialize() -> void:
 	# the revealed one; a shot of what the player actually sees on frame one
 	# wants the fogged one. Both are worth having, which is why this is a flag.
 	var reveal: bool = argv.size() > 2 and argv[2] == "reveal"
+	# Pull the camera back and up, to see the map's surround rather than the
+	# ground under the module. The play camera is framed on one lobe, which is
+	# the right frame for a gameplay shot and useless for judging the ravine
+	# walls or the silhouette — those are the things that only exist at the
+	# edges of the map.
+	var wide: float = 1.0
+	for a in argv:
+		if String(a).begins_with("wide="):
+			wide = maxf(1.0, float(String(a).substr(5)))
 	var white := _white()
 
 	var ps: PackedScene = load("res://scenes/proto/proto_main.tscn")
@@ -50,10 +59,21 @@ func _initialize() -> void:
 		push_error("no main scene")
 		quit(1)
 		return
-	root.add_child(ps.instantiate())
+	var scene := ps.instantiate()
+	root.add_child(scene)
 
 	for i in frames:
 		await process_frame
+		# Scale the camera offset on the SCENE'S OWN config, after its _ready
+		# has run. Two other ways look right and are not: moving the Camera3D
+		# is undone the next time proto_main calls _frame_camera(), and
+		# mutating the .tres through load() before instantiate does not reach
+		# the scene at all — the second load() hands back a separate instance,
+		# and the shot comes out at the play framing with no error anywhere.
+		if i == 0 and wide > 1.0 and scene.get("tune") != null:
+			scene.tune.camera_offset *= wide
+			scene.call("_frame_camera")
+			print("  camera pulled back x%.1f" % wide)
 		if reveal:
 			_reveal_all(root, white)
 		if i % 30 == 0:

@@ -131,10 +131,11 @@ HOW TO RUN IT
 THIS BUILD IS LANDSCAPE. Turn the phone sideways before you open it.
 
 WHAT YOU ARE LOOKING AT
-  The map is a HIGH MOUNTAIN RANGE seen from almost overhead: five plateaus
-  standing above a cloud deck, joined by narrow necks. Everything outside a
-  plateau is weather, not ground. The necks are nine or ten metres wide —
-  they are chokepoints on purpose.
+  The map is the FLOOR OF A MOUNTAIN RAVINE seen from almost overhead:
+  plateaus joined by narrow necks, with a chasm where the ground runs out and
+  rock walls climbing past it on every side. Everything outside a plateau is
+  the drop, not ground. The necks are nine or ten metres wide — they are
+  chokepoints on purpose.
 
   Top bar      module mass and how much of the map you have uncovered
   Top left     the corner map: fog, contacts, and where the camera is

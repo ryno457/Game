@@ -38,6 +38,7 @@ import bpy, sys, os, json, struct, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mathutils import Matrix, Vector
 from _bl import script_args, render, cycles_cpu
+import _ravine
 
 argv = script_args()
 DATA = argv[0] if argv else "build/biodome"
@@ -203,28 +204,12 @@ print("PY: module %s at scale %.2f" % (FORM, MODULE_SCALE))
 # The drone sits three metres off in +X, as proto_main puts it.
 place(VIEW["drone_model"], None, (TARGET[0] + 3.0, TARGET[1]), 1.0, -35.0)
 
-# --- the cloud sea under the map ---------------------------------------------
-# The game puts a cloud deck below the world edge, so ground that falls away
-# reads as a peak standing over cloud rather than as a hole. Without it, every
-# off-map pixel here is flat world-background and the framing reads as broken
-# when it is merely open.
-CL = meta["clouds"]
-bpy.ops.mesh.primitive_plane_add(size=CL["extent_m"] * 2.0,
-                                 location=(CX * 0.5, -CZ * 0.5, CL["height_m"]))
-deck = bpy.context.active_object
-deck.name = "cloud_sea"
-cm = bpy.data.materials.new("cloud")
-cm.use_nodes = True
-cb = cm.node_tree.nodes["Principled BSDF"]
-cb.inputs["Base Color"].default_value = rgb(CL["lit"])
-cb.inputs["Roughness"].default_value = 1.0
-# A flat plane is not a cloud, but from 48 m up through a 58-degree lens the
-# deck is a soft pale field and its VALUE is what decides whether the map's
-# silhouette reads. Noise-displacing it would cost minutes of Cycles time to
-# change pixels the terrain covers anyway.
-cb.inputs["Emission Color"].default_value = rgb(CL["lit"])
-cb.inputs["Emission Strength"].default_value = 0.35
-deck.data.materials.append(cm)
+# --- the ravine under and around the map -------------------------------------
+# Ground that falls away has to fall away INTO something, or every off-map
+# pixel is flat world-background and the framing reads as broken when it is
+# merely open. In the game that something is RavineWall; here it is the coarse
+# stand-in in _ravine.py, at the same heights and colours.
+_ravine.build(meta["ravine"], CX, CZ, z_sign=-1.0)
 
 # --- the sun the game actually has -------------------------------------------
 sun_data = bpy.data.lights.new("sun", 'SUN')

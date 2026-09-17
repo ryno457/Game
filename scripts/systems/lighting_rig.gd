@@ -38,6 +38,18 @@ static func sun_angles(cfg: LightingConfig) -> Vector2:
 		rad_to_deg(asin(clampf(toward.y, -1.0, 1.0))))
 
 
+## The sun's direction over the ground, normalised: which way the light comes
+## FROM, flattened to the XZ plane.
+##
+## The ravine wall needs this to know which flank the moon reaches. It is
+## derived from the same light the rig builds rather than typed beside it, for
+## the reason sun_angles() exists at all: the shadow bake and the light already
+## disagreed once, and the fix was to stop writing the number twice.
+static func sun_ground_dir(cfg: LightingConfig) -> Vector2:
+	var az := deg_to_rad(sun_angles(cfg).x)
+	return Vector2(sin(az), -cos(az)).normalized()
+
+
 static func _sun(cfg: LightingConfig, sun: DirectionalLight3D) -> void:
 	sun.rotation_degrees = cfg.sun_rotation_deg
 	sun.light_color = cfg.sun_colour
