@@ -168,6 +168,13 @@ func _ready() -> void:
 		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m),
 		TerrainView.ramp_texture(palette),
 		LightingRig.sun_ground_dir(load(LIGHT_CFG))))
+	# Moonlight through the biodome's canopy. The moon itself cannot carry a
+	# cookie — DirectionalLight3D has no projector slot — so this is its own
+	# shadowless spot whose only job is the pattern. See CanopyLight.
+	var canopy := CanopyLight.build(palette,
+		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m))
+	if canopy != null:
+		add_child(canopy)
 	# Reflection probes on the pools, found from the water mask. One of the
 	# two GI features Forward Mobile will run; see WaterProbes for why the
 	# other one, LightmapGI, cannot be used on this map at all.

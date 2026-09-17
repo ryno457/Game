@@ -357,6 +357,58 @@ from outside — geometry that is simply not drawn:
 What finally separated them was setting `emission` and watching the surround
 come back magenta while the lit path stayed dark.
 
+## The canopy, and a light cookie that could not be tested
+
+A cookie is a texture a light looks through — Godot calls the slot
+`light_projector`, every other trade calls it a gobo. The design brief says the
+player is inside a **sealed biodome** and nothing in the frame has ever said
+so: the map reads as open ground under a night sky. A hex lattice of structural
+ribs thrown across the floor says "there is a roof on this" with no geometry,
+no draw call and no triangle. `tools/make_canopy_cookie.py` generates it.
+
+**The moon cannot carry it.** Verified against the engine's own shader source
+in 4.7.2: `projector_rect` appears for spot, omni and area lights and nowhere
+for directional. A DirectionalLight3D has no frustum to project through, so a
+cookie needs its own light — which is what `CanopyLight` builds.
+
+**And the projector does not work on this machine.** Measured on a bare scene,
+not on the map:
+
+| | mean lit value |
+|---|---|
+| no light | 0.0000 |
+| DirectionalLight3D | 0.1368 |
+| OmniLight3D | 0.1012 |
+| SpotLight3D, no cookie | 0.0418 |
+| **SpotLight3D + cookie** | **0.0000** |
+
+Attaching anything to `light_projector` makes the light contribute exactly
+zero — on Forward+ and Mobile alike, with an imported texture and with a
+runtime `ImageTexture`. It is not the import format, not the renderer and not
+the map. It is almost certainly lavapipe, the software Vulkan device this
+machine renders with, and it cannot be told apart from an engine bug without a
+real GPU. So `canopy_enabled` ships **off**, with `CanopyLight` left correct
+and waiting for a device.
+
+**The shipped version is in the shader instead.** `terrain_lit.gdshader`
+samples the lattice in world space and multiplies it into the light before
+shading — one texture fetch inside a light loop that was already running, and
+no second light at all, which is cheaper than the thing it stands in for and is
+the only version this machine can prove. The fetch happens in `fragment()` and
+reaches `light()` through a varying, which is legal in Godot and is the only
+route a per-fragment sample has into the light loop.
+
+That changes what the texture has to be. A projector is thrown through a cone
+once, so its border only has to be quiet; a world-space sample **tiles**, so it
+has to be seamless — the hex lattice is periodic by construction, the row count
+is forced even so the half-cell row offset survives the wrap, and the wrap is
+asserted with the same test the rock and scale generators use.
+
+Measured on the frame: median luma 0.209, saturation **0.43** against the
+references' 0.46 — the closest this map has come, because the canopy darkens
+some ground and the shadows it makes are more saturated than the light it
+replaces.
+
 ## The two GI options Forward Mobile will run, and what happened to them
 
 Pulled out of the engine binary rather than the docs (which this machine's

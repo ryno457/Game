@@ -253,6 +253,28 @@ uniform sampler2D detail_normal_tex : filter_linear_mipmap, repeat_disable;
 // where it means linear 0.0145. The normal map is data and would be bent by
 // the same conversion.
 uniform sampler2D detail_colour_tex : source_color, filter_linear_mipmap, repeat_disable;
+
+// THE CANOPY. Moonlight through the biodome's roof, as a value multiplied onto
+// every light before shading.
+//
+// This is a light COOKIE, and the honest way to do one in Godot is
+// Light3D.light_projector. It could not be made to work on this machine: a
+// SpotLight3D with a projector attached contributes exactly zero, on Forward+
+// and on Mobile, with an imported texture and with a runtime ImageTexture
+// alike — while the same light without one lights the scene fine. That is a
+// software-Vulkan (lavapipe) limitation rather than anything about the engine
+// or the format, and it cannot be told apart from an engine bug without a real
+// GPU. See CanopyLight, which still builds the proper version.
+//
+// So the pattern is applied here instead, in WORLD SPACE, which costs one
+// texture fetch inside a light loop that was already running and needs no
+// second light at all — cheaper than the thing it stands in for, and the only
+// version this machine can prove. The design brief says the player is inside a
+// SEALED BIODOME and nothing in the frame has ever said so.
+uniform sampler2D canopy_tex : filter_linear_mipmap, repeat_enable;
+uniform float canopy_strength = 0.0;    // 0 skips the fetch entirely
+uniform float canopy_scale_m = 46.0;    // metres per tile of the lattice
+uniform vec2 canopy_drift = vec2(0.0);  // shifts the lattice over the map
 uniform float baked_normal = 0.0;   // 0 skips both fetches entirely
 uniform float baked_colour = 0.0;
 // INK ALONG EVERY BAKED FORM, from the normal map already in hand.
@@ -292,6 +314,9 @@ varying vec3 v_normal_w;
 varying float v_shade;   // AO * cast shadow, already weighted
 varying float v_curv;    // signed: negative convex, positive concave
 varying float v_seen;    // fog of war, so light() can respect it too
+// Written in fragment() and read in light(), which is legal in Godot and is
+// the only way a per-fragment texture fetch can reach the light loop.
+varying float v_canopy;  // how much of the sky reaches this point
 varying float v_detail;  // fine surface detail, as a VALUE shift
 varying vec3 v_baked;    // baked detail colour, mixed into the pigment
 varying float v_flank;   // how steeply the baked normal leans: the ink
@@ -584,6 +609,13 @@ void fragment() {
 	// The glow is fogged too — unexplored pools must not give the map away.
 	float seen = clamp(textureLod(fog_map, v_world.xz / field_size_m, 0.0).r, 0.0, 1.0);
 	v_seen = seen;
+	// The canopy overhead, sampled where this fragment stands.
+	v_canopy = 1.0;
+	if (canopy_strength > 0.0) {
+		float sky = texture(canopy_tex,
+			(v_world.xz + canopy_drift) / max(1.0, canopy_scale_m)).r;
+		v_canopy = mix(1.0, sky, canopy_strength);
+	}
 	base = mix(fog_tint, base, seen);
 
 	// Survey grid. Screen-space derivatives keep the line one pixel wide at any
@@ -814,7 +846,7 @@ void light() {
 		// Half-Lambert: 0..1 across the whole sphere, no clamp at the
 		// terminator. pow() then pushes the terminator where the art wants it.
 		float t = pow(clamp(ndl * 0.5 + 0.5, 0.0, 1.0), terminator_k);
-		t *= ATTENUATION * v_shade;
+		t *= ATTENUATION * v_shade * v_canopy;
 		// A crest reads lit, a crease reads occluded, regardless of facing.
 		t = clamp(t + max(-v_curv, 0.0) * 0.15 - max(v_curv, 0.0) * 0.25,
 			0.0, 1.0);
@@ -856,6 +888,6 @@ void light() {
 		// reads sanely. (if/else rather than an early return: Godot rejects a
 		// bare `return` in these stage functions.)
 		DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION
-			* clamp(ndl, 0.0, 1.0) * v_shade;
+			* clamp(ndl, 0.0, 1.0) * v_shade * v_canopy;
 	}
 }

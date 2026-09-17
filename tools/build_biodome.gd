@@ -585,6 +585,16 @@ func _palette() -> BiomePalette:
 	# for a debug readout; the strength is what switches it.
 	# The shared skin on everything that grew. See BiomePalette.scale_detail.
 	p.scale_detail = 1.0
+	# The canopy cookie. See CanopyLight and tools/make_canopy_cookie.py.
+	p.canopy_strength = 0.55
+	p.canopy_scale_m = 46.0
+	p.canopy_drift = Vector2(11.0, 7.0)
+	p.canopy_enabled = false
+	p.canopy_energy = 20.0
+	p.canopy_colour = Color(1.0, 0.0, 1.0)
+	p.canopy_height_m = 120.0
+	p.canopy_cover = 1.05
+	p.canopy_attenuation = 1.0
 	# Reflection probes on the pools — OFF. They work and they are correctly
 	# placed; measured on a frame they move the pool by at most 5/255.
 	# See BiomePalette.reflection_enabled for the numbers and the reason.

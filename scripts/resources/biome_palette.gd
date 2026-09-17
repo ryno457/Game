@@ -125,6 +125,38 @@ extends Resource
 ## the contrast the light grey exists to create.
 @export_range(0.0, 4.0) var scale_detail: float = 1.0
 
+@export_group("Canopy")
+## Moonlight through the biodome's roof, as a light cookie. See CanopyLight:
+## the map has never looked sealed, and a hex lattice thrown across the floor
+## says it costs no geometry at all.
+## How hard the canopy darkens the light under a rib. This is the one that
+## ships — see terrain_lit.gdshader, which applies it in world space because
+## light_projector could not be made to work on this machine.
+@export_range(0.0, 1.0) var canopy_strength: float = 0.55
+## Metres of ground per tile of the lattice. The texture is 9 hexes across, so
+## this over 9 is how wide one panel of the roof is.
+@export var canopy_scale_m: float = 46.0
+@export var canopy_drift := Vector2(11.0, 7.0)
+
+## THE PROJECTOR VERSION, off. CanopyLight builds a real SpotLight3D carrying
+## the same texture in light_projector, which is how Godot means this to be
+## done. A spot with a projector attached contributes exactly zero on this
+## machine — on Forward+ and Mobile alike, imported texture or runtime one,
+## while the same spot without a projector lights the scene fine. That is a
+## software-Vulkan limit, not an engine or format problem, and it cannot be
+## told from an engine bug without a real GPU. Turn it on when there is a
+## phone to test it on; the shader path above does the same job meanwhile.
+@export var canopy_enabled: bool = false
+@export_range(0.0, 3.0) var canopy_energy: float = 0.42
+@export var canopy_colour: Color = Color(0.80, 0.86, 0.95)
+## How high the light sits. Its cone angle is derived from this and the map
+## size, so raising it widens the cone rather than shrinking the pattern.
+@export var canopy_height_m: float = 120.0
+## Multiplier on the reach the cone needs to cover the map's diagonal.
+@export_range(0.5, 2.0) var canopy_cover: float = 1.05
+## Spot falloff. 1.0 is flat, which is what a roof wants — see CanopyLight.
+@export_range(0.0, 4.0) var canopy_attenuation: float = 1.0
+
 @export_group("Reflections")
 ## Reflection probes over the pools. See WaterProbes.
 ##

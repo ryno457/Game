@@ -34,6 +34,8 @@ const BRUSH_TEX := "res://textures/brush_strokes.png"
 ## a thing anybody wants and a knob would offer it.
 const DETAIL_N := "res://textures/ground_vines_n.png"
 const DETAIL_C := "res://textures/ground_vines_c.png"
+## The biodome canopy, thrown across the floor as a light multiplier.
+const CANOPY := "res://textures/canopy_cookie.png"
 
 var field: Heightfield
 var fog: FogOfWar
@@ -109,6 +111,10 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("baked_ink", p.baked_ink)
 	_mat.set_shader_parameter("baked_ink_power", p.baked_ink_power)
 	_mat.set_shader_parameter("detail_normal_tex", load(DETAIL_N))
+	_mat.set_shader_parameter("canopy_tex", load(CANOPY))
+	_mat.set_shader_parameter("canopy_strength", p.canopy_strength)
+	_mat.set_shader_parameter("canopy_scale_m", p.canopy_scale_m)
+	_mat.set_shader_parameter("canopy_drift", p.canopy_drift)
 	_mat.set_shader_parameter("detail_colour_tex", load(DETAIL_C))
 	_mat.set_shader_parameter("detail_scale", p.detail_scale)
 	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m)
