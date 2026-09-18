@@ -29,6 +29,7 @@ func _initialize() -> void:
 	_round_trip()
 	_refusing()
 	_shape()
+	_walls()
 	_placements()
 
 	print("")
@@ -53,6 +54,8 @@ func _sample() -> MapEdit:
 	e.add(&"ops", {"op": "plateau", "x": 60.0, "z": 50.0, "r": 12.0,
 		"level": 0.62, "strength": 1.0})
 	e.add(&"blocked", {"x": 90.0, "z": 70.0, "r": 8.0})
+	e.add(&"walls", {"points": [Vector2(20.0, 80.0), Vector2(34.0, 80.0),
+		Vector2(34.0, 94.0), Vector2(20.0, 94.0)]})
 	e.add(&"plants", {"model": "flora_brain", "x": 30.0, "z": 60.0,
 		"yaw": 1.0, "scale": 1.1})
 	e.add(&"roamers", {"x": 25.0, "z": 25.0, "wander_m": 22.0})
@@ -66,11 +69,12 @@ func _editing() -> void:
 	print("what an edit holds")
 	var e := _sample()
 	_ok("everything goes in its own list", e.ops.size() == 2
-			and e.blocked.size() == 1 and e.plants.size() == 1
+			and e.blocked.size() == 1 and e.walls.size() == 1
+			and e.plants.size() == 1
 			and e.roamers.size() == 1 and e.nests.size() == 1
 			and e.patches.size() == 1, e.summary())
 	# One door in, so nothing can be added without becoming undoable.
-	_ok("and every one of them is undoable", e.count() == 7,
+	_ok("and every one of them is undoable", e.count() == 8,
 		"%d edits recorded" % e.count())
 	_ok("a clean edit has nothing to complain about",
 		e.problems(_w, _h).is_empty(), "")
@@ -155,6 +159,89 @@ func _refusing() -> void:
 	noradius.add(&"blocked", {"x": 20.0, "z": 20.0, "r": 0.0})
 	_ok("a blocked area with no radius",
 		not noradius.problems(_w, _h).is_empty(), "")
+
+
+# --- invisible walls ---------------------------------------------------------
+func _walls() -> void:
+	print("\ninvisible walls stop you WITHOUT digging a hole")
+	var field := TerrainBuilder.build(load(MAP))
+	# Somewhere with real ground on it, so "impassable" cannot be a coincidence.
+	var inside := Vector2(0.0, 0.0)
+	for z in range(20, 90, 3):
+		for x in range(20, 130, 3):
+			var p := Vector2(x, z)
+			if field.is_passable(p) and not field.is_rough(p):
+				inside = p
+				break
+		if inside != Vector2.ZERO:
+			break
+	_ok("there is open ground to wall off", inside != Vector2.ZERO,
+		"at %s" % str(inside))
+
+	var e := MapEdit.new()
+	var r := 7.0
+	var pts: Array = []
+	for i in 8:
+		var a := TAU * float(i) / 8.0
+		pts.append(inside + Vector2(cos(a), sin(a)) * r)
+	e.add(&"walls", {"points": pts})
+	var h_before := field.height_at(inside)
+	for op in e.all_ops(_impassable()):
+		TerrainBuilder.apply_op(field, op)
+
+	_ok("you cannot walk into it", not field.is_passable(inside),
+		"is_passable is false at the middle")
+	# THE WHOLE POINT. A BLOCK digs; a WALL does not.
+	_ok("but the ground is exactly where it was",
+		is_equal_approx(field.height_at(inside), h_before),
+		"%.4f before, %.4f after" % [h_before, field.height_at(inside)])
+	_ok("and it says WHY it is impassable", field.is_walled(inside),
+		"is_walled true, so the editor can tell the two reasons apart")
+	_ok("outside it, the ground is still open",
+		field.is_passable(inside + Vector2(r + 5.0, 0.0)),
+		"5 m clear of a %.0f m wall" % r)
+	# Most of the way out, not just the middle — the same rim test the blocked
+	# discs needed, for the same reason.
+	_ok("and it blocks out to its edge, not just its centre",
+		not field.is_passable(inside + Vector2(r * 0.75, 0.0)),
+		"%.1f m from the middle of a %.0f m wall" % [r * 0.75, r])
+
+	# A wall drawn over a chasm is not a problem, but a wall is not allowed to
+	# make ground walkable either.
+	_ok("a wall never makes anything passable",
+		not field.is_passable(inside),
+		"still blocked")
+
+	print("\nand a wall survives being written to JSON")
+	var w := MapEdit.new()
+	w.add(&"walls", {"points": pts})
+	var back := MapEdit.new()
+	var err := back.from_json(w.to_json())
+	_ok("it reads back", err == "", err)
+	_ok("with all its corners",
+		MapEdit.wall_points(back.walls[0]).size() == 8,
+		"%d corners" % MapEdit.wall_points(back.walls[0]).size())
+	# THE ONE THAT MATTERS. JSON.stringify turns a Vector2 into the STRING
+	# "(12, 34)". A wall that round-tripped through that came back as a
+	# perfectly valid-looking entry that blocked nothing whatsoever.
+	var f2 := TerrainBuilder.build(load(MAP))
+	for op in back.all_ops(_impassable()):
+		TerrainBuilder.apply_op(f2, op)
+	_ok("and it still blocks after the round trip", not f2.is_passable(inside),
+		"a wall that survives the file but not the reload blocks nothing")
+
+	var thin := MapEdit.new()
+	thin.add(&"walls", {"points": [[10.0, 10.0], [11.0, 10.0]]})
+	_ok("a wall with two corners is refused",
+		not thin.problems(_w, _h).is_empty(),
+		thin.problems(_w, _h)[0] if not thin.problems(_w, _h).is_empty()
+			else "no complaint")
+	var flat := MapEdit.new()
+	flat.add(&"walls", {"points": [[10.0, 10.0], [11.0, 10.0], [12.0, 10.0]]})
+	_ok("and so is one with no area inside it",
+		not flat.problems(_w, _h).is_empty(),
+		flat.problems(_w, _h)[0] if not flat.problems(_w, _h).is_empty()
+			else "no complaint")
 
 
 # --- it actually changes the ground ------------------------------------------

@@ -313,6 +313,41 @@ func _process(_delta: float) -> bool:
 	_ok("the module survives the fight it started", scene.mass.mass > 0.0,
 		"%.0f mass left (was %.0f when the piece came free)" % [scene.mass.mass, banked])
 
+	# --- an invisible wall stops the module, and the terrain is untouched ----
+	# The unit test proves is_passable says no. This proves the thing that
+	# actually matters: the module, walking under its own steering, does not
+	# end up inside one.
+	var wall_from: Vector2 = scene.module_pos
+	var wall_at := wall_from
+	for _t in 200:
+		var c: Vector2 = wall_from + Vector2(cos(_t * 0.31), sin(_t * 0.31)) * 18.0
+		if scene.field.is_passable(c):
+			wall_at = c
+			break
+	var pts: Array = []
+	for i in 10:
+		var a := TAU * float(i) / 10.0
+		pts.append(wall_at + Vector2(cos(a), sin(a)) * 7.0)
+	var h_was: float = scene.field.height_at(wall_at)
+	scene.field.wall_polygon(PackedVector2Array(pts))
+	_ok("the wall changes no ground at all",
+		is_equal_approx(scene.field.height_at(wall_at), h_was),
+		"%.4f before and after" % h_was)
+
+	scene.module_goal = wall_at
+	var push := 0.0
+	while push < 40.0:
+		scene.step(DT)
+		push += DT
+	var into: float = scene.module_pos.distance_to(wall_at)
+	_ok("and the module cannot walk into it",
+		not scene.field.is_walled(scene.module_pos),
+		"stopped %.1f m short of the middle of a 7 m wall" % into)
+	_ok("it is still standing somewhere legal",
+		scene.field.is_passable(scene.module_pos), "")
+	# Undo it, or every check after this one is playing on a different map.
+	scene.field.blocked.fill(0)
+
 	# --- shots TRAVEL, they do not teleport ----------------------------------
 	# A firefight used to be two groups of models standing still while one of
 	# them quietly lost. These assertions are about the gap between firing and

@@ -18,11 +18,18 @@ extends RefCounted
 ##   ops      terrain shape, in TerrainBuilder's own op vocabulary. A sculpt
 ##            stroke is a `crater` with a positive or negative amount; a
 ##            plateau stamp is a `plateau`; extending one is more plateaus.
-##   blocked  discs the player may not walk into. Stored separately from `ops`
-##            even though applying one MAKES an op, because the intent is worth
-##            keeping: a chasm the designer dug and a chasm that says "not this
-##            way" are the same heights and different decisions, and only one
-##            of them should move if the impassable threshold is ever retuned.
+##   blocked  discs the player may not walk into, carved as a CHASM. The
+##            honest answer when the obstacle is the terrain itself. Stored
+##            separately from `ops` even though applying one MAKES an op,
+##            because the intent is worth keeping: a chasm the designer dug and
+##            a chasm that says "not this way" are the same heights and
+##            different decisions, and only one should move if the impassable
+##            threshold is retuned.
+##   walls    free-form outlines nothing may walk into, WITHOUT touching the
+##            ground. For a thicket of alien plants or a cluster of structures:
+##            those stand on ground that is fine, and digging a hole under them
+##            would both say the wrong thing and drop them in it. The props are
+##            the visual; the wall is their collision.
 ##   plants   hand-placed vegetation, on top of whatever the dressing scatters.
 ##   hive     roamers, plant nests and burrow patches, with their counts.
 ##
@@ -40,6 +47,9 @@ var notes := ""
 
 var ops: Array[Dictionary] = []
 var blocked: Array[Dictionary] = []      # {x, z, r}
+## Free-form outlines nothing may walk into, WITHOUT changing the ground.
+## {points: [Vector2 or [x, z], ...]}
+var walls: Array[Dictionary] = []
 var plants: Array[Dictionary] = []       # {model, x, z, yaw, scale}
 var roamers: Array[Dictionary] = []      # {x, z, wander_m}
 var nests: Array[Dictionary] = []        # {x, z, count, interval_s}
@@ -94,6 +104,7 @@ func undo() -> Dictionary:
 func clear() -> void:
 	ops.clear()
 	blocked.clear()
+	walls.clear()
 	plants.clear()
 	roamers.clear()
 	nests.clear()
@@ -105,6 +116,7 @@ func _list(name: StringName) -> Array:
 	match name:
 		&"ops": return ops
 		&"blocked": return blocked
+		&"walls": return walls
 		&"plants": return plants
 		&"roamers": return roamers
 		&"nests": return nests
@@ -165,16 +177,74 @@ func all_ops(impassable_level: float) -> Array[Dictionary]:
 		out.append(o)
 	for b in blocked:
 		out.append(blocked_op(b, impassable_level))
+	# Walls last, and it does not matter that they are: they touch no heights,
+	# so nothing later can undo one. That is the whole advantage of them being
+	# a separate mask rather than a very deep hole.
+	for w in walls:
+		out.append(wall_op(w))
 	return out
+
+
+## The op a free-form outline turns into, with its corners normalised to real
+## Vector2s whatever shape they were stored in. The editor collects them in the
+## same cell-space the polygon ops already use.
+static func wall_op(w: Dictionary) -> Dictionary:
+	return {"op": "wall", "points": wall_points(w)}
+
+
+## A wall's outline as real Vector2s, whatever shape it arrived in.
+##
+## JSON HAS NO Vector2. A wall written by the editor holds them; the same wall
+## read back from a file holds [x, z] arrays, and a hand-written one holds
+## {"x":, "z":} objects because that is what somebody copying the rest of this
+## format would write. All three have to work, and the first version only
+## handled the one the editor happened to produce — so a saved wall silently
+## blocked nothing at all after a round trip.
+static func wall_points(w: Dictionary) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in w.get("points", []):
+		if p is Vector2:
+			out.append(p)
+		elif p is Array and (p as Array).size() >= 2:
+			out.append(Vector2(float(p[0]), float(p[1])))
+		elif p is Dictionary and (p as Dictionary).has("x"):
+			out.append(Vector2(float(p["x"]), float(p.get("z", p.get("y", 0.0)))))
+	return out
+
+
+## Twice the signed area of a polygon — the shoelace sum. Sign says winding,
+## which nothing here cares about, so callers take the absolute value.
+static func _area(pts: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in pts.size():
+		var p := pts[i]
+		var q := pts[(i + 1) % pts.size()]
+		a += p.x * q.y - q.x * p.y
+	return a * 0.5
 
 
 func to_dict() -> Dictionary:
 	return {
 		"format": FORMAT, "version": VERSION,
 		"map": map_path, "notes": notes,
-		"ops": ops, "blocked": blocked, "plants": plants,
+		"ops": ops, "blocked": blocked, "walls": _walls_as_json(),
+		"plants": plants,
 		"hive": {"roamers": roamers, "nests": nests, "patches": patches},
 	}
+
+
+## JSON HAS NO Vector2. JSON.stringify turns one into the STRING "(12, 34)",
+## which parses back as a string, which `wall_points` cannot read — so a wall
+## survived a save and reload as a valid-looking entry that blocked nothing at
+## all. Corners go out as [x, z] pairs.
+func _walls_as_json() -> Array:
+	var out: Array = []
+	for w in walls:
+		var pts: Array = []
+		for p in wall_points(w):
+			pts.append([p.x, p.y])
+		out.append({"points": pts})
+	return out
 
 
 func to_json() -> String:
@@ -198,6 +268,7 @@ func from_dict(d: Dictionary) -> String:
 	var hive: Dictionary = d.get("hive", {})
 	var pairs := [
 		[&"ops", d.get("ops", [])], [&"blocked", d.get("blocked", [])],
+		[&"walls", d.get("walls", [])],
 		[&"plants", d.get("plants", [])],
 		[&"roamers", hive.get("roamers", [])],
 		[&"nests", hive.get("nests", [])],
@@ -241,9 +312,9 @@ func load_from(path: String) -> String:
 ## What this edit contains, for the editor's own readout and for the apply
 ## tool's report. One sentence, because it is read on a phone.
 func summary() -> String:
-	return "%d shape, %d blocked, %d plants, %d roaming, %d nests, %d patches" \
-		% [ops.size(), blocked.size(), plants.size(), roamers.size(),
-			nests.size(), patches.size()]
+	return "%d shape, %d blocked, %d walls, %d plants, %d roaming, %d nests, %d patches" \
+		% [ops.size(), blocked.size(), walls.size(), plants.size(),
+			roamers.size(), nests.size(), patches.size()]
 
 
 ## Everything wrong with this edit, as sentences. Empty means it will apply
@@ -251,6 +322,28 @@ func summary() -> String:
 ## worse than a rejected one.
 func problems(map_w: float, map_h: float) -> PackedStringArray:
 	var out := PackedStringArray()
+	# Walls first: they are the only entry whose shape is a list rather than a
+	# point, so the per-point loop below cannot say anything useful about one.
+	var wi := 0
+	for w in walls:
+		var pts := wall_points(w)
+		var ctx := "walls[%d]" % wi
+		wi += 1
+		if pts.size() < 3:
+			out.append("%s has %d corners; a wall needs at least 3"
+				% [ctx, pts.size()])
+			continue
+		for p in pts:
+			if p.x < 0.0 or p.x > map_w or p.y < 0.0 or p.y > map_h:
+				out.append("%s has a corner off the map at (%.0f, %.0f)"
+					% [ctx, p.x, p.y])
+				break
+		# A wall with no area blocks nothing, and a designer who drew one and
+		# saw nothing happen would reasonably conclude walls do not work.
+		if absf(_area(pts)) < 1.0:
+			out.append("%s encloses %.1f square metres; it would block nothing"
+				% [ctx, absf(_area(pts))])
+
 	var named := {&"ops": ops, &"blocked": blocked, &"plants": plants,
 		&"roamers": roamers, &"nests": nests, &"patches": patches}
 	for key in named:

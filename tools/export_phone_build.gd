@@ -226,10 +226,20 @@ MAP EDITOR
 
   Two fingers is ALWAYS the camera, never the brush.
 
-  BLOCK carves a hole. There is no invisible wall in this game — below a
-  certain height you cannot walk, and that is what "you cannot go here"
-  means here. If you want invisible walls instead, say so; it is a
-  different feature.
+  TWO WAYS TO SAY "YOU CANNOT GO HERE".
+
+  BLOCK carves a hole. Use it when the obstacle IS the ground — a chasm, a
+  cliff, the edge of a plateau.
+
+  WALL is free form and INVISIBLE. Tap out the corners of any shape and tap
+  the first corner again to close it, or press CLOSE WALL. It changes no
+  ground at all: use it around a thicket of alien plants or a cluster of
+  structures, where the thing stopping you is already standing there and
+  digging a hole would both look wrong and drop the props into it.
+
+  A wall draws as amber dots in the editor and NOTHING in the game. That is
+  deliberate: if you cannot see why you are being stopped, the wall is in
+  the wrong place — move it, or put something there.
 
   GETTING IT BACK TO ME. Press COPY JSON and paste it into the chat. SAVE
   also writes a file, but on Android that file is inside the app's own

@@ -42,6 +42,26 @@ var water: PackedFloat32Array
 ## shape of the ground, not what it is made of.
 var material_id: PackedByteArray
 
+## Cells nothing may walk into, whatever height they are. INVISIBLE WALLS.
+##
+## The other way to say "you cannot go here" is to dig the ground away, which
+## this map already does at the ravine edges and which the editor's BLOCK tool
+## still does. That is the honest answer when the obstacle IS the terrain. It is
+## the wrong answer for a thicket of alien plants or a cluster of structures:
+## those are things standing ON ground that is perfectly fine, and carving a
+## chasm under them would say the wrong thing about what is stopping you — as
+## well as dropping the props into the hole.
+##
+## So this is a separate mask. The prop is the visual; this is its collision.
+## Nothing renders it and nothing needs to: if the player cannot see why they
+## are being stopped, the wall is in the wrong place.
+##
+## Authored once from `wall` ops and never touched again. Digging changes the
+## shape of the ground, not what is standing on it — and a player who trenches
+## their way under a wall of alien growth has not earned anything, they have
+## found a bug.
+var blocked: PackedByteArray
+
 
 func _init(config: TerrainConfig) -> void:
 	cfg = config
@@ -51,6 +71,8 @@ func _init(config: TerrainConfig) -> void:
 	water.resize(cfg.cells_x * cfg.cells_z)
 	material_id = PackedByteArray()
 	material_id.resize(cfg.cells_x * cfg.cells_z)
+	blocked = PackedByteArray()
+	blocked.resize(cfg.cells_x * cfg.cells_z)
 	heights.fill(cfg.neutral_height)
 
 
@@ -69,7 +91,45 @@ func height_at(world: Vector2) -> float:
 
 
 func is_passable(world: Vector2) -> bool:
-	return height_at(world) > cfg.impassable_below
+	return not is_walled(world) and height_at(world) > cfg.impassable_below
+
+
+## Inside an invisible wall. Separate from is_passable so the editor and the
+## checks can tell the two reasons apart — "there is no ground" and "something
+## is standing there" are different notes to give a designer.
+func is_walled(world: Vector2) -> bool:
+	var cx := clampi(int(world.x / cfg.cell_size_m), 0, cfg.cells_x - 1)
+	var cz := clampi(int(world.y / cfg.cell_size_m), 0, cfg.cells_z - 1)
+	return blocked[index(cx, cz)] != 0
+
+
+## Mark every cell inside a closed outline. Points are in CELL coordinates, the
+## same space the polygon and plateau ops use.
+##
+## The bounding box is walked rather than the whole map: a wall around one
+## thicket is a few hundred cells out of sixteen thousand, and the first
+## version scanned all of them for every wall.
+func wall_polygon(points: PackedVector2Array) -> void:
+	if points.size() < 3:
+		return
+	var lo := points[0]
+	var hi := points[0]
+	for p in points:
+		lo = lo.min(p)
+		hi = hi.max(p)
+	var x0 := clampi(int(floor(lo.x)), 0, cfg.cells_x - 1)
+	var x1 := clampi(int(ceil(hi.x)), 0, cfg.cells_x - 1)
+	var z0 := clampi(int(floor(lo.y)), 0, cfg.cells_z - 1)
+	var z1 := clampi(int(ceil(hi.y)), 0, cfg.cells_z - 1)
+	for z in range(z0, z1 + 1):
+		for x in range(x0, x1 + 1):
+			# The cell CENTRE, not its corner. Testing the corner puts the
+			# wall half a metre off in both axes, which is invisible on a map
+			# and exactly wide enough to let a swarmer through a gap the
+			# designer drew closed.
+			if Geometry2D.is_point_in_polygon(Vector2(x + 0.5, z + 0.5),
+					points):
+				blocked[index(x, z)] = 1
 
 
 func is_rough(world: Vector2) -> bool:

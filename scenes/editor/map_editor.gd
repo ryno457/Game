@@ -33,8 +33,8 @@ const QUALITY_HIGH := "res://data/gameplay/quality_high.tres"
 ## the Android editor's project folder is not somewhere to be writing at all.
 const SAVE_PATH := "user://map_edit.json"
 
-enum Tool {RAISE, LOWER, FLATTEN, PLATEAU, BLOCK, PLANT, ROAMER, NEST, PATCH,
-	ERASE}
+enum Tool {RAISE, LOWER, FLATTEN, PLATEAU, BLOCK, WALL, PLANT, ROAMER, NEST,
+	PATCH, ERASE}
 
 @onready var terrain: TerrainView = $Terrain
 @onready var rig: Node3D = $CameraRig
@@ -69,6 +69,9 @@ var _map_w := 0.0
 var _map_h := 0.0
 var _dirty_since_save := false
 var _rebake_due := false
+## Corners of the wall being drawn, in cell space. Empty means no wall is in
+## progress, which is also what CLOSE and CANCEL leave behind.
+var _wall_pts: Array = []
 
 
 func _ready() -> void:
@@ -104,7 +107,7 @@ func _ready() -> void:
 	_mm_marks.multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	_mm_marks.multimesh.use_colors = true
 	_mm_marks.multimesh.mesh = _marker_mesh()
-	_mm_marks.multimesh.instance_count = 512
+	_mm_marks.multimesh.instance_count = 2048
 	_mm_marks.multimesh.visible_instance_count = 0
 	_mm_marks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mm_marks)
@@ -143,7 +146,8 @@ const TOOL_LABEL := {
 	Tool.LOWER: "LOWER\nground",
 	Tool.FLATTEN: "FLATTEN\nto level",
 	Tool.PLATEAU: "PLATEAU\nstamp",
-	Tool.BLOCK: "BLOCK\nno entry",
+	Tool.BLOCK: "BLOCK\ncarve a hole",
+	Tool.WALL: "WALL\nfree form",
 	Tool.PLANT: "PLANT\nvegetation",
 	Tool.ROAMER: "ROAMER\nbig alien",
 	Tool.NEST: "NEST\nplant hive",
@@ -164,7 +168,8 @@ func _build_tools() -> void:
 		_tool_buttons[t] = b
 	_pick_tool(Tool.RAISE)
 
-	for spec in [["UNDO", _undo], ["SAVE", _save], ["COPY JSON", _copy],
+	for spec in [["CLOSE\nwall", _close_wall], ["CANCEL\nwall", _cancel_wall],
+			["UNDO", _undo], ["SAVE", _save], ["COPY JSON", _copy],
 			["REBAKE\ncolours", _rebake_now], ["CLEAR ALL", _clear_all],
 			["PLAY", _play]]:
 		var b := Button.new()
@@ -232,6 +237,10 @@ func _edit_at(p: Vector2, continuous: bool) -> void:
 			TerrainBuilder.apply_op(field, MapEdit.blocked_op(
 				edit.blocked[-1], _impassable_level()))
 			_after_shape()
+		Tool.WALL:
+			if continuous:
+				return
+			_wall_tap(p)
 		Tool.PLANT:
 			if continuous:
 				return
@@ -261,6 +270,53 @@ func _edit_at(p: Vector2, continuous: bool) -> void:
 			if continuous:
 				return
 			_erase_near(p)
+
+
+## Tap out an outline, corner by corner.
+##
+## CLOSING BY TAPPING THE FIRST CORNER AGAIN is the only gesture a phone has
+## for "done" that does not need a second hand, and it is what every drawing
+## app on a touchscreen does. The CLOSE button exists as well, because the
+## first corner is small and a fingertip is not.
+func _wall_tap(p: Vector2) -> void:
+	if _wall_pts.size() >= 3:
+		var first: Vector2 = _wall_pts[0]
+		if p.distance_to(first) <= maxf(3.0, brush_m * 0.5):
+			_close_wall()
+			return
+	_wall_pts.append(p)
+	_say("Corner %d. Tap the first one again, or press CLOSE."
+		% _wall_pts.size())
+
+
+func _close_wall() -> void:
+	if _wall_pts.size() < 3:
+		_say("A wall needs at least three corners; it has %d."
+			% _wall_pts.size())
+		return
+	var w := {"points": _wall_pts.duplicate()}
+	var probs := MapEdit.new()
+	probs.add(&"walls", w)
+	var bad := probs.problems(_map_w, _map_h)
+	if not bad.is_empty():
+		_say(bad[0])
+		return
+	edit.add(&"walls", w)
+	_wall_pts.clear()
+	# A wall touches no heights, so there is nothing to rebake and nothing to
+	# mark dirty — the whole advantage of it being a separate mask.
+	TerrainBuilder.apply_op(field, MapEdit.wall_op(w))
+	_touched()
+	_say("Wall closed.")
+
+
+func _cancel_wall() -> void:
+	if _wall_pts.is_empty():
+		_say("No wall being drawn.")
+		return
+	_wall_pts.clear()
+	_say("Dropped the wall you were drawing.")
+	_refresh()
 
 
 ## How much one stroke step moves the ground. Scaled by the brush, because a
@@ -308,6 +364,10 @@ func _erase_near(p: Vector2) -> void:
 	for pair in [[&"plants", edit.plants], [&"roamers", edit.roamers],
 			[&"nests", edit.nests], [&"patches", edit.patches],
 			[&"blocked", edit.blocked]]:
+		# Walls are not in this list: a free-form outline has no single point
+		# to be "nearest" to, and erasing the wall whose CORNER happens to be
+		# closest is not what a finger over the middle of one means. UNDO takes
+		# walls back.
 		var arr: Array = pair[1]
 		for i in arr.size():
 			var d: float = Vector2(arr[i].x, arr[i].z).distance_to(p)
@@ -335,7 +395,7 @@ func _remove(list_name: StringName, i: int) -> void:
 			h[1] = int(h[1]) - 1
 		elif h[0] == list_name and int(h[1]) == i:
 			h[1] = -1                       # dropped; undo will skip it
-	if list_name == &"blocked":
+	if list_name == &"blocked" or list_name == &"walls":
 		_replay()
 	elif list_name == &"plants":
 		_sync_plants()
@@ -357,11 +417,22 @@ func _undo() -> void:
 
 
 ## Rebuild the heightfield from the map's own seed and replay every edit.
+##
+## IN PLACE, into the field object the TerrainView already holds. The obvious
+## version called terrain.setup() again — and setup() builds a NEW
+## ShaderMaterial, while the chunk meshes keep a material_override pointing at
+## the old one. The chunks are only ever built once (inside
+## set_detail_scale_factor, of all places), so nothing rebinds them: the
+## terrain would have gone quietly stale after the first undo, still drawing
+## the heights it had before, with no error and no visible cause.
 func _replay() -> void:
-	field = TerrainBuilder.build(load(MAP))
+	var fresh := TerrainBuilder.build(load(MAP))
 	for op in edit.all_ops(_impassable_level()):
-		TerrainBuilder.apply_op(field, op)
-	terrain.setup(field, terrain.fog, load(TERRAIN_SHADER))
+		TerrainBuilder.apply_op(fresh, op)
+	field.heights = fresh.heights
+	field.water = fresh.water
+	field.material_id = fresh.material_id
+	field.blocked = fresh.blocked
 	_rebake()
 	_sync_plants()
 	_touched()
@@ -421,6 +492,19 @@ func _sync_plants() -> void:
 ## dots nobody can read.
 func _markers() -> Array:
 	var out: Array = []
+	# Finished walls, as a chain of dots along the outline. Dots rather than a
+	# filled shape because a wall is INVISIBLE in the game and the editor must
+	# not make it look like a floor decal the player will see.
+	for w in edit.walls:
+		_outline(out, MapEdit.wall_points(w), Color(0.98, 0.84, 0.22, 0.85),
+			true)
+	# And the one being drawn, in a different colour, so an unclosed wall is
+	# obviously unfinished rather than obviously broken.
+	if not _wall_pts.is_empty():
+		var live := PackedVector2Array()
+		for p in _wall_pts:
+			live.append(p)
+		_outline(out, live, Color(0.30, 0.95, 1.0, 0.95), false)
 	for b in edit.blocked:
 		out.append({"pos": Vector2(b.x, b.z), "r": float(b.r),
 			"col": Color(0.95, 0.20, 0.24, 0.5)})
@@ -441,6 +525,28 @@ func _markers() -> Array:
 		out.append({"pos": Vector2(q.x, q.z), "r": 1.1,
 			"col": Color(0.35, 0.95, 1.0, 0.9)})
 	return out
+
+
+## Dot the corners of an outline and the spans between them, so a wall reads as
+## a closed shape rather than a scatter of points. `closed` joins the last
+## corner back to the first; a wall still being drawn is deliberately left open.
+func _outline(out: Array, pts: PackedVector2Array, col: Color,
+		closed: bool) -> void:
+	var n := pts.size()
+	if n == 0:
+		return
+	for i in n:
+		out.append({"pos": pts[i], "r": 1.0, "col": col})
+		if i == n - 1 and not closed:
+			break
+		var a := pts[i]
+		var b := pts[(i + 1) % n]
+		# One dot every two metres along the span. Enough to read as a line at
+		# the editor's camera height without flooding the marker budget.
+		var steps := maxi(1, int(a.distance_to(b) / 2.0))
+		for k in range(1, steps):
+			out.append({"pos": a.lerp(b, float(k) / steps), "r": 0.5,
+				"col": Color(col.r, col.g, col.b, col.a * 0.6)})
 
 
 func _marker_mesh() -> Mesh:

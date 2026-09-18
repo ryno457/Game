@@ -103,11 +103,16 @@ func _initialize() -> void:
 
 
 ## Fraction of cells a unit could stand on.
+##
+## THE WALL MASK COUNTS. The first version read heights only, which meant a map
+## could be papered over with invisible walls until nothing was reachable and
+## this check would report it as perfectly healthy — the one safety net in the
+## tool, blind to the one edit that leaves no trace in the terrain.
 func _walkable(hf: Heightfield, cfg: TerrainConfig) -> float:
 	var n := 0
 	var total := cfg.cells_x * cfg.cells_z
 	for i in total:
-		if hf.heights[i] >= cfg.impassable_below:
+		if hf.heights[i] >= cfg.impassable_below and hf.blocked[i] == 0:
 			n += 1
 	return float(n) / maxf(1.0, float(total))
 
@@ -120,8 +125,8 @@ func _write_map(map: TerrainMap, edit: MapEdit, cfg: TerrainConfig) -> void:
 	map.ops.assign(ops)
 	var e := ResourceSaver.save(map, MAP)
 	print("  wrote    %s  (+%d ops, %d total)  %s"
-		% [MAP, edit.ops.size() + edit.blocked.size(), ops.size(),
-			"ok" if e == OK else error_string(e)])
+		% [MAP, edit.ops.size() + edit.blocked.size() + edit.walls.size(),
+			ops.size(), "ok" if e == OK else error_string(e)])
 
 
 ## The counts the placements imply, written back into HiveConfig.

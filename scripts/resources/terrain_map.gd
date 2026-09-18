@@ -13,6 +13,9 @@ extends Resource
 ##   trench  {x0, z0, x1, z1, r, amount}    swept line of dents
 ##   plateau {x, z, r, level, strength}     pull a disc toward a height
 ##   band    {x0, z0, x1, z1, level, edge}  pull a rect toward a height
+##   polygon {points, level, edge, strength} fill a traced outline
+##   wall    {points}                        INVISIBLE WALL: marks cells
+##                                           impassable and changes no heights
 
 @export var display_name: String = ""
 @export var terrain: TerrainConfig

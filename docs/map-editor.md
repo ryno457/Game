@@ -21,7 +21,8 @@ pulled back 2.4× — same pitch, same field of view, same three zoom rungs.
 | RAISE / LOWER | push the ground up or down under the brush | drag |
 | FLATTEN | pull the ground toward LEVEL, softly | drag |
 | PLATEAU | stamp a disc at LEVEL, at full strength | tap |
-| BLOCK | mark an area the player cannot enter | tap |
+| BLOCK | carve a chasm the player cannot cross | tap |
+| WALL | free-form invisible wall, no terrain change | tap out corners |
 | PLANT | place a piece of vegetation | tap |
 | ROAMER | one of the large creatures, with its territory | tap |
 | NEST | a plant hive, spawning SPAWNS at a time | tap |
@@ -35,6 +36,50 @@ the same numbers the ops and the passability thresholds are written in), and
 Two fingers is always the camera, never the brush — pinch to zoom, one finger
 to pan unless the tool paints. **UNDO** takes back the last edit whatever kind
 it was.
+
+## Two ways to say "you cannot go here"
+
+| | BLOCK | WALL |
+|---|---|---|
+| shape | a disc under the brush | free-form outline, tap out the corners |
+| the ground | carved to a chasm | **untouched** |
+| visible? | yes, it is a hole | no — whatever is standing there is the visual |
+| for | the obstacle IS the terrain | a thicket of plants, a cluster of structures |
+
+**WALL is the one for clusters of alien growth.** Those things stand on ground
+that is perfectly fine. Digging a chasm under them would say the wrong thing
+about what is stopping you, and would drop the props into the hole. So a wall
+is a separate mask on the heightfield (`Heightfield.blocked`), consulted by
+`is_passable` and changing not one height.
+
+Tap out the corners; tap the first one again to close, or press **CLOSE WALL**.
+**CANCEL WALL** drops one in progress. A wall in progress draws cyan, a
+finished one amber, and both draw as *dots along the outline* rather than a
+filled shape — a wall is invisible in the game and the editor must not make it
+look like a floor decal the player will see.
+
+Nothing renders a wall at runtime, and nothing should: **if the player cannot
+see why they are being stopped, the wall is in the wrong place.** The props are
+the explanation.
+
+It is a `wall` op like any other, so it rides through `TerrainMap.ops`, the
+JSON, and the apply tool with no new plumbing — and because it touches no
+heights, nothing applied after it can undo one.
+
+### And the JSON nearly ate them
+
+`JSON.stringify` turns a `Vector2` into the **string** `"(12, 34)"`. A wall
+saved and reloaded came back as a perfectly valid-looking entry with corners
+that were text, blocking absolutely nothing. Corners go out as `[x, z]` pairs
+now, and `MapEdit.wall_points()` reads all three shapes they might arrive in
+(Vector2 from the editor, `[x, z]` from a file, `{"x":, "z":}` from someone
+hand-writing one by copying the rest of the format). The check builds the
+terrain *after* a round trip and asserts it still blocks.
+
+The apply tool's walkable-fraction safety net also had to learn about them: it
+read heights only, so a map papered over with invisible walls until nothing was
+reachable would have been reported as perfectly healthy — the one safety net in
+the tool, blind to the one edit that leaves no trace in the terrain.
 
 ## Blocked areas are chasms, and that is a decision
 
@@ -52,8 +97,7 @@ CLAUDE.md records from the first prototype, where trenches read as cosmetic
 dents because they never breached the threshold. The check for it asserts
 against `is_passable` **at the rim**, not against the height in the middle.
 
-If invisible walls are wanted instead, say so — that is a different feature
-(a mask the flow field reads) and not a tweak to this one.
+Use WALL when the obstacle is something standing on good ground.
 
 ## Getting the map off the phone
 
@@ -135,6 +179,16 @@ be half hand-placed while it is being worked on, and what the check asserts.
 
 It is hand-writable, which is deliberate: the ops vocabulary is the one
 `TerrainMap` already uses, so anything the editor can express can also be typed.
+
+### One more trap, found by an undo
+
+`_replay()` originally called `terrain.setup()` again to rebuild after an undo.
+`setup()` builds a **new** `ShaderMaterial`, while the chunk meshes keep a
+`material_override` pointing at the old one — and the chunks are only ever
+built once, inside `set_detail_scale_factor()`, so nothing rebinds them. The
+terrain would have gone quietly stale after the first undo, still drawing the
+heights it had before, with no error and no visible cause. The field is
+rebuilt **in place** now, into the object the view already holds.
 
 ## Two traps this cost
 

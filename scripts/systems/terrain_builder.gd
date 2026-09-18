@@ -82,6 +82,16 @@ static func _apply(hf: Heightfield, op: Dictionary) -> void:
 			# straight off the reference.
 			_polygon(hf, op.points, op.level, float(op.get("edge", 5.0)),
 				float(op.get("strength", 1.0)))
+		"wall":
+			# AN INVISIBLE WALL, and the only op that does not touch a single
+			# height. A thicket of alien growth is standing ON ground that is
+			# perfectly fine; carving a chasm under it would say the wrong
+			# thing about what is stopping you and would drop the props into
+			# the hole. See Heightfield.blocked.
+			var pts := PackedVector2Array()
+			for p in op.get("points", []):
+				pts.append(p)
+			hf.wall_polygon(pts)
 		_:
 			push_warning("TerrainBuilder: unknown op '%s'" % op.get("op", ""))
 
