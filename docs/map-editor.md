@@ -11,12 +11,73 @@ MAP EDITOR button. Judges the map at the camera it is played at, under the
 lighting it ships with.
 
 **In a browser** — `tools/web_map_editor.html`, a single self-contained page
-(68 KB) published as an artifact. Same tools, same JSON, no Godot needed.
+(397 KB) published as an artifact. Same tools, same JSON, no Godot needed.
 `tools/export_map_web.gd` bakes the real biodome into it: height, water and
-material in one 150x112 PNG straight out of TerrainBuilder, plus the 408 props
-the dressing actually scatters and the Hive's own notice radii. The point is
-that the page draws the REAL map — a designer placing a nest "next to that
-plant" has to be looking at the plant that is actually there.
+material in one 150x112 PNG straight out of TerrainBuilder, the whole-map
+ground texture, plus the 408 props the dressing actually scatters and the
+Hive's own notice radii. The point is that the page draws the REAL map — a
+designer placing a nest "next to that plant" has to be looking at the plant
+that is actually there.
+
+### The background is the real ground
+
+`build/web/albedo.jpg` is a 1400 px copy of `textures/ground_vines_c.png` —
+the whole-map bake the terrain shader itself samples, unwrapped across the
+floor rather than tiled, resized to the map's aspect so the browser draws it
+into the map rectangle one-to-one. Before this the background was a
+four-colour height ramp, which is a DIAGRAM of the map: it showed open ground
+where the floor is in fact under a vine mat, and the designer was placing
+against a fiction.
+
+The page composites four layers, once per edit, into one offscreen canvas:
+
+    mix(height ramp, bake, 0.8) * relief
+
+with the chasm and the wall mask re-asserted between the bake and the relief.
+Three of those four are computed live from the edited heights, so a sculpt
+still reads. **The bake does not move.** It is a fixed unwrap of the unedited
+floor, so raising a plateau changes its shading and its tint and leaves the
+vines where they were baked — which the sculpt tools say in their hint text,
+because a page that quietly implies otherwise is worse than one with no
+texture at all.
+
+Two numbers in there are not the game's, and both were measured rather than
+picked:
+
+- **0.8, where the shader uses `baked_colour` = 0.55.** The shader mixes the
+  bake over the material-mapped, stroke-painted floor colour. The page has a
+  four-colour ramp instead, and spending 45% of the picture on a stand-in for
+  a layer it cannot reproduce threw away well over half the bake's contrast —
+  the first build of this rendered as a pale sheet with the vines barely under
+  it. At 0.8 the check measures 68% of the bake's detail surviving.
+- **A per-channel gain on the ramp.** The palette stores its colours linear and
+  the page draws them as sRGB bytes, so the ramp lands ~40% brighter than the
+  bake. Each channel is scaled so the ramp's mean over the open floor equals
+  the bake's; the mix then moves colour around — pools greener, ridges lighter
+  — without moving brightness.
+
+### Re-baking
+
+    godot --headless --path . --script tools/export_map_web.gd
+    python3 tools/inline_map_web.py
+    node tools/web_map_check.mjs
+
+The page is deliberately one file, because it gets opened off a phone's
+downloads folder or pasted into a chat artifact and neither can fetch a
+sibling. So the three baked assets live inside it as literals and
+`inline_map_web.py` rewrites those literals in place. They were pasted by hand
+the first time, which worked exactly once: a re-bake that has to be transcribed
+is a re-bake that quietly does not happen, and then the page is showing a map
+the game no longer has.
+
+`tools/web_map_check.mjs` drives the page in headless Chromium and asserts what
+a screenshot cannot — that the composite really is that formula to within a
+level, that the background is the bake and not the ramp, that the floor's
+brightness is the bake's shaded by the relief, that at least 55% of the bake's
+detail survives, and that a stamped plateau still moves pixels. Every one of
+those has already caught something: the first two runs of it were themselves
+wrong, comparing layers at mismatched resolutions and then over mismatched
+pixel sets, and reported a broken composite that was not broken.
 
 Its sculpt maths is a line-by-line port of `Heightfield.deform` and
 `TerrainBuilder._disc` / `_polygon` — `cos(d/r * PI/2)` squared, the same
