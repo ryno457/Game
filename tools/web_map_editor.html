@@ -1,0 +1,738 @@
+<title>Biodome 01 Survey</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --void:#080d0f; --panel:#111a1d; --panel2:#162226; --line:#223034;
+  --ink:#dfe9e8; --dim:#7c9398; --faint:#4a6066;
+  --amber:#e2a24b; --rust:#de5b4e; --magenta:#d25a9e;
+  --cyan:#57c9de; --moss:#63c48f; --orange:#e8813c;
+  --sans:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --cond:"Barlow Condensed","Barlow",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+/* The survey instrument is dark in every theme: this page is a view of a
+   night-time biodome, and a light version of it would be a different picture,
+   not the same picture on a pale ground. Everything is painted explicitly so
+   it holds on either host background. */
+html,body{height:100%}
+body{
+  margin:0;background:var(--void);color:var(--ink);font-family:var(--sans);
+  overscroll-behavior:none;
+}
+*{box-sizing:border-box}
+#app{display:flex;flex-direction:column;height:100%;min-height:0}
+
+/* ---- top bar ---- */
+header{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px));
+  background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;
+}
+.brand{font-family:var(--cond);font-weight:600;font-size:19px;letter-spacing:.06em;
+  text-transform:uppercase;white-space:nowrap}
+.brand span{color:var(--amber)}
+.counts{display:flex;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:11px}
+.chip{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:2px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+  font-variant-numeric:tabular-nums;
+}
+.chip b{color:var(--ink);font-weight:500}
+.chip i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.spacer{flex:1 1 auto}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;color:inherit;cursor:pointer}
+.btn{
+  font-family:var(--cond);font-size:14px;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase;padding:7px 12px;border-radius:2px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+}
+.btn:hover{border-color:var(--faint)}
+.btn.key{background:var(--amber);border-color:var(--amber);color:#16110a}
+.btn.key:hover{background:#eeb268;border-color:#eeb268}
+.btn:focus-visible,.tool:focus-visible,input:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--amber);outline-offset:2px}
+
+/* ---- body: rail + canvas ---- */
+#main{display:flex;flex:1 1 auto;min-height:0}
+#rail{
+  width:132px;flex:0 0 132px;background:var(--panel);border-right:1px solid var(--line);
+  overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:6px;
+}
+.group{font-family:var(--cond);font-size:11px;letter-spacing:.14em;color:var(--faint);
+  text-transform:uppercase;padding:9px 6px 3px}
+.tool{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:8px 8px;border-radius:2px;background:transparent;border:1px solid transparent;
+  border-left:3px solid transparent;color:var(--dim);
+}
+.tool:hover{background:var(--panel2);color:var(--ink)}
+.tool[aria-pressed="true"]{background:var(--panel2);color:var(--ink);border-left-color:var(--amber)}
+.tool i{width:9px;height:9px;flex:0 0 9px;border-radius:2px}
+.tool .n{font-family:var(--cond);font-weight:600;font-size:14px;letter-spacing:.04em;
+  text-transform:uppercase;line-height:1.05}
+.tool .d{display:block;font-family:var(--sans);font-size:10.5px;color:var(--faint);
+  letter-spacing:0;text-transform:none;font-weight:400}
+#stage{flex:1 1 auto;position:relative;min-width:0;background:var(--void)}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#hint{
+  position:absolute;left:12px;top:12px;max-width:min(360px,70%);
+  font-size:12px;line-height:1.45;color:var(--dim);
+  background:rgba(8,13,15,.82);border:1px solid var(--line);border-left:3px solid var(--amber);
+  padding:8px 11px;border-radius:2px;pointer-events:none;
+}
+#hint b{color:var(--ink);font-weight:500}
+#coord{
+  position:absolute;right:12px;top:12px;font-family:var(--mono);font-size:11px;
+  color:var(--dim);background:rgba(8,13,15,.82);border:1px solid var(--line);
+  padding:5px 9px;border-radius:2px;pointer-events:none;font-variant-numeric:tabular-nums;
+}
+
+/* ---- bottom params ---- */
+footer{
+  flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);
+  padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  display:flex;gap:18px;align-items:center;flex-wrap:wrap;
+}
+.par{display:flex;align-items:center;gap:9px;min-width:190px;flex:1 1 190px}
+.par label{font-family:var(--cond);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--dim);white-space:nowrap}
+.par output{font-family:var(--mono);font-size:12px;color:var(--amber);min-width:52px;
+  text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{flex:1 1 auto;min-width:70px;accent-color:var(--amber);background:transparent}
+
+/* ---- sheet ---- */
+#sheet[hidden]{display:none!important}
+#sheet{
+  position:fixed;inset:0;z-index:20;background:rgba(4,8,9,.72);
+  display:flex;align-items:center;justify-content:center;padding:16px;
+}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  width:min(720px,100%);max-height:min(82vh,760px);display:flex;flex-direction:column;
+}
+.card header{background:transparent;border-bottom:1px solid var(--line);padding-top:12px}
+.card .body{padding:14px 16px;overflow:auto;display:flex;flex-direction:column;gap:11px}
+.card p{margin:0;font-size:13px;line-height:1.5;color:var(--dim);max-width:62ch}
+.card p b{color:var(--ink);font-weight:500}
+textarea{
+  width:100%;min-height:210px;resize:vertical;font-family:var(--mono);font-size:11.5px;
+  line-height:1.5;background:var(--void);color:var(--ink);border:1px solid var(--line);
+  border-radius:2px;padding:10px;
+}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.note{font-family:var(--mono);font-size:11px;color:var(--moss)}
+.note.bad{color:var(--rust)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--dim)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+@media (max-width:760px){
+  #main{flex-direction:column-reverse}
+  #rail{width:auto;flex:0 0 auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;
+    border-right:0;border-top:1px solid var(--line);padding:6px 10px}
+  .group{display:none}
+  .tool{width:auto;flex:0 0 auto;border-left:0;border-bottom:3px solid transparent;
+    padding:7px 10px}
+  .tool[aria-pressed="true"]{border-left-color:transparent;border-bottom-color:var(--amber)}
+  .tool .d{display:none}
+  #stage{flex:1 1 auto;min-height:44vh}
+  footer{gap:10px}
+  .par{min-width:150px;flex:1 1 150px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div id="app">
+  <header>
+    <div class="brand">Biodome&nbsp;01 <span>Survey</span></div>
+    <div class="counts" id="counts"></div>
+    <div class="spacer"></div>
+    <div class="acts">
+      <button class="btn" id="bUndo">Undo</button>
+      <button class="btn" id="bClear">Clear</button>
+      <button class="btn" id="bFit">Fit</button>
+      <button class="btn" id="bImport">Paste</button>
+      <button class="btn key" id="bExport">Export JSON</button>
+    </div>
+  </header>
+
+  <div id="main">
+    <nav id="rail" aria-label="Tools"></nav>
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div id="hint"></div>
+      <div id="coord">—</div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="par">
+      <label for="pBrush">Brush</label>
+      <input type="range" id="pBrush" min="1" max="26" step="1" value="6">
+      <output id="oBrush">6 m</output>
+    </div>
+    <div class="par">
+      <label for="pLevel">Level</label>
+      <input type="range" id="pLevel" min="0" max="1" step="0.01" value="0.5">
+      <output id="oLevel">0.50</output>
+    </div>
+    <div class="par">
+      <label for="pCount">Spawns</label>
+      <input type="range" id="pCount" min="1" max="12" step="1" value="3">
+      <output id="oCount">3</output>
+    </div>
+  </footer>
+</div>
+
+<div id="sheet" hidden>
+  <div class="card">
+    <header>
+      <div class="brand" id="sheetTitle">Export</div>
+      <div class="spacer"></div>
+      <button class="btn" id="bClose">Close</button>
+    </header>
+    <div class="body">
+      <p id="sheetHelp"></p>
+      <textarea id="ta" spellcheck="false" aria-label="Map edit JSON"></textarea>
+      <div class="row">
+        <button class="btn key" id="bCopy">Copy to clipboard</button>
+        <button class="btn" id="bLoad" hidden>Load it</button>
+        <span class="note" id="note"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const MAP_PNG = "data:image/png;base64,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";
+const M = {"cell_size_m":1.0,"cells_x":150,"cells_z":112,"clamp_max":0.98,"clamp_min":0.02,"colours":{"ground":"4a5b54","pool":"082a29","ridge":"a3a79e","rough":"2f4637"},"height_scale_m":28.0,"hive":{"patch_notice_m":6.0,"patch_spacing_m":18.0,"plant_brood_count":2,"plant_notice_m":11.0,"roamer_notice_m":30.0,"roamer_wander_m":26.0},"impassable_below":0.26,"map":"res://data/terrain/biodome_map_01.tres","props":[{"k":"alien_ruin","s":1.0,"x":35.7,"z":75.6},{"k":"alien_ruin","s":1.5,"x":108.6,"z":44.2},{"k":"alien_ruin","s":1.15,"x":102.7,"z":26.5},{"k":"alien_ruin","s":1.5,"x":88.9,"z":82.2},{"k":"alien_ruin","s":1.5,"x":49.7,"z":51.1},{"k":"alien_ruin","s":1.25,"x":96.4,"z":30.5},{"k":"alien_ruin","s":1.05,"x":45.9,"z":66.1},{"k":"alien_ruin","s":1.35,"x":120.0,"z":33.4},{"k":"alien_ruin","s":1.45,"x":110.0,"z":28.0},{"k":"alien_ruin","s":1.4,"x":131.4,"z":20.0},{"k":"alien_ruin","s":1.0,"x":30.2,"z":83.9},{"k":"alien_ruin","s":0.85,"x":48.0,"z":82.7},{"k":"alien_ruin","s":0.85,"x":35.9,"z":64.7},{"k":"alien_ruin","s":0.85,"x":53.6,"z":75.4},{"k":"flora_arch","s":1.3,"x":107.8,"z":85.3},{"k":"flora_arch","s":1.8,"x":47.1,"z":33.2},{"k":"flora_arch","s":1.55,"x":20.2,"z":91.7},{"k":"flora_arch","s":1.75,"x":54.9,"z":27.1},{"k":"flora_arch","s":2.1,"x":125.6,"z":83.6},{"k":"flora_arch","s":1.45,"x":114.2,"z":62.0},{"k":"flora_arch","s":1.65,"x":31.0,"z":48.6},{"k":"flora_arch","s":1.15,"x":131.4,"z":43.2},{"k":"flora_arch","s":1.7,"x":16.1,"z":23.1},{"k":"flora_arch","s":1.15,"x":123.7,"z":96.4},{"k":"flora_brain","s":1.45,"x":61.3,"z":69.0},{"k":"flora_brain","s":1.8,"x":116.0,"z":80.4},{"k":"flora_brain","s":1.8,"x":71.9,"z":76.9},{"k":"flora_brain","s":1.95,"x":114.7,"z":94.9},{"k":"flora_brain","s":1.2,"x":95.7,"z":74.9},{"k":"rock_spire","s":0.95,"x":96.4,"z":81.7},{"k":"rock_spire","s":1.6,"x":27.6,"z":50.3},{"k":"rock_spire","s":1.75,"x":25.8,"z":52.3},{"k":"rock_spire","s":0.85,"x":75.9,"z":79.8},{"k":"rock_spire","s":1.05,"x":8.8,"z":27.3},{"k":"rock_spire","s":1.25,"x":58.4,"z":71.5},{"k":"rock_spire","s":0.9,"x":84.9,"z":86.7},{"k":"rock_spire","s":1.3,"x":101.8,"z":79.6},{"k":"rock_spire","s":1.45,"x":77.2,"z":87.2},{"k":"rock_spire","s":1.05,"x":112.5,"z":68.6},{"k":"rock_spire","s":1.1,"x":98.2,"z":70.7},{"k":"rock_spire","s":1.25,"x":81.1,"z":84.1},{"k":"rock_spire","s":1.5,"x":54.8,"z":66.6},{"k":"rock_spire","s":1.65,"x":108.8,"z":64.7},{"k":"rock_spire","s":1.95,"x":70.2,"z":84.4},{"k":"rock_spire","s":1.25,"x":73.4,"z":85.0},{"k":"rock_spire","s":0.9,"x":18.5,"z":59.5},{"k":"rock_spire","s":1.75,"x":28.8,"z":88.1},{"k":"rock_spire","s":1.6,"x":48.6,"z":73.3},{"k":"rock_spire","s":1.6,"x":60.5,"z":78.1},{"k":"rock_spire","s":1.35,"x":78.2,"z":80.9},{"k":"rock_spire","s":1.3,"x":35.3,"z":72.2},{"k":"rock_spire","s":1.95,"x":88.6,"z":86.5},{"k":"rock_spire","s":1.2,"x":111.8,"z":73.5},{"k":"rock_spire","s":1.2,"x":103.5,"z":66.2},{"k":"rock_spire","s":1.25,"x":16.0,"z":51.1},{"k":"rock_spire","s":1.45,"x":54.8,"z":70.3},{"k":"rock_spire","s":0.9,"x":10.3,"z":21.7},{"k":"rock_spire","s":1.35,"x":61.1,"z":73.2},{"k":"rock_spire","s":1.8,"x":46.3,"z":77.4},{"k":"rock_spire","s":1.45,"x":16.1,"z":54.4},{"k":"rock_spire","s":1.1,"x":105.8,"z":77.5},{"k":"rock_spire","s":1.8,"x":103.3,"z":68.8},{"k":"rock_spire","s":1.85,"x":61.6,"z":75.6},{"k":"rock_spire","s":1.55,"x":70.6,"z":81.6},{"k":"flora_tendril","s":1.85,"x":13.3,"z":63.7},{"k":"flora_tendril","s":1.25,"x":69.2,"z":36.6},{"k":"flora_tendril","s":1.5,"x":80.7,"z":16.0},{"k":"flora_tendril","s":1.5,"x":54.5,"z":32.9},{"k":"flora_tendril","s":2.15,"x":47.6,"z":80.4},{"k":"flora_tendril","s":1.25,"x":73.7,"z":58.1},{"k":"flora_tendril","s":1.75,"x":63.4,"z":36.4},{"k":"flora_tendril","s":1.75,"x":75.4,"z":20.5},{"k":"flora_tendril","s":1.4,"x":97.8,"z":36.9},{"k":"flora_tendril","s":1.0,"x":26.0,"z":68.3},{"k":"flora_tendril","s":1.9,"x":50.0,"z":84.2},{"k":"flora_tendril","s":1.1,"x":72.1,"z":30.3},{"k":"flora_tendril","s":1.0,"x":141.3,"z":41.6},{"k":"flora_tendril","s":1.15,"x":27.5,"z":77.0},{"k":"flora_tendril","s":1.05,"x":65.9,"z":50.3},{"k":"flora_tendril","s":1.75,"x":32.7,"z":45.5},{"k":"flora_tendril","s":1.15,"x":83.9,"z":17.2},{"k":"flora_tendril","s":1.3,"x":77.7,"z":51.5},{"k":"flora_tendril","s":1.9,"x":78.5,"z":45.7},{"k":"flora_tendril","s":1.35,"x":80.5,"z":91.1},{"k":"flora_tendril","s":1.75,"x":66.6,"z":94.2},{"k":"flora_tendril","s":1.05,"x":56.8,"z":48.4},{"k":"flora_tendril","s":1.45,"x":107.1,"z":104.1},{"k":"flora_tendril","s":1.9,"x":21.5,"z":69.2},{"k":"flora_tendril","s":1.2,"x":47.3,"z":58.6},{"k":"flora_tendril","s":1.9,"x":142.3,"z":53.6},{"k":"flora_tendril","s":1.95,"x":33.8,"z":77.6},{"k":"flora_tendril","s":2.05,"x":16.4,"z":64.7},{"k":"flora_tendril","s":1.8,"x":11.7,"z":62.0},{"k":"flora_tendril","s":1.05,"x":43.7,"z":88.7},{"k":"flora_tendril","s":2.0,"x":141.1,"z":60.0},{"k":"flora_tendril","s":2.1,"x":77.3,"z":55.3},{"k":"flora_tendril","s":1.15,"x":59.3,"z":36.2},{"k":"flora_tendril","s":2.0,"x":58.0,"z":54.6},{"k":"flora_tendril","s":1.45,"x":78.6,"z":103.9},{"k":"flora_tendril","s":2.0,"x":38.6,"z":35.5},{"k":"flora_tendril","s":1.4,"x":105.2,"z":22.7},{"k":"flora_tendril","s":1.7,"x":64.0,"z":70.1},{"k":"flora_tendril","s":1.3,"x":49.3,"z":94.1},{"k":"flora_tendril","s":1.5,"x":74.5,"z":24.7},{"k":"flora_tendril","s":1.3,"x":81.9,"z":73.0},{"k":"flora_tendril","s":1.25,"x":34.0,"z":57.1},{"k":"flora_tendril","s":1.35,"x":72.6,"z":65.5},{"k":"flora_tendril","s":1.05,"x":94.9,"z":28.0},{"k":"flora_tendril","s":1.9,"x":42.3,"z":101.8},{"k":"flora_tendril","s":1.15,"x":42.9,"z":44.0},{"k":"flora_tendril","s":1.75,"x":79.2,"z":70.4},{"k":"flora_tendril","s":1.4,"x":31.8,"z":65.5},{"k":"flora_tendril","s":1.35,"x":19.0,"z":74.2},{"k":"flora_tendril","s":2.15,"x":20.8,"z":36.9},{"k":"flora_tendril","s":1.35,"x":70.2,"z":93.0},{"k":"flora_tendril","s":1.45,"x":25.9,"z":45.2},{"k":"flora_tendril","s":1.25,"x":30.8,"z":33.8},{"k":"flora_tendril","s":1.6,"x":23.6,"z":40.5},{"k":"flora_tendril","s":1.45,"x":59.1,"z":25.6},{"k":"flora_tendril","s":1.7,"x":61.7,"z":32.5},{"k":"flora_tendril","s":1.05,"x":95.8,"z":12.5},{"k":"flora_tendril","s":1.65,"x":109.7,"z":96.6},{"k":"flora_tendril","s":1.75,"x":91.6,"z":21.3},{"k":"flora_tendril","s":2.1,"x":97.8,"z":94.4},{"k":"flora_tendril","s":2.1,"x":52.6,"z":88.7},{"k":"flora_tendril","s":1.75,"x":106.1,"z":89.1},{"k":"flora_tendril","s":1.95,"x":64.1,"z":32.0},{"k":"flora_tendril","s":1.45,"x":74.8,"z":34.4},{"k":"flora_tendril","s":2.0,"x":60.2,"z":44.2},{"k":"flora_tendril","s":1.6,"x":81.0,"z":45.7},{"k":"flora_tendril","s":1.35,"x":54.6,"z":85.3},{"k":"flora_tendril","s":1.2,"x":92.0,"z":25.1},{"k":"flora_tendril","s":2.15,"x":88.9,"z":17.1},{"k":"flora_tendril","s":2.2,"x":26.3,"z":39.0},{"k":"flora_tendril","s":1.05,"x":109.8,"z":90.9},{"k":"flora_tendril","s":1.45,"x":91.5,"z":86.5},{"k":"flora_tendril","s":1.6,"x":32.7,"z":38.5},{"k":"flora_tendril","s":1.55,"x":54.7,"z":39.1},{"k":"flora_tendril","s":1.9,"x":86.4,"z":28.4},{"k":"flora_tendril","s":1.3,"x":20.8,"z":42.9},{"k":"flora_tendril","s":1.3,"x":92.8,"z":33.7},{"k":"flora_tendril","s":1.85,"x":88.9,"z":97.7},{"k":"flora_tendril","s":1.85,"x":64.1,"z":46.7},{"k":"flora_tendril","s":1.15,"x":57.6,"z":34.3},{"k":"flora_tendril","s":1.75,"x":66.8,"z":53.6},{"k":"flora_tendril","s":2.05,"x":36.7,"z":34.3},{"k":"flora_tendril","s":1.6,"x":90.5,"z":32.3},{"k":"flora_tendril","s":1.75,"x":61.6,"z":42.2},{"k":"flora_tendril","s":1.4,"x":79.5,"z":98.7},{"k":"flora_tendril","s":2.0,"x":83.0,"z":104.0},{"k":"flora_tendril","s":2.05,"x":64.7,"z":67.9},{"k":"flora_tendril","s":1.25,"x":21.6,"z":46.3},{"k":"flora_tendril","s":1.95,"x":75.6,"z":38.8},{"k":"flora_tendril","s":1.5,"x":76.4,"z":102.6},{"k":"flora_tendril","s":1.1,"x":71.5,"z":49.4},{"k":"flora_tendril","s":1.95,"x":111.1,"z":94.4},{"k":"flora_tendril","s":1.55,"x":49.7,"z":87.1},{"k":"flora_tendril","s":1.05,"x":41.8,"z":94.2},{"k":"flora_tendril","s":1.6,"x":60.2,"z":46.7},{"k":"flora_tendril","s":2.0,"x":44.8,"z":80.1},{"k":"flora_tendril","s":1.85,"x":69.4,"z":52.3},{"k":"flora_tendril","s":1.3,"x":112.2,"z":103.1},{"k":"flora_tendril","s":1.2,"x":103.0,"z":101.7},{"k":"flora_tendril","s":1.15,"x":37.8,"z":88.9},{"k":"flora_tendril","s":2.0,"x":144.7,"z":48.3},{"k":"flora_tendril","s":2.2,"x":64.6,"z":85.7},{"k":"flora_tendril","s":1.8,"x":87.2,"z":89.4},{"k":"flora_tendril","s":1.9,"x":24.7,"z":75.1},{"k":"flora_tendril","s":2.0,"x":83.2,"z":29.0},{"k":"flora_tendril","s":1.7,"x":88.1,"z":38.8},{"k":"flora_tendril","s":1.35,"x":41.2,"z":99.4},{"k":"flora_tendril","s":1.35,"x":77.3,"z":36.4},{"k":"flora_tendril","s":1.05,"x":113.6,"z":25.7},{"k":"flora_tendril","s":1.4,"x":50.4,"z":59.4},{"k":"flora_tendril","s":1.35,"x":88.5,"z":26.7},{"k":"flora_tendril","s":1.1,"x":64.8,"z":55.7},{"k":"flora_tendril","s":1.2,"x":63.4,"z":40.8},{"k":"flora_tendril","s":2.0,"x":61.1,"z":62.6},{"k":"flora_tendril","s":1.8,"x":86.8,"z":101.8},{"k":"flora_tendril","s":2.05,"x":70.2,"z":25.8},{"k":"flora_tendril","s":1.3,"x":75.5,"z":43.5},{"k":"flora_tendril","s":1.0,"x":92.4,"z":29.1},{"k":"flora_tendril","s":1.65,"x":77.2,"z":61.2},{"k":"flora_tendril","s":2.2,"x":20.6,"z":28.8},{"k":"flora_tendril","s":1.5,"x":44.7,"z":39.7},{"k":"flora_tendril","s":1.5,"x":45.1,"z":42.9},{"k":"flora_tendril","s":1.4,"x":88.1,"z":19.5},{"k":"flora_tendril","s":1.75,"x":71.1,"z":38.6},{"k":"flora_tendril","s":1.15,"x":96.7,"z":9.0},{"k":"flora_tendril","s":1.5,"x":29.5,"z":31.8},{"k":"flora_tendril","s":1.35,"x":85.9,"z":15.3},{"k":"flora_tendril","s":1.75,"x":83.8,"z":51.9},{"k":"flora_tendril","s":1.55,"x":23.0,"z":34.9},{"k":"flora_tendril","s":1.7,"x":30.5,"z":81.2},{"k":"flora_tendril","s":1.8,"x":88.6,"z":108.0},{"k":"flora_tendril","s":1.05,"x":35.7,"z":44.1},{"k":"flora_tendril","s":1.75,"x":22.4,"z":27.5},{"k":"flora_tendril","s":2.1,"x":94.1,"z":95.3},{"k":"flora_tendril","s":1.1,"x":98.7,"z":88.0},{"k":"flora_tendril","s":2.15,"x":65.9,"z":38.5},{"k":"flora_tendril","s":1.25,"x":70.0,"z":60.0},{"k":"flora_tendril","s":2.1,"x":44.7,"z":92.8},{"k":"flora_tendril","s":2.05,"x":113.6,"z":100.5},{"k":"flora_tendril","s":1.25,"x":69.8,"z":55.7},{"k":"flora_coral","s":1.3,"x":88.9,"z":50.8},{"k":"flora_coral","s":1.05,"x":131.6,"z":87.9},{"k":"flora_coral","s":1.75,"x":87.2,"z":52.8},{"k":"flora_coral","s":1.85,"x":85.0,"z":63.5},{"k":"flora_coral","s":1.35,"x":33.5,"z":106.0},{"k":"flora_coral","s":1.1,"x":84.4,"z":59.0},{"k":"flora_coral","s":1.0,"x":83.0,"z":64.0},{"k":"flora_coral","s":1.85,"x":59.8,"z":22.2},{"k":"flora_coral","s":1.75,"x":74.3,"z":52.4},{"k":"flora_coral","s":1.75,"x":87.2,"z":59.4},{"k":"flora_coral","s":1.85,"x":4.2,"z":74.1},{"k":"flora_coral","s":1.7,"x":79.8,"z":54.7},{"k":"flora_coral","s":1.1,"x":80.9,"z":66.3},{"k":"flora_coral","s":1.85,"x":89.9,"z":55.3},{"k":"flora_coral","s":1.85,"x":78.9,"z":65.9},{"k":"flora_coral","s":1.55,"x":75.7,"z":66.0},{"k":"flora_coral","s":1.25,"x":75.8,"z":63.5},{"k":"flora_coral","s":1.0,"x":75.8,"z":50.2},{"k":"flora_coral","s":1.3,"x":63.9,"z":28.1},{"k":"flora_coral","s":0.95,"x":128.7,"z":91.1},{"k":"flora_coral","s":1.25,"x":86.8,"z":66.2},{"k":"flora_coral","s":1.25,"x":3.9,"z":24.0},{"k":"flora_coral","s":1.1,"x":86.6,"z":57.5},{"k":"flora_coral","s":1.0,"x":83.9,"z":67.0},{"k":"flora_coral","s":1.8,"x":25.5,"z":104.6},{"k":"flora_coral","s":1.4,"x":71.9,"z":61.0},{"k":"flora_coral","s":1.75,"x":91.2,"z":57.0},{"k":"flora_coral","s":1.15,"x":85.1,"z":60.7},{"k":"flora_coral","s":1.4,"x":73.8,"z":63.4},{"k":"flora_coral","s":1.35,"x":25.4,"z":32.0},{"k":"flora_coral","s":1.25,"x":6.2,"z":18.0},{"k":"flora_coral","s":1.85,"x":124.2,"z":91.0},{"k":"flora_coral","s":1.15,"x":77.0,"z":47.0},{"k":"flora_coral","s":1.85,"x":87.0,"z":50.6},{"k":"flora_coral","s":1.35,"x":6.8,"z":85.2},{"k":"flora_coral","s":1.4,"x":78.9,"z":60.5},{"k":"flora_coral","s":1.25,"x":130.6,"z":96.3},{"k":"flora_coral","s":1.4,"x":75.1,"z":55.6},{"k":"flora_coral","s":1.1,"x":4.6,"z":22.3},{"k":"flora_coral","s":1.3,"x":24.8,"z":25.3},{"k":"flora_coral","s":1.55,"x":129.9,"z":92.7},{"k":"flora_coral","s":1.4,"x":75.5,"z":58.6},{"k":"flora_coral","s":1.8,"x":139.1,"z":94.0},{"k":"flora_coral","s":1.65,"x":25.0,"z":28.8},{"k":"flora_coral","s":1.25,"x":80.1,"z":62.4},{"k":"flora_coral","s":1.8,"x":89.3,"z":62.8},{"k":"flora_coral","s":1.55,"x":37.5,"z":103.8},{"k":"flora_coral","s":1.85,"x":86.7,"z":55.6},{"k":"flora_coral","s":1.1,"x":75.7,"z":53.8},{"k":"flora_coral","s":1.25,"x":82.9,"z":60.8},{"k":"flora_coral","s":1.75,"x":57.0,"z":19.9},{"k":"flora_coral","s":1.35,"x":86.7,"z":61.9},{"k":"flora_coral","s":1.35,"x":79.5,"z":47.3},{"k":"flora_coral","s":1.2,"x":81.1,"z":68.3},{"k":"flora_pods","s":1.0,"x":18.0,"z":89.7},{"k":"flora_pods","s":1.35,"x":6.7,"z":37.0},{"k":"flora_pods","s":1.05,"x":91.6,"z":14.1},{"k":"flora_pods","s":1.15,"x":131.9,"z":44.6},{"k":"flora_pods","s":1.4,"x":127.3,"z":49.5},{"k":"flora_pods","s":1.4,"x":67.6,"z":71.2},{"k":"flora_pods","s":1.5,"x":66.0,"z":89.4},{"k":"flora_pods","s":1.1,"x":28.2,"z":68.0},{"k":"flora_pods","s":1.35,"x":29.2,"z":62.2},{"k":"flora_pods","s":1.4,"x":20.4,"z":77.1},{"k":"flora_pods","s":1.55,"x":95.1,"z":71.4},{"k":"flora_pods","s":1.45,"x":29.7,"z":77.6},{"k":"flora_pods","s":1.15,"x":136.6,"z":35.8},{"k":"flora_pods","s":1.0,"x":38.9,"z":80.4},{"k":"flora_pods","s":1.4,"x":106.7,"z":39.6},{"k":"flora_pods","s":0.95,"x":66.1,"z":74.7},{"k":"flora_pods","s":1.35,"x":95.1,"z":83.2},{"k":"flora_pods","s":1.15,"x":35.3,"z":98.7},{"k":"flora_pods","s":1.45,"x":17.7,"z":82.1},{"k":"flora_pods","s":1.35,"x":121.8,"z":50.2},{"k":"flora_pods","s":1.6,"x":109.1,"z":55.3},{"k":"flora_pods","s":0.95,"x":114.5,"z":33.6},{"k":"flora_pods","s":1.1,"x":86.6,"z":81.4},{"k":"flora_pods","s":1.5,"x":40.1,"z":73.8},{"k":"flora_pods","s":1.1,"x":7.9,"z":81.6},{"k":"flora_pods","s":1.6,"x":33.1,"z":55.5},{"k":"flora_pods","s":1.2,"x":24.8,"z":78.9},{"k":"flora_pods","s":1.25,"x":127.0,"z":15.8},{"k":"flora_pods","s":0.95,"x":20.4,"z":87.5},{"k":"flora_pods","s":1.4,"x":67.9,"z":76.4},{"k":"flora_pods","s":1.15,"x":86.2,"z":78.2},{"k":"flora_pods","s":1.5,"x":18.2,"z":93.5},{"k":"flora_pods","s":1.5,"x":12.6,"z":81.9},{"k":"flora_pods","s":1.25,"x":133.5,"z":40.7},{"k":"flora_pods","s":1.4,"x":37.8,"z":69.0},{"k":"flora_pods","s":1.45,"x":107.0,"z":50.0},{"k":"flora_pods","s":1.05,"x":12.0,"z":30.1},{"k":"flora_pods","s":1.2,"x":4.6,"z":34.6},{"k":"flora_pods","s":1.55,"x":96.7,"z":50.5},{"k":"flora_pods","s":1.35,"x":59.6,"z":84.1},{"k":"flora_pods","s":1.25,"x":128.2,"z":42.3},{"k":"flora_pods","s":0.95,"x":51.5,"z":85.6},{"k":"flora_pods","s":1.0,"x":38.2,"z":91.6},{"k":"flora_pods","s":1.0,"x":108.6,"z":47.7},{"k":"flora_pods","s":1.5,"x":38.1,"z":76.8},{"k":"flora_pods","s":1.45,"x":41.1,"z":82.7},{"k":"flora_pods","s":0.85,"x":13.2,"z":86.8},{"k":"flora_pods","s":1.45,"x":20.3,"z":73.0},{"k":"flora_pods","s":1.05,"x":82.7,"z":92.9},{"k":"flora_pods","s":1.1,"x":24.0,"z":82.1},{"k":"flora_pods","s":1.3,"x":2.0,"z":36.1},{"k":"flora_pods","s":1.25,"x":36.8,"z":85.4},{"k":"flora_pods","s":1.0,"x":136.7,"z":33.6},{"k":"flora_pods","s":1.35,"x":58.0,"z":83.8},{"k":"flora_pods","s":0.85,"x":21.8,"z":78.1},{"k":"flora_pods","s":1.5,"x":103.3,"z":23.4},{"k":"flora_pods","s":1.2,"x":63.8,"z":84.0},{"k":"flora_pods","s":1.45,"x":60.1,"z":67.0},{"k":"flora_pods","s":1.25,"x":114.1,"z":53.6},{"k":"flora_pods","s":1.3,"x":41.1,"z":79.1},{"k":"flora_pods","s":1.3,"x":101.2,"z":16.1},{"k":"flora_pods","s":1.6,"x":72.6,"z":90.3},{"k":"flora_pods","s":1.35,"x":57.8,"z":76.8},{"k":"flora_pods","s":0.9,"x":29.0,"z":71.6},{"k":"flora_pods","s":1.1,"x":53.3,"z":81.9},{"k":"flora_pods","s":1.25,"x":125.6,"z":33.0},{"k":"flora_pods","s":1.4,"x":121.3,"z":46.4},{"k":"flora_pods","s":1.25,"x":10.9,"z":97.2},{"k":"flora_pods","s":1.05,"x":32.4,"z":100.3},{"k":"flora_pods","s":1.55,"x":120.6,"z":29.8},{"k":"flora_pods","s":1.5,"x":121.7,"z":41.2},{"k":"flora_pods","s":0.85,"x":106.3,"z":55.8},{"k":"flora_pods","s":1.35,"x":14.3,"z":90.4},{"k":"flora_pods","s":0.95,"x":18.5,"z":72.0},{"k":"flora_pods","s":1.4,"x":18.1,"z":84.3},{"k":"flora_pods","s":1.55,"x":58.1,"z":81.5},{"k":"flora_pods","s":1.35,"x":12.0,"z":74.4},{"k":"flora_pods","s":1.35,"x":103.1,"z":20.6},{"k":"flora_pods","s":1.45,"x":105.3,"z":47.9},{"k":"flora_pods","s":0.95,"x":64.1,"z":91.7},{"k":"flora_pods","s":0.9,"x":100.3,"z":45.1},{"k":"flora_pods","s":0.95,"x":127.4,"z":40.4},{"k":"flora_pods","s":1.05,"x":102.3,"z":52.1},{"k":"flora_pods","s":1.05,"x":62.6,"z":85.5},{"k":"flora_pods","s":1.2,"x":140.3,"z":32.8},{"k":"flora_pods","s":0.9,"x":140.2,"z":37.2},{"k":"flora_pods","s":1.15,"x":23.1,"z":58.0},{"k":"flora_pods","s":1.6,"x":8.7,"z":21.8},{"k":"flora_pods","s":1.55,"x":56.2,"z":69.5},{"k":"flora_pods","s":1.45,"x":90.7,"z":69.2},{"k":"flora_pods","s":0.9,"x":68.5,"z":74.0},{"k":"flora_pods","s":1.4,"x":90.4,"z":93.7},{"k":"flora_pods","s":1.0,"x":89.8,"z":20.7},{"k":"flora_pods","s":1.2,"x":12.3,"z":25.9},{"k":"flora_pods","s":1.4,"x":73.1,"z":93.3},{"k":"flora_pods","s":1.5,"x":130.1,"z":37.4},{"k":"flora_pods","s":1.3,"x":29.8,"z":92.5},{"k":"flora_pods","s":1.0,"x":67.7,"z":84.9},{"k":"flora_pods","s":1.0,"x":9.4,"z":74.4},{"k":"flora_pods","s":1.35,"x":128.2,"z":54.9},{"k":"flora_pods","s":1.25,"x":104.5,"z":18.7},{"k":"flora_pods","s":1.35,"x":79.0,"z":87.3},{"k":"flora_pods","s":1.1,"x":60.4,"z":86.6},{"k":"flora_pods","s":1.05,"x":29.3,"z":48.0},{"k":"flora_pods","s":1.25,"x":36.2,"z":55.0},{"k":"flora_pods","s":1.5,"x":12.5,"z":28.0},{"k":"flora_pods","s":1.05,"x":99.3,"z":65.8},{"k":"flora_pods","s":0.95,"x":92.4,"z":88.2},{"k":"flora_pods","s":0.9,"x":118.6,"z":42.0},{"k":"flora_pods","s":0.95,"x":30.6,"z":94.4},{"k":"flora_pods","s":1.45,"x":98.0,"z":52.6},{"k":"flora_pods","s":1.3,"x":83.0,"z":78.3},{"k":"flora_pods","s":1.45,"x":127.2,"z":38.0},{"k":"flora_pods","s":1.35,"x":63.1,"z":71.9},{"k":"flora_pods","s":1.0,"x":115.3,"z":48.0},{"k":"flora_pods","s":1.2,"x":11.1,"z":71.0},{"k":"flora_pods","s":1.55,"x":101.7,"z":76.8},{"k":"flora_pods","s":1.6,"x":38.8,"z":66.4},{"k":"flora_pods","s":1.2,"x":105.4,"z":53.2},{"k":"flora_pods","s":1.25,"x":52.0,"z":87.3},{"k":"flora_pods","s":1.4,"x":61.3,"z":82.8},{"k":"flora_pods","s":1.45,"x":107.9,"z":38.2},{"k":"flora_pods","s":1.05,"x":43.8,"z":94.1},{"k":"flora_pods","s":1.15,"x":122.8,"z":30.5},{"k":"flora_pods","s":1.35,"x":33.7,"z":72.3},{"k":"flora_pods","s":1.45,"x":9.7,"z":25.1},{"k":"flora_pods","s":1.5,"x":11.3,"z":82.7},{"k":"flora_pods","s":1.55,"x":62.7,"z":79.8},{"k":"flora_pods","s":1.4,"x":92.5,"z":17.5},{"k":"flora_pods","s":1.3,"x":47.3,"z":68.7},{"k":"flora_pods","s":1.5,"x":35.1,"z":87.9},{"k":"flora_pods","s":0.9,"x":49.3,"z":75.1},{"k":"flora_pods","s":0.95,"x":123.1,"z":57.6},{"k":"flora_pods","s":1.05,"x":6.3,"z":26.1},{"k":"flora_pods","s":1.45,"x":129.9,"z":21.0},{"k":"flora_pods","s":1.55,"x":35.2,"z":83.6},{"k":"flora_pods","s":1.6,"x":107.3,"z":73.9},{"k":"flora_pods","s":1.5,"x":134.4,"z":19.2},{"k":"flora_pods","s":1.55,"x":124.0,"z":41.1},{"k":"flora_pods","s":1.0,"x":117.8,"z":46.7},{"k":"flora_pods","s":1.05,"x":23.0,"z":54.5},{"k":"flora_pods","s":1.3,"x":115.1,"z":50.0},{"k":"flora_pods","s":1.05,"x":86.0,"z":95.8},{"k":"flora_pods","s":0.9,"x":70.2,"z":74.6},{"k":"flora_pods","s":1.0,"x":71.9,"z":97.9},{"k":"flora_pods","s":1.1,"x":93.8,"z":90.0},{"k":"flora_pods","s":1.15,"x":113.6,"z":36.6},{"k":"flora_pods","s":1.1,"x":36.8,"z":58.2},{"k":"flora_pods","s":1.55,"x":2.0,"z":30.5},{"k":"flora_pods","s":1.0,"x":45.4,"z":69.0}],"rough_below":0.38,"spawn":[45.0,21.2799987792969]};
+
+/* ------------------------------------------------------------------ model
+   A straight port of MapEdit.gd. Same six lists, same one-door-in `add` so
+   nothing can be recorded without being undoable, same history of
+   [list, index] pairs so undo takes back the LAST edit whatever kind it was.
+   The JSON it emits has to be byte-for-byte acceptable to
+   tools/apply_map_edit.gd, so the format string and the shapes are fixed. */
+const FORMAT = "sentinel-map-edit", VERSION = 1;
+const ED = {ops:[], blocked:[], walls:[], plants:[], roamers:[], nests:[], patches:[], hist:[]};
+const listOf = k => ED[k];
+function add(k, e){ listOf(k).push(e); ED.hist.push([k, listOf(k).length-1]); }
+function undo(){
+  const last = ED.hist.pop(); if(!last) return null;
+  const arr = listOf(last[0]); if(last[1] >= arr.length) return null;
+  const gone = arr.splice(last[1],1)[0];
+  for(const h of ED.hist) if(h[0]===last[0] && h[1]>last[1]) h[1]--;
+  return gone;
+}
+function clearAll(){ for(const k of ["ops","blocked","walls","plants","roamers","nests","patches"]) ED[k].length=0; ED.hist.length=0; }
+
+/* A blocked disc becomes a POLYGON, not a plateau — same reason as in the
+   Godot editor: a plateau op's cosine-squared falloff has only moved the
+   ground a quarter of the way to its level at two thirds of the radius, so a
+   nine-metre blocked disc left a walkable ring the designer drew and could
+   not see. _polygon fills its interior at full strength. */
+const BLOCK_SIDES = 20, BLOCK_EDGE = 1.5;
+const impLevel = () => Math.max(0, M.impassable_below - 0.05);
+function blockedOp(b){
+  const pts = [];
+  for(let i=0;i<BLOCK_SIDES;i++){
+    const a = Math.PI*2*i/BLOCK_SIDES;
+    pts.push([b.x + Math.cos(a)*Math.max(0.5,b.r), b.z + Math.sin(a)*Math.max(0.5,b.r)]);
+  }
+  return {op:"polygon", points:pts, level:impLevel(), edge:BLOCK_EDGE, strength:1.0};
+}
+function allOps(){
+  const out = ED.ops.slice();
+  for(const b of ED.blocked) out.push(blockedOp(b));
+  for(const w of ED.walls) out.push({op:"wall", points:w.points});
+  return out;
+}
+function toJSON(){
+  return JSON.stringify({
+    format:FORMAT, version:VERSION, map:M.map,
+    notes:"Drawn in the browser survey editor.",
+    ops:ED.ops, blocked:ED.blocked,
+    walls:ED.walls.map(w=>({points:w.points.map(p=>[r1(p[0]),r1(p[1])])})),
+    plants:ED.plants,
+    hive:{roamers:ED.roamers, nests:ED.nests, patches:ED.patches}
+  }, null, 2);
+}
+const r1 = v => Math.round(v*10)/10;
+
+/* ------------------------------------------------------------- terrain data
+   The PNG carries height in R, material in G, water in B, baked straight out
+   of the same TerrainBuilder the game runs. `base` never changes; `work` is
+   base plus every edit replayed, which is also how undo works — a hole cannot
+   be un-dug in place. */
+const W = M.cells_x, H = M.cells_z, CS = M.cell_size_m;
+// `mat` is the material id the exporter packs into G. Decoded and not yet
+// used: the colour here comes from height and water, which is enough to
+// read the shape. It is kept so a future pass can tint moss against rock
+// without re-baking the PNG.
+let base=null, work=null, mat=null, wat=null, walled=null;
+
+function applyOp(h, op){
+  if(op.op === "crater"){
+    // Heightfield.deform: f = cos(d/r * PI/2), h += amount * f*f, clamped.
+    const gx=op.x/CS, gz=op.z/CS, gr=op.r/CS;
+    const x0=Math.max(0,Math.floor(gx-gr)), x1=Math.min(W-1,Math.ceil(gx+gr));
+    const z0=Math.max(0,Math.floor(gz-gr)), z1=Math.min(H-1,Math.ceil(gz+gr));
+    for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
+      const d=Math.hypot(x-gx,z-gz); if(d>gr) continue;
+      const f=Math.cos(d/gr*Math.PI*0.5), i=z*W+x;
+      h[i]=Math.min(M.clamp_max, Math.max(Math.min(M.clamp_min,h[i]), h[i]+op.amount*f*f));
+    }
+  } else if(op.op === "plateau"){
+    // TerrainBuilder._disc: lerp toward level by strength * f*f.
+    const gr=op.r, st=op.strength==null?1:op.strength;
+    const x0=Math.max(0,Math.floor(op.x-gr)), x1=Math.min(W-1,Math.ceil(op.x+gr));
+    const z0=Math.max(0,Math.floor(op.z-gr)), z1=Math.min(H-1,Math.ceil(op.z+gr));
+    for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
+      const d=Math.hypot(x-op.x,z-op.z); if(d>gr) continue;
+      const f=Math.cos(d/gr*Math.PI*0.5), k=Math.min(1,Math.max(0,st*f*f)), i=z*W+x;
+      h[i]=h[i]+(op.level-h[i])*k;
+    }
+  } else if(op.op === "polygon"){
+    const pts=op.points.map(p=>Array.isArray(p)?p:[p.x,p.z]);
+    let lo=[1e9,1e9], hi=[-1e9,-1e9];
+    for(const p of pts){lo[0]=Math.min(lo[0],p[0]);lo[1]=Math.min(lo[1],p[1]);
+      hi[0]=Math.max(hi[0],p[0]);hi[1]=Math.max(hi[1],p[1]);}
+    const e=op.edge==null?4:op.edge, st=op.strength==null?1:op.strength;
+    const x0=Math.max(0,Math.floor(lo[0]-e)), x1=Math.min(W-1,Math.ceil(hi[0]+e));
+    const z0=Math.max(0,Math.floor(lo[1]-e)), z1=Math.min(H-1,Math.ceil(hi[1]+e));
+    for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
+      const inside=ptIn(pts,x,z);
+      const f = inside ? 1 : Math.max(0, 1 - distPoly(pts,x,z)/Math.max(0.001,e));
+      if(f<=0) continue;
+      const k=Math.min(1,Math.max(0,st*f*f)), i=z*W+x;
+      h[i]=h[i]+(op.level-h[i])*k;
+    }
+  } else if(op.op === "wall"){
+    const pts=op.points.map(p=>Array.isArray(p)?p:[p.x,p.z]);
+    if(pts.length<3) return;
+    let lo=[1e9,1e9], hi=[-1e9,-1e9];
+    for(const p of pts){lo[0]=Math.min(lo[0],p[0]);lo[1]=Math.min(lo[1],p[1]);
+      hi[0]=Math.max(hi[0],p[0]);hi[1]=Math.max(hi[1],p[1]);}
+    const x0=Math.max(0,Math.floor(lo[0])), x1=Math.min(W-1,Math.ceil(hi[0]));
+    const z0=Math.max(0,Math.floor(lo[1])), z1=Math.min(H-1,Math.ceil(hi[1]));
+    // Cell CENTRES, like Heightfield.wall_polygon — testing the corner puts
+    // the wall half a metre off and leaves a gap a swarmer walks through.
+    for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++)
+      if(ptIn(pts,x+0.5,z+0.5)) walled[z*W+x]=1;
+  }
+}
+function ptIn(pts,x,y){
+  let inside=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const a=pts[i], b=pts[j];
+    if((a[1]>y)!==(b[1]>y) && x < (b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]) inside=!inside;
+  }
+  return inside;
+}
+function distPoly(pts,x,y){
+  let best=1e9;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const a=pts[i], b=pts[j];
+    const vx=b[0]-a[0], vy=b[1]-a[1], wx=x-a[0], wy=y-a[1];
+    const L=vx*vx+vy*vy, t=L<=0?0:Math.min(1,Math.max(0,(wx*vx+wy*vy)/L));
+    best=Math.min(best, Math.hypot(x-(a[0]+vx*t), y-(a[1]+vy*t)));
+  }
+  return best;
+}
+function rebuild(){
+  work.set(base); walled.fill(0);
+  for(const op of allOps()) applyOp(work, op);
+  paint(); refresh();
+}
+
+/* ------------------------------------------------------------------ paint */
+const tile = document.createElement("canvas");
+tile.width=W; tile.height=H;
+const tctx = tile.getContext("2d", {willReadFrequently:true});
+let imgData=null;
+const hex = s => [parseInt(s.slice(0,2),16),parseInt(s.slice(2,4),16),parseInt(s.slice(4,6),16)];
+const C_POOL=hex(M.colours.pool), C_ROUGH=hex(M.colours.rough),
+      C_GROUND=hex(M.colours.ground), C_RIDGE=hex(M.colours.ridge);
+const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
+
+function paint(){
+  const d=imgData.data, imp=M.impassable_below, rgh=M.rough_below;
+  for(let z=0;z<H;z++) for(let x=0;x<W;x++){
+    const i=z*W+x, h=work[i];
+    let c;
+    if(h < imp){
+      // Below the impassable line there is no ground — this is the chasm the
+      // whole map's silhouette is made of, so it reads as the page ground.
+      c=[10,15,17];
+    }else if(h < rgh){
+      c=mix(C_ROUGH, C_GROUND, (h-imp)/Math.max(.001,rgh-imp));
+    }else{
+      c=mix(C_GROUND, C_RIDGE, Math.min(1,(h-rgh)/Math.max(.001,1-rgh)));
+    }
+    if(wat[i] > 0.4) c=mix(c, C_POOL, Math.min(1, wat[i]));
+    // Relief from the height gradient, lit from the same north-west the
+    // game's moon sits in, so the shape of a plateau reads at a glance.
+    const hl = work[z*W+Math.max(0,x-1)], hr = work[z*W+Math.min(W-1,x+1)];
+    const hu = work[Math.max(0,z-1)*W+x], hd = work[Math.min(H-1,z+1)*W+x];
+    // Relief, kept on a SHORT LEASH. At the first strength the gradient term
+    // pushed most of the map past its ridge colour and the whole biodome
+    // rendered as pale grey — a survey of somewhere else. The floor is dark
+    // teal and it has to stay dark teal.
+    const s = 1 + ((hl-hr)*0.9 + (hu-hd)*0.6) * 3.2;
+    const k = Math.min(1.22, Math.max(0.6, s)) * 0.84;
+    const o=i*4;
+    d[o]=Math.min(255,c[0]*k); d[o+1]=Math.min(255,c[1]*k); d[o+2]=Math.min(255,c[2]*k);
+    if(walled[i]){ d[o]=Math.min(255,d[o]*.72+70); d[o+1]=Math.min(255,d[o+1]*.72+52); d[o+2]=Math.min(255,d[o+2]*.72+14); }
+    d[o+3]=255;
+  }
+  tctx.putImageData(imgData,0,0);
+}
+
+/* ------------------------------------------------------------------- view */
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+let view={s:5, x:0, y:0};      // pixels per metre, and the top-left in pixels
+function fit(){
+  const r=cv.getBoundingClientRect();
+  view.s=Math.min(r.width/(W*CS), r.height/(H*CS))*0.94;
+  view.x=(r.width-W*CS*view.s)/2; view.y=(r.height-H*CS*view.s)/2;
+  draw();
+}
+const toScreen=(mx,mz)=>[view.x+mx*view.s, view.y+mz*view.s];
+const toMap=(px,py)=>[(px-view.x)/view.s, (py-view.y)/view.s];
+
+function resize(){
+  const r=cv.getBoundingClientRect(), dpr=Math.min(2, window.devicePixelRatio||1);
+  cv.width=Math.max(1,Math.round(r.width*dpr)); cv.height=Math.max(1,Math.round(r.height*dpr));
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+function ring(mx,mz,rm,stroke,fill){
+  const [px,py]=toScreen(mx,mz), rp=rm*view.s;
+  ctx.beginPath(); ctx.arc(px,py,rp,0,Math.PI*2);
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1.25;ctx.stroke();}
+}
+function dot(mx,mz,rp,fill){
+  const [px,py]=toScreen(mx,mz);
+  ctx.beginPath(); ctx.arc(px,py,rp,0,Math.PI*2); ctx.fillStyle=fill; ctx.fill();
+}
+function draw(){
+  const r=cv.getBoundingClientRect();
+  ctx.fillStyle="#080d0f"; ctx.fillRect(0,0,r.width,r.height);
+  // Smooth when zoomed OUT, crisp past 12 px/m where the 1 m cells are the
+  // thing being looked at.
+  ctx.imageSmoothingEnabled = view.s < 12;
+  ctx.drawImage(tile, view.x, view.y, W*CS*view.s, H*CS*view.s);
+
+  // The props the dressing really scatters, so "next to that plant" means a
+  // plant that is actually there.
+  if(view.s > 2.2){
+    for(const p of M.props){
+      const big = p.k.indexOf("arch")>=0 || p.k.indexOf("spire")>=0 || p.k.indexOf("ruin")>=0;
+      dot(p.x,p.z, Math.max(1, (big?1.5:0.8)*view.s*0.5),
+        big ? "rgba(150,168,160,.55)" : "rgba(99,196,143,.42)");
+    }
+  }
+  // Landing site.
+  const sp=M.spawn;
+  ring(sp[0],sp[1],11,"rgba(226,162,75,.5)",null);
+  ctx.fillStyle="rgba(226,162,75,.85)"; ctx.font="600 11px "+getComputedStyle(document.body).fontFamily;
+  const [lx,ly]=toScreen(sp[0],sp[1]); ctx.fillText("LANDING", lx+11*view.s+8, ly+4);
+
+  for(const b of ED.blocked) ring(b.x,b.z,b.r,"rgba(222,91,78,.9)","rgba(222,91,78,.22)");
+  for(const w of ED.walls) poly(w.points, "rgba(226,162,75,.95)", "rgba(226,162,75,.16)", true);
+  if(pending.length) poly(pending, "rgba(87,201,222,.95)", null, false);
+
+  for(const p of ED.plants) dot(p.x,p.z, Math.max(2.2, 0.9*view.s), "#63c48f");
+  for(const rm of ED.roamers){
+    ring(rm.x,rm.z, rm.wander_m, "rgba(232,129,60,.55)","rgba(232,129,60,.10)");
+    dot(rm.x,rm.z, Math.max(3.5,1.5*view.s), "#e8813c");
+  }
+  for(const n of ED.nests){
+    ring(n.x,n.z, M.hive.plant_notice_m, "rgba(210,90,158,.5)","rgba(210,90,158,.12)");
+    dot(n.x,n.z, Math.max(3,1.2*view.s), "#d25a9e");
+    tag(n.x,n.z, String(n.count), "#d25a9e");
+  }
+  for(const q of ED.patches){
+    ring(q.x,q.z, M.hive.patch_notice_m, "rgba(87,201,222,.5)","rgba(87,201,222,.12)");
+    dot(q.x,q.z, Math.max(2.6,1*view.s), "#57c9de");
+    tag(q.x,q.z, String(q.count), "#57c9de");
+  }
+  // Brush footprint, so a 26 m brush is not a surprise.
+  if(hoverM && ["raise","lower","flatten","plateau","block"].includes(tool)){
+    ring(hoverM[0],hoverM[1], brush, "rgba(223,233,232,.55)", null);
+  }
+}
+function poly(pts, stroke, fill, close){
+  if(!pts.length) return;
+  ctx.beginPath();
+  pts.forEach((p,i)=>{ const [px,py]=toScreen(p[0],p[1]); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+  if(close) ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  ctx.strokeStyle=stroke; ctx.lineWidth=1.75; ctx.stroke();
+  for(const p of pts) dot(p[0],p[1], 3.2, stroke);
+}
+function tag(mx,mz,txt,col){
+  const [px,py]=toScreen(mx,mz);
+  ctx.font="500 11px "+"'IBM Plex Mono',monospace";
+  ctx.fillStyle=col; ctx.fillText(txt, px+8, py-7);
+}
+
+/* ------------------------------------------------------------------ tools */
+const TOOLS=[
+  {id:"raise",   g:"Shape",  n:"Raise",   d:"drag to lift",      c:"#a3a79e"},
+  {id:"lower",   g:"Shape",  n:"Lower",   d:"drag to dig",       c:"#5c6f6a"},
+  {id:"flatten", g:"Shape",  n:"Flatten", d:"drag toward level", c:"#8a9a92"},
+  {id:"plateau", g:"Shape",  n:"Plateau", d:"stamp a disc",      c:"#c9cec4"},
+  {id:"block",   g:"No go",  n:"Block",   d:"carve a chasm",     c:"#de5b4e"},
+  {id:"wall",    g:"No go",  n:"Wall",    d:"free-form, invisible", c:"#e2a24b"},
+  {id:"plant",   g:"Place",  n:"Plant",   d:"vegetation",        c:"#63c48f"},
+  {id:"roamer",  g:"Place",  n:"Roamer",  d:"big alien",         c:"#e8813c"},
+  {id:"nest",    g:"Place",  n:"Nest",    d:"plant hive",        c:"#d25a9e"},
+  {id:"patch",   g:"Place",  n:"Patch",   d:"burrow",            c:"#57c9de"},
+  {id:"erase",   g:"Place",  n:"Erase",   d:"nearest placement", c:"#7c9398"},
+];
+const HINTS={
+  raise:"<b>Drag</b> to lift the ground. Brush sets the radius.",
+  lower:"<b>Drag</b> to dig. Deep enough and it becomes impassable.",
+  flatten:"<b>Drag</b> to pull the ground toward the Level slider.",
+  plateau:"<b>Tap</b> to stamp a disc at Level, full strength.",
+  block:"<b>Tap</b> to carve a chasm. Use this when the obstacle IS the ground.",
+  wall:"<b>Tap out corners</b>, then tap the first one again to close. Invisible in game, changes no ground — for thickets and structure clusters.",
+  plant:"<b>Tap</b> to place vegetation.",
+  roamer:"<b>Tap</b> to place a roaming creature. The ring is its territory.",
+  nest:"<b>Tap</b> to place a plant hive. Spawns sets how many it sends.",
+  patch:"<b>Tap</b> to place a burrow. Spawns sets how many come up, once.",
+  erase:"<b>Tap</b> near a placement to remove it. Shape edits go through Undo.",
+};
+let tool="raise", brush=6, level=0.5, count=3, pending=[], hoverM=null;
+
+const rail=document.getElementById("rail");
+let lastGroup="";
+for(const t of TOOLS){
+  if(t.g!==lastGroup){ lastGroup=t.g;
+    const g=document.createElement("div"); g.className="group"; g.textContent=t.g; rail.appendChild(g); }
+  const b=document.createElement("button");
+  b.className="tool"; b.type="button"; b.dataset.id=t.id;
+  b.setAttribute("aria-pressed", String(t.id===tool));
+  b.innerHTML='<i style="background:'+t.c+'"></i><span class="n">'+t.n+'<span class="d">'+t.d+'</span></span>';
+  b.addEventListener("click", ()=>pick(t.id));
+  rail.appendChild(b);
+}
+function pick(id){
+  if(tool==="wall" && id!=="wall" && pending.length) pending=[];
+  tool=id;
+  rail.querySelectorAll(".tool").forEach(b=>b.setAttribute("aria-pressed", String(b.dataset.id===id)));
+  document.getElementById("hint").innerHTML=HINTS[id];
+  draw();
+}
+
+/* ------------------------------------------------------------------ edits */
+function edit(mx,mz,continuous){
+  const amt = 0.02 * Math.min(2, Math.max(0.5, brush/6));
+  switch(tool){
+    case "raise":   stamp({op:"crater", x:mx, z:mz, r:brush, amount:amt}); break;
+    case "lower":   stamp({op:"crater", x:mx, z:mz, r:brush, amount:-amt}); break;
+    case "flatten": stamp({op:"plateau", x:mx, z:mz, r:brush, level, strength: continuous?0.35:0.7}); break;
+    case "plateau": if(continuous) return; stamp({op:"plateau", x:mx, z:mz, r:brush, level, strength:1}); break;
+    case "block":   if(continuous) return; add("blocked",{x:r1(mx), z:r1(mz), r:brush}); rebuild(); break;
+    case "wall":    if(continuous) return; wallTap(mx,mz); break;
+    case "plant":   if(continuous) return; add("plants",{model:"flora_brain", x:r1(mx), z:r1(mz), yaw:Math.round(Math.random()*628)/100, scale:0.9}); refresh(); draw(); break;
+    case "roamer":  if(continuous) return; add("roamers",{x:r1(mx), z:r1(mz), wander_m:M.hive.roamer_wander_m}); refresh(); draw(); break;
+    case "nest":    if(continuous) return; add("nests",{x:r1(mx), z:r1(mz), count, interval_s:7.0}); refresh(); draw(); break;
+    case "patch":   if(continuous) return; add("patches",{x:r1(mx), z:r1(mz), count}); refresh(); draw(); break;
+    case "erase":   if(continuous) return; eraseNear(mx,mz); break;
+  }
+}
+function stamp(op){ op.x=r1(op.x); op.z=r1(op.z); add("ops",op); applyOp(work,op); paint(); refresh(); draw(); }
+function wallTap(mx,mz){
+  if(pending.length>=3){
+    const f=pending[0];
+    if(Math.hypot(mx-f[0],mz-f[1]) <= Math.max(3, brush*0.5)) return closeWall();
+  }
+  pending.push([r1(mx),r1(mz)]); draw(); refresh();
+}
+function closeWall(){
+  if(pending.length<3){ flash("A wall needs at least three corners.", true); return; }
+  if(Math.abs(area(pending)) < 1){ flash("That wall encloses nothing.", true); return; }
+  add("walls",{points:pending.slice()}); pending=[]; rebuild();
+}
+const area = p => { let a=0; for(let i=0;i<p.length;i++){const q=p[(i+1)%p.length]; a+=p[i][0]*q[1]-q[0]*p[i][1];} return a/2; };
+function eraseNear(mx,mz){
+  let best=null, bd=9;
+  for(const k of ["plants","roamers","nests","patches","blocked"])
+    ED[k].forEach((e,i)=>{ const d=Math.hypot(e.x-mx,e.z-mz); if(d<bd){bd=d;best=[k,i];} });
+  if(!best){ flash("Nothing within 9 m to erase.", true); return; }
+  const [k,i]=best; ED[k].splice(i,1);
+  for(const h of ED.hist){ if(h[0]===k && h[1]>i) h[1]--; else if(h[0]===k && h[1]===i) h[1]=-1; }
+  if(k==="blocked") rebuild(); else { refresh(); draw(); }
+}
+
+/* ------------------------------------------------------------------ input */
+const pts=new Map(); let dragging=false, panned=false, pressAt=null, pinch0=0, pinchS=0;
+cv.addEventListener("pointerdown", e=>{
+  cv.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pts.size===2){ dragging=false; panned=true; pinch0=spread(); pinchS=view.s; return; }
+  dragging=true; panned=false; pressAt=[e.clientX,e.clientY];
+});
+cv.addEventListener("pointermove", e=>{
+  const r=cv.getBoundingClientRect();
+  hoverM=toMap(e.clientX-r.left, e.clientY-r.top);
+  document.getElementById("coord").textContent =
+    hoverM[0]>=0&&hoverM[0]<=W*CS&&hoverM[1]>=0&&hoverM[1]<=H*CS
+      ? hoverM[0].toFixed(1)+", "+hoverM[1].toFixed(1)+" m   h "+
+        work[Math.min(H-1,Math.max(0,Math.floor(hoverM[1])))*W+Math.min(W-1,Math.max(0,Math.floor(hoverM[0])))].toFixed(2)
+      : "—";
+  if(!pts.has(e.pointerId)){ draw(); return; }
+  const prev=pts.get(e.pointerId); pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pts.size>=2){ doPinch(); return; }
+  if(!dragging) return;
+  if(Math.hypot(e.clientX-pressAt[0], e.clientY-pressAt[1])>10) panned=true;
+  const paints=["raise","lower","flatten"].includes(tool);
+  if(panned && paints){ edit(hoverM[0],hoverM[1],true); return; }
+  if(panned){ view.x+=e.clientX-prev[0]; view.y+=e.clientY-prev[1]; draw(); }
+});
+function endPointer(e){
+  const had=pts.has(e.pointerId); pts.delete(e.pointerId);
+  if(pts.size===0){
+    if(had && dragging && !panned){
+      const r=cv.getBoundingClientRect();
+      const m=toMap(e.clientX-r.left, e.clientY-r.top);
+      if(m[0]>=0&&m[0]<=W*CS&&m[1]>=0&&m[1]<=H*CS) edit(m[0],m[1],false);
+    }
+    dragging=false; panned=false;
+  }else if(pts.size===1){ dragging=false; panned=true; }
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", endPointer);
+cv.addEventListener("pointerleave", ()=>{hoverM=null; document.getElementById("coord").textContent="—"; draw();});
+function spread(){ const v=[...pts.values()]; return Math.hypot(v[0][0]-v[1][0], v[0][1]-v[1][1]); }
+function doPinch(){
+  const now=spread(); if(pinch0<24||now<24) return;
+  const v=[...pts.values()], r=cv.getBoundingClientRect();
+  const cx=(v[0][0]+v[1][0])/2-r.left, cy=(v[0][1]+v[1][1])/2-r.top;
+  zoomAt(cx, cy, pinchS*(now/pinch0)/view.s);
+}
+cv.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const r=cv.getBoundingClientRect();
+  zoomAt(e.clientX-r.left, e.clientY-r.top, e.deltaY<0?1.12:1/1.12);
+},{passive:false});
+function zoomAt(cx,cy,k){
+  const before=toMap(cx,cy);
+  view.s=Math.min(40, Math.max(1.2, view.s*k));
+  const after=toMap(cx,cy);
+  view.x+=(after[0]-before[0])*view.s; view.y+=(after[1]-before[1])*view.s;
+  draw();
+}
+
+/* ------------------------------------------------------------------- chrome */
+function refresh(){
+  const C=[["Shape",ED.ops.length,"#c9cec4"],["Blocked",ED.blocked.length,"#de5b4e"],
+    ["Walls",ED.walls.length,"#e2a24b"],["Plants",ED.plants.length,"#63c48f"],
+    ["Roaming",ED.roamers.length,"#e8813c"],["Nests",ED.nests.length,"#d25a9e"],
+    ["Patches",ED.patches.length,"#57c9de"]];
+  document.getElementById("counts").innerHTML = C.map(([n,v,c])=>
+    '<span class="chip"><i style="background:'+c+'"></i>'+n+' <b>'+v+'</b></span>').join("")
+    + (pending.length ? '<span class="chip" style="border-color:#57c9de"><i style="background:#57c9de"></i>Wall open <b>'+pending.length+'</b></span>' : "");
+}
+function flash(msg, bad){
+  const n=document.getElementById("note");
+  n.textContent=msg; n.className="note"+(bad?" bad":"");
+  clearTimeout(flash._t); flash._t=setTimeout(()=>{n.textContent="";},3200);
+  if(document.getElementById("sheet").hidden){
+    const h=document.getElementById("hint");
+    h.innerHTML="<b>"+msg+"</b>"; setTimeout(()=>{h.innerHTML=HINTS[tool];},3200);
+  }
+}
+const sheet=document.getElementById("sheet"), ta=document.getElementById("ta");
+function openSheet(mode){
+  sheet.hidden=false;
+  const isExp = mode==="export";
+  document.getElementById("sheetTitle").textContent = isExp ? "Export" : "Paste an edit";
+  document.getElementById("sheetHelp").innerHTML = isExp
+    ? "Copy this and paste it into the chat. Ask me to <b>apply it</b> and it goes through <b>tools/apply_map_edit.gd</b>, which validates every entry and refuses the whole file rather than half-applying it."
+    : "Paste a <b>sentinel-map-edit</b> JSON here to carry on working on it.";
+  document.getElementById("bCopy").hidden=!isExp;
+  document.getElementById("bLoad").hidden=isExp;
+  ta.value = isExp ? toJSON() : "";
+  ta.readOnly = isExp;
+  if(!isExp) ta.focus();
+}
+document.getElementById("bExport").addEventListener("click",()=>openSheet("export"));
+document.getElementById("bImport").addEventListener("click",()=>openSheet("import"));
+document.getElementById("bClose").addEventListener("click",()=>{sheet.hidden=true;});
+sheet.addEventListener("click", e=>{ if(e.target===sheet) sheet.hidden=true; });
+document.getElementById("bCopy").addEventListener("click", async ()=>{
+  try{ await navigator.clipboard.writeText(ta.value); flash("Copied — "+ta.value.length+" characters."); }
+  catch(_){ ta.select(); flash("Select-all is done; press copy on your keyboard.", true); }
+});
+document.getElementById("bLoad").addEventListener("click", ()=>{
+  let d; try{ d=JSON.parse(ta.value); }catch(_){ return flash("That is not JSON.", true); }
+  if(!d || d.format!==FORMAT) return flash("Not a "+FORMAT+" file.", true);
+  if((d.version|0) > VERSION) return flash("Made by a newer editor.", true);
+  clearAll(); pending=[];
+  const h=d.hive||{};
+  const feed=[["ops",d.ops],["blocked",d.blocked],["walls",d.walls],["plants",d.plants],
+    ["roamers",h.roamers],["nests",h.nests],["patches",h.patches]];
+  for(const [k,arr] of feed) for(const e of (arr||[])){
+    if(k==="walls"){ const p=(e.points||[]).map(q=>Array.isArray(q)?[+q[0],+q[1]]:[+q.x,+(q.z??q.y)]);
+      if(p.length>=3) add(k,{points:p}); }
+    else add(k,e);
+  }
+  sheet.hidden=true; rebuild(); flash("Loaded.");
+});
+document.getElementById("bUndo").addEventListener("click", ()=>{
+  if(pending.length){ pending.pop(); draw(); refresh(); return; }
+  if(!undo()) return flash("Nothing to undo.", true);
+  rebuild();
+});
+document.getElementById("bClear").addEventListener("click", ()=>{
+  clearAll(); pending=[]; rebuild(); flash("Cleared.");
+});
+document.getElementById("bFit").addEventListener("click", fit);
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape"){ if(!sheet.hidden) sheet.hidden=true; else if(pending.length){pending=[];draw();refresh();} }
+  if(e.key==="Enter" && pending.length>=3 && sheet.hidden) closeWall();
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="z"){ e.preventDefault(); document.getElementById("bUndo").click(); }
+});
+function bindPar(id,out,fmt,set){
+  const el=document.getElementById(id), o=document.getElementById(out);
+  const upd=()=>{ set(parseFloat(el.value)); o.textContent=fmt(parseFloat(el.value)); draw(); };
+  el.addEventListener("input",upd); upd();
+}
+
+/* -------------------------------------------------------------------- boot */
+const im=new Image();
+im.onload=()=>{
+  tctx.drawImage(im,0,0);
+  const src=tctx.getImageData(0,0,W,H).data;
+  base=new Float32Array(W*H); work=new Float32Array(W*H);
+  mat=new Uint8Array(W*H); wat=new Float32Array(W*H); walled=new Uint8Array(W*H);
+  for(let i=0;i<W*H;i++){
+    base[i]=src[i*4]/255; mat[i]=Math.round(src[i*4+1]/255*8); wat[i]=src[i*4+2]/255;
+  }
+  imgData=tctx.createImageData(W,H);
+  // Anything already applied to the map ships in `placed`, so the page opens
+  // on the real current layout rather than on an empty one.
+  if(M.placed){
+    for(const p of (M.placed.roamers||[])) add("roamers",{x:p[0],z:p[1],wander_m:M.hive.roamer_wander_m});
+    for(const p of (M.placed.nests||[])) add("nests",{x:p[0],z:p[1],count:M.hive.plant_brood_count,interval_s:7.0});
+    for(const p of (M.placed.patches||[])) add("patches",{x:p[0],z:p[1],count:3});
+    ED.hist.length=0;   // the existing layout is not the designer's to undo
+  }
+  bindPar("pBrush","oBrush",v=>v.toFixed(0)+" m",v=>brush=v);
+  bindPar("pLevel","oLevel",v=>v.toFixed(2),v=>level=v);
+  bindPar("pCount","oCount",v=>v.toFixed(0),v=>count=v);
+  pick("raise");
+  work.set(base); paint(); refresh();
+  resize(); fit();
+  window.addEventListener("resize", ()=>{resize(); });
+  if(window.ResizeObserver) new ResizeObserver(()=>resize()).observe(document.getElementById("stage"));
+};
+im.src=MAP_PNG;
+</script>

@@ -4,6 +4,30 @@ A second scene in the same project. Reach it from the prototype's **MAP
 EDITOR** button, or set it as the main scene. It runs on the phone, which is
 the point.
 
+## Two of them
+
+**In Godot** — `scenes/editor/map_editor.tscn`, reached from the prototype's
+MAP EDITOR button. Judges the map at the camera it is played at, under the
+lighting it ships with.
+
+**In a browser** — `tools/web_map_editor.html`, a single self-contained page
+(68 KB) published as an artifact. Same tools, same JSON, no Godot needed.
+`tools/export_map_web.gd` bakes the real biodome into it: height, water and
+material in one 150x112 PNG straight out of TerrainBuilder, plus the 408 props
+the dressing actually scatters and the Hive's own notice radii. The point is
+that the page draws the REAL map — a designer placing a nest "next to that
+plant" has to be looking at the plant that is actually there.
+
+Its sculpt maths is a line-by-line port of `Heightfield.deform` and
+`TerrainBuilder._disc` / `_polygon` — `cos(d/r * PI/2)` squared, the same
+clamp range, the same cell-centre test for walls — because a preview that
+disagrees with what the apply tool will do is a preview that lies. The clamp
+range is exported rather than typed twice for the same reason.
+
+Getting the file out is the clipboard, not a download: the artifact sandbox
+makes `<a download>` and script-driven saves inert, so a download button would
+be a button that does nothing.
+
 ## Why it is inside the game
 
 The map has to be judged at the camera it is played at, on the screen it is
