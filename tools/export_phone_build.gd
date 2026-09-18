@@ -169,6 +169,10 @@ WHAT TO DO
                that pooled mass could become. Two machines reach things one
                cannot.
   QUALITY      cycles High -> Medium -> Low, and RESTARTS the timings.
+  LIGHTS       cycles base -> canopy cookie -> area fill -> both, and
+               RESTARTS the timings. See LIGHTING below — this button is a
+               question only a real phone can answer.
+  MAP EDITOR   opens the map editor. See MAP EDITOR below.
 
 WHAT IS NEW TO LOOK AT
   SHOTS TRAVEL. Machines throw a visible bolt or an arcing shell rather than
@@ -208,6 +212,52 @@ THE HIVE — FOUR WAYS TO START A FIGHT, AND FOUR WAYS TO END ONE
   Known thin: freeing a large piece takes about 26 s against a 45 s wave
   interval, so trigger 1 currently delivers exactly ONE group. It is the
   lightest of the four. Tell me if it should bite harder.
+
+MAP EDITOR
+  A second scene, reachable from the MAP EDITOR button and back again with
+  PLAY. It loads the same map with the same lighting and the same camera,
+  pulled back far enough to see the whole thing.
+
+  Tools down the right: RAISE and LOWER and FLATTEN are drag brushes;
+  PLATEAU, BLOCK, PLANT, ROAMER, NEST, PATCH and ERASE are taps. Three
+  sliders along the bottom: BRUSH is the radius, LEVEL is the height
+  FLATTEN and PLATEAU pull toward, SPAWNS is how many aliens the next nest
+  or patch you place will send.
+
+  Two fingers is ALWAYS the camera, never the brush.
+
+  BLOCK carves a hole. There is no invisible wall in this game — below a
+  certain height you cannot walk, and that is what "you cannot go here"
+  means here. If you want invisible walls instead, say so; it is a
+  different feature.
+
+  GETTING IT BACK TO ME. Press COPY JSON and paste it into the chat. SAVE
+  also writes a file, but on Android that file is inside the app's own
+  sandbox where nothing else can reach it, so the clipboard is the one that
+  works. Either way it reloads itself next time you open the editor, so a
+  phone call does not cost you the afternoon.
+
+  UNDO takes back the last thing you did, whatever kind it was.
+
+LIGHTING — THE ONE QUESTION ONLY YOU CAN ANSWER
+  This machine has no GPU. It renders with a software Vulkan driver, and on
+  that driver a light with a projector texture contributes EXACTLY ZERO —
+  measured, repeatedly, on both renderers. Godot's own documentation lists
+  projector textures as a normal feature with no caveat, so it is very
+  probably the software driver and not the engine. It cannot be told apart
+  from here.
+
+  Press LIGHTS to cycle:
+    base            what ships today
+    canopy cookie   the roof pattern through a real light projector
+    area fill       a soft overhead AreaLight3D (new in Godot 4.7, and the
+                    mobile renderer does run it)
+    both
+
+  What I need: whether the canopy cookie shows up AT ALL on rung 2, and
+  what each rung costs on the PERF card. If the cookie works on your phone,
+  the roof pattern can move off the terrain shader and become one texture
+  fetch, which is cheaper than what ships now.
 
 QUALITY PRESETS
   High    4x MSAA, full resolution, terrain surface detail on

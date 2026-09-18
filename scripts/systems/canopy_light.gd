@@ -36,11 +36,19 @@ extends RefCounted
 const COOKIE := "res://textures/canopy_cookie.png"
 
 
-static func build(p: BiomePalette, map_size_m: Vector2) -> SpotLight3D:
-	if not p.canopy_enabled or not ResourceLoader.exists(COOKIE):
+## `force` builds the light even when the palette has it switched off, starting
+## it HIDDEN. That is what lets the LIGHTS button on the phone turn it on: a
+## light that was never built cannot be toggled, and the whole reason this
+## exists is that only a real GPU can settle whether light_projector works.
+static func build(p: BiomePalette, map_size_m: Vector2,
+		force := false) -> SpotLight3D:
+	if not ResourceLoader.exists(COOKIE):
+		return null
+	if not p.canopy_enabled and not force:
 		return null
 	var s := SpotLight3D.new()
 	s.name = "CanopyLight"
+	s.visible = p.canopy_enabled
 	# Above the middle of the map, high enough that the cone covers it.
 	s.position = Vector3(map_size_m.x * 0.5, p.canopy_height_m,
 		map_size_m.y * 0.5)

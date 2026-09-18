@@ -26,6 +26,43 @@ static func apply(cfg: LightingConfig, sun: DirectionalLight3D,
 ## Azimuth is measured clockwise from -Z, matching bake_shade, and elevation is
 ## degrees above the horizon. Derived from the light rather than typed beside
 ## it, so the two cannot disagree again.
+## The soft overhead fill, or null when it is switched off.
+##
+## AreaLight3D is new in Godot 4.7 and the Mobile renderer runs it — eight per
+## mesh, the same budget as omnis and spots. That matters here because every
+## feature Mobile refuses (SDFGI, VoxelGI, SSIL, SSAO, volumetric fog) is a way
+## of getting INDIRECT light, and this is the one new way of getting soft light
+## that needs none of them.
+##
+## The caller adds it to the tree, the same shape as CanopyLight.build, so a
+## scene opts in by adding it and nothing else changes.
+## `force` builds it even when the config has it off, starting it HIDDEN, so
+## the LIGHTS button can switch it on. A light that was never built cannot be
+## toggled, and the point of the button is measuring this on a real phone.
+static func build_area_fill(cfg: LightingConfig, map_size_m: Vector2,
+		floor_y: float, force := false) -> AreaLight3D:
+	if not cfg.area_fill_enabled and not force:
+		return null
+	var a := AreaLight3D.new()
+	a.name = "AreaFill"
+	a.visible = cfg.area_fill_enabled
+	a.position = Vector3(map_size_m.x * 0.5,
+		floor_y + cfg.area_fill_height_m, map_size_m.y * 0.5)
+	# Face down. An AreaLight3D emits along its local -Z, like a spot.
+	a.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+	a.area_size = Vector2(map_size_m.x * cfg.area_fill_cover,
+		map_size_m.y * cfg.area_fill_cover)
+	a.area_range = cfg.area_fill_range_m
+	a.area_attenuation = cfg.area_fill_attenuation
+	a.light_color = cfg.area_fill_colour
+	a.light_energy = cfg.area_fill_energy
+	# NO SHADOWS. A second shadow-casting light is the single most expensive
+	# thing on this renderer, and a fill that casts shadows is not a fill — it
+	# competes with the moon and the frame reads as two suns.
+	a.shadow_enabled = false
+	return a
+
+
 static func sun_angles(cfg: LightingConfig) -> Vector2:
 	var basis := Basis.from_euler(
 		Vector3(deg_to_rad(cfg.sun_rotation_deg.x),

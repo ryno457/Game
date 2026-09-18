@@ -17,6 +17,9 @@ const DRESSING := "res://data/biomes/biodome_01_dressing.tres"
 const MASS_CFG := "res://data/gameplay/mass.tres"
 const WAVES := "res://data/waves/biodome_01.tres"
 const HIVE := "res://data/gameplay/hive.tres"
+## Hand-placed alien and plant positions, written by tools/apply_map_edit.
+## Optional: the map is fully procedural until a map edit is applied.
+const PLACEMENTS := "res://data/gameplay/hive_placements.tres"
 const OPTIONS_DIR := "res://data/gameplay/build_options/"
 const TERRAIN_SHADER := "res://shaders/terrain_lit.gdshader"
 const LIGHT_CFG := "res://data/gameplay/lighting.tres"
@@ -150,6 +153,12 @@ var trenching := false
 var zoom_step := 0
 var _zoom := 1.0
 var _zoom_button: Button = null
+## The two lighting experiments the phone has to settle, because this machine
+## cannot: see _cycle_lights.
+var _area_fill: AreaLight3D = null
+var _canopy_light: SpotLight3D = null
+var _light_mode := 0        ## 0 base, 1 canopy, 2 area fill, 3 both
+var _light_button: Button = null
 var _rng := RandomNumberGenerator.new()
 var lib := ModelLibrary.new()
 var _module_body: Node3D = null
@@ -199,10 +208,23 @@ func _ready() -> void:
 	# Moonlight through the biodome's canopy. The moon itself cannot carry a
 	# cookie — DirectionalLight3D has no projector slot — so this is its own
 	# shadowless spot whose only job is the pattern. See CanopyLight.
-	var canopy := CanopyLight.build(palette,
-		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m))
-	if canopy != null:
-		add_child(canopy)
+	_canopy_light = CanopyLight.build(palette,
+		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m),
+		true)
+	if _canopy_light != null:
+		add_child(_canopy_light)
+	# The soft overhead fill. AreaLight3D is new in 4.7 and Mobile runs it;
+	# see LightingRig.build_area_fill for why this is the only new tool that
+	# adds indirect-looking light without a feature Mobile refuses. Off in the
+	# shipped .tres — the LIGHTS button turns it on so the phone can MEASURE
+	# what it costs instead of us guessing.
+	# force: build it even though the .tres has it off, hidden, so the LIGHTS
+	# button can switch it on. A light that was never built cannot be toggled.
+	_area_fill = LightingRig.build_area_fill(load(LIGHT_CFG),
+		Vector2(cfg.cells_x * cfg.cell_size_m, cfg.cells_z * cfg.cell_size_m),
+		terrain.height_at(map.spawn), true)
+	if _area_fill != null:
+		add_child(_area_fill)
 	# Reflection probes on the pools, found from the water mask. One of the
 	# two GI features Forward Mobile will run; see WaterProbes for why the
 	# other one, LightmapGI, cannot be used on this map at all.
@@ -225,6 +247,11 @@ func _ready() -> void:
 	# the off switch each one has.
 	hive_cfg = load(HIVE)
 	hive = Hive.new(hive_cfg, field, 20260918)
+	# Hand-placed layout from the map editor, if one has been applied. Absent
+	# is the normal state and means "scatter it all", so nothing breaks before
+	# a map has ever been edited.
+	if ResourceLoader.exists(PLACEMENTS):
+		hive.placed = load(PLACEMENTS)
 	hive.brood_due.connect(_brood)
 	hive.woke.connect(_hive_woke)
 	_load_options()
@@ -559,12 +586,71 @@ func _build_menu() -> void:
 	qual.pressed.connect(_cycle_quality)
 	build_bar.add_child(qual)
 
+	var lights := Button.new()
+	lights.custom_minimum_size = Vector2(120.0, BUTTON_MIN.y)
+	lights.add_theme_font_size_override("font_size", 18)
+	lights.pressed.connect(_cycle_lights)
+	build_bar.add_child(lights)
+	_light_button = lights
+	_refresh_light_button()
+
+	# The way into the map editor from a phone. There is no other one: on
+	# Android the project's main scene is whatever the editor was last told,
+	# and changing it means going back to the project settings every time.
+	var ed := Button.new()
+	ed.text = "MAP\nEDITOR"
+	ed.custom_minimum_size = Vector2(120.0, BUTTON_MIN.y)
+	ed.add_theme_font_size_override("font_size", 18)
+	ed.pressed.connect(func():
+		get_tree().change_scene_to_file("res://scenes/editor/map_editor.tscn"))
+	build_bar.add_child(ed)
+
 	var stress := Button.new()
 	stress.text = "TEST\nLOAD"
 	stress.custom_minimum_size = Vector2(110.0, BUTTON_MIN.y)
 	stress.add_theme_font_size_override("font_size", 18)
 	stress.pressed.connect(_stress)
 	build_bar.add_child(stress)
+
+
+## Cycle the two lighting experiments this machine cannot settle.
+##
+## THE POINT IS THE PROJECTOR. A SpotLight3D with anything in light_projector
+## contributes exactly zero here — measured on Forward+ and Mobile alike, with
+## an imported texture and a runtime one, while the same spot without a
+## projector lights the scene fine. Godot's own feature list documents
+## projector textures as a core feature with no renderer caveat, which makes
+## software Vulkan (lavapipe) far and away the likeliest culprit — but the two
+## cannot be told apart without a real GPU. One press on a phone settles it.
+##
+## The area fill is the other half: new in 4.7, Mobile runs it, and nobody has
+## measured what it costs on an A54.
+func _cycle_lights() -> void:
+	_light_mode = (_light_mode + 1) % 4
+	if _canopy_light != null:
+		_canopy_light.visible = _light_mode == 1 or _light_mode == 3
+	if _area_fill != null:
+		_area_fill.visible = _light_mode == 2 or _light_mode == 3
+	# The timings have to start over, or a minute on one setting and a minute
+	# on another report one blended number describing neither.
+	probe.reset()
+	_refresh_light_button()
+	_say("LIGHTS %s — timings restarted%s" % [_light_name(),
+		"" if _canopy_light != null or _area_fill != null
+		else " (neither light is built: check the palette and lighting .tres)"])
+
+
+func _light_name() -> String:
+	match _light_mode:
+		0: return "base"
+		1: return "canopy cookie"
+		2: return "area fill"
+		_: return "both"
+
+
+func _refresh_light_button() -> void:
+	if _light_button != null:
+		_light_button.text = "LIGHTS\n%s" % _light_name()
 
 
 ## The reforge bar. Appears only when something is selected, because a bar of

@@ -66,7 +66,14 @@ func _initialize() -> void:
 			zoom = int(String(a).substr(5))
 	var white := _white()
 
-	var ps: PackedScene = load("res://scenes/proto/proto_main.tscn")
+	# Which scene. The map editor is a second scene in the same project and it
+	# has to be photographed too — its whole justification is that a map should
+	# be judged at the camera it is played at, which is not a claim a headless
+	# boot can check.
+	var scene_path := "res://scenes/proto/proto_main.tscn"
+	if "editor" in argv:
+		scene_path = "res://scenes/editor/map_editor.tscn"
+	var ps: PackedScene = load(scene_path)
 	if ps == null:
 		push_error("no main scene")
 		quit(1)
@@ -86,7 +93,7 @@ func _initialize() -> void:
 			scene.tune.camera_offset *= wide
 			scene.call("_frame_camera")
 			print("  camera pulled back x%.1f" % wide)
-		if i == 0 and zoom >= 0:
+		if i == 0 and zoom >= 0 and scene.has_method("_refresh_zoom_button"):
 			scene.set("zoom_step", zoom)
 			scene.call("_refresh_zoom_button")
 			print("  zoom rung %d" % zoom)
@@ -94,7 +101,7 @@ func _initialize() -> void:
 		# finished building before twelve machines and sixty hostiles land on
 		# it. Re-run periodically: the machines kill the hostiles quickly and a
 		# shot of the aftermath shows nothing being shot at.
-		if fight and (i == 10 or i == frames - 12):
+		if fight and scene.has_method("_stress") and (i == 10 or i == frames - 12):
 			scene.call("_stress")
 			# AND BRING THEM IN. _stress spawns on a 46-60 m ring, which is
 			# outside every machine's range, so the frame shows two armies

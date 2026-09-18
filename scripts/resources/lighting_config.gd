@@ -55,6 +55,32 @@ var soft_shadow_quality: int = 2
 @export var fog_sky_affect: float = 0.35
 @export var fog_height_falloff: float = 0.22
 
+@export_group("Area fill — new in Godot 4.7, and Mobile runs it")
+## AreaLight3D did not exist before 4.7. It is a rectangle of light rather than
+## a point, so it gives the soft wide falloff this biodome wants without the
+## cost of scattering a dozen omnis — and the Mobile renderer runs it, up to
+## eight per mesh, same budget as omnis and spots.
+##
+## WHY IT IS WORTH HAVING HERE. Everything Mobile cannot do (SDFGI, SSIL, SSAO,
+## VoxelGI, volumetric fog) is a way of getting INDIRECT light. This is the only
+## new tool in the box that adds soft light without any of them. It is a fill,
+## not a key: the moon stays the key light.
+##
+## Off by default, and off in the shipped .tres, because it is one more light in
+## a frame budget that has never been measured on the phone. The LIGHTS button
+## in the test build turns it on so it can be measured rather than assumed.
+@export var area_fill_enabled: bool = false
+@export var area_fill_colour: Color = Color(0.46, 0.60, 0.78)
+@export_range(0.0, 8.0) var area_fill_energy: float = 0.55
+## Height above the biodome floor. High and wide is the point: a low area light
+## is just an expensive omni.
+@export var area_fill_height_m: float = 46.0
+## As a fraction of the map, so it still covers the floor if the map resizes.
+@export_range(0.1, 2.0) var area_fill_cover: float = 0.72
+## How far its light reaches. Shorter is cheaper.
+@export var area_fill_range_m: float = 140.0
+@export_range(0.0, 4.0) var area_fill_attenuation: float = 1.6
+
 @export_group("Tonemap")
 @export_enum("Linear:0", "Reinhard:1", "Filmic:2", "ACES:3") var tonemap: int = 3
 @export var tonemap_exposure: float = 1.0

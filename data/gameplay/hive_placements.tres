@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="HivePlacements" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/hive_placements.gd" id="1_hedes"]
+
+[resource]
+script = ExtResource("1_hedes")
+display_name = "Biodome 01 — nothing hand placed yet"
+source_notes = "Empty on purpose. Hive.place() scatters everything it is not given, so an empty resource behaves exactly as no resource does — tools/map_edit_check.gd asserts that. It exists so the path always resolves and so there is somewhere obvious for tools/apply_map_edit.gd to write."

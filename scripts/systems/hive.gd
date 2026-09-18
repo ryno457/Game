@@ -29,6 +29,11 @@ var patches: Array[Dictionary] = []    # {pos, spent}
 
 var _field: Heightfield
 var _rng := RandomNumberGenerator.new()
+## Hand-placed layout from the map editor, or null. When it names something,
+## that wins; whatever it leaves out is scattered as before. An EMPTY resource
+## therefore behaves exactly like no resource at all, which is what lets a map
+## be half hand-placed while it is being worked on.
+var placed: HivePlacements = null
 
 
 func _init(hive_cfg: HiveConfig, field: Heightfield, seed: int) -> void:
@@ -56,10 +61,34 @@ func place(plant_spots: Array, landing: Vector2, clear_m: float) -> Dictionary:
 	plants.clear()
 	patches.clear()
 
+	# HAND PLACEMENTS FIRST, and they are not second-guessed. A designer who
+	# put a creature somewhere meant it there; re-running the "far from the
+	# landing site, far from each other" rules over their layout would quietly
+	# move it and there would be nothing on screen to say why.
+	var hand_roamers := 0
+	var hand_nests := 0
+	var hand_patches := 0
+	if placed != null:
+		for p in placed.roamers:
+			roamers.append({"pos": p, "home": p, "goal": p, "alien": -1,
+				"brood_cd": cfg.roamer_brood_interval_s})
+			out.roamers.append(p)
+		hand_roamers = roamers.size()
+		for i in placed.nests.size():
+			plants.append({"pos": placed.nests[i], "alien": -1, "awake": false,
+				"brood_cd": 0.0,
+				"count": placed.nest_count_at(i, cfg.plant_brood_count)})
+			out.plants.append(placed.nests[i])
+		hand_nests = plants.size()
+		for i in placed.patches.size():
+			patches.append({"pos": placed.patches[i], "spent": false,
+				"count": placed.patch_count_at(i, 0)})
+		hand_patches = patches.size()
+
 	# The two that roam: far from the landing site, and far from each other, so
 	# the player meets one at a time and meeting it is a decision.
 	var tries := 0
-	while roamers.size() < cfg.roamer_count and tries < 400:
+	while roamers.size() < maxi(cfg.roamer_count, hand_roamers) and tries < 400:
 		tries += 1
 		var p := _open_point()
 		if p.distance_to(landing) < clear_m * 3.0:
@@ -83,14 +112,14 @@ func place(plant_spots: Array, landing: Vector2, clear_m: float) -> Dictionary:
 		if v.distance_to(landing) > clear_m * 2.0:
 			spots.append(v)
 	_shuffle(spots)
-	for i in mini(cfg.plant_nest_count, spots.size()):
+	for i in mini(maxi(0, cfg.plant_nest_count - hand_nests), spots.size()):
 		plants.append({"pos": spots[i], "alien": -1, "awake": false,
-			"brood_cd": 0.0})
+			"brood_cd": 0.0, "count": cfg.plant_brood_count})
 		out.plants.append(spots[i])
 
 	# The buried patches, spaced so one step cannot trip three of them.
 	tries = 0
-	while patches.size() < cfg.patch_count and tries < 3000:
+	while patches.size() < maxi(cfg.patch_count, hand_patches) and tries < 3000:
 		tries += 1
 		var p := _open_point()
 		if p.distance_to(landing) < clear_m * 2.0:
@@ -101,7 +130,7 @@ func place(plant_spots: Array, landing: Vector2, clear_m: float) -> Dictionary:
 				clash = true
 				break
 		if not clash:
-			patches.append({"pos": p, "spent": false})
+			patches.append({"pos": p, "spent": false, "count": 0})
 	return out
 
 
@@ -163,7 +192,8 @@ func _tick_plants(delta: float, player_at: Vector2, alive: Callable) -> void:
 		p.brood_cd -= delta
 		if p.brood_cd <= 0.0:
 			p.brood_cd = cfg.plant_brood_interval_s
-			brood_due.emit(at, cfg.plant_brood_count, &"plant")
+			brood_due.emit(at, int(p.get("count", cfg.plant_brood_count)),
+				&"plant")
 
 
 func _tick_patches(player_at: Vector2) -> void:
@@ -174,7 +204,10 @@ func _tick_patches(player_at: Vector2) -> void:
 		if at.distance_to(player_at) > cfg.patch_notice_m:
 			continue
 		q.spent = true
-		var n := _rng.randi_range(cfg.patch_count_min, cfg.patch_count_max)
+		# A patch the designer gave a number keeps it; the rest roll one.
+		var fixed := int(q.get("count", 0))
+		var n: int = fixed if fixed > 0 else _rng.randi_range(
+			cfg.patch_count_min, cfg.patch_count_max)
 		woke.emit(&"patch", at)
 		brood_due.emit(at, n, &"patch")
 

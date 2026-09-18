@@ -1,0 +1,29 @@
+{
+  "format": "sentinel-map-edit",
+  "version": 1,
+  "map": "res://data/terrain/biodome_map_01.tres",
+  "notes": "Worked example. Not applied to the shipped map — this is the shape of the file, so a hand-written one has something to copy.",
+  "ops": [
+    { "op": "plateau", "x": 62.0, "z": 48.0, "r": 14.0, "level": 0.62, "strength": 1.0 },
+    { "op": "crater", "x": 96.0, "z": 62.0, "r": 7.0, "amount": -0.06 }
+  ],
+  "blocked": [
+    { "x": 118.0, "z": 30.0, "r": 9.0 }
+  ],
+  "plants": [
+    { "model": "flora_brain", "x": 55.0, "z": 60.0, "yaw": 0.8, "scale": 1.1 }
+  ],
+  "hive": {
+    "roamers": [
+      { "x": 34.0, "z": 78.0, "wander_m": 26.0 },
+      { "x": 112.0, "z": 46.0, "wander_m": 26.0 }
+    ],
+    "nests": [
+      { "x": 55.0, "z": 60.0, "count": 3, "interval_s": 7.0 }
+    ],
+    "patches": [
+      { "x": 80.0, "z": 84.0, "count": 4 },
+      { "x": 44.0, "z": 36.0, "count": 3 }
+    ]
+  }
+}

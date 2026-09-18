@@ -1,0 +1,115 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/editor/map_editor.gd" id="1_editor"]
+[ext_resource type="Script" path="res://scripts/systems/terrain_view.gd" id="2_terrain"]
+
+[node name="MapEditor" type="Node3D"]
+script = ExtResource("1_editor")
+
+; Environment and Sun are configured at runtime by LightingRig from the same
+; data/gameplay/lighting.tres the game uses. The whole point of editing inside
+; the engine is judging the map under the light it ships with.
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("2_terrain")
+
+[node name="CameraRig" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+; The readout across the top: which tool, and the brush numbers. Top rather
+; than beside the tools because a thumb on the right-hand column covers
+; anything printed next to it.
+[node name="Top" type="PanelContainer" parent="HUD"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 54.0
+grow_horizontal = 2
+mouse_filter = 2
+
+[node name="Text" type="Label" parent="HUD/Top"]
+layout_mode = 2
+text = "MAP EDITOR"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+; Tools down the right, scrolling, in the same place and the same tile size as
+; the game's build bar — the thumb already knows where that is.
+[node name="Side" type="PanelContainer" parent="HUD"]
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -196.0
+offset_top = 58.0
+offset_bottom = -132.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="Scroll" type="ScrollContainer" parent="HUD/Side"]
+layout_mode = 2
+
+[node name="Tools" type="GridContainer" parent="HUD/Side/Scroll"]
+layout_mode = 2
+columns = 1
+
+; Sliders and the status line along the bottom, clear of the right-hand column.
+[node name="Bottom" type="PanelContainer" parent="HUD"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -128.0
+offset_right = -208.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Col" type="VBoxContainer" parent="HUD/Bottom"]
+layout_mode = 2
+
+[node name="Row" type="HBoxContainer" parent="HUD/Bottom/Col"]
+layout_mode = 2
+
+[node name="BrushLabel" type="Label" parent="HUD/Bottom/Col/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(140, 0)
+text = "BRUSH"
+vertical_alignment = 1
+
+[node name="Brush" type="HSlider" parent="HUD/Bottom/Col/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(240, 48)
+size_flags_vertical = 4
+
+[node name="LevelLabel" type="Label" parent="HUD/Bottom/Col/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(140, 0)
+text = "LEVEL"
+vertical_alignment = 1
+
+[node name="Level" type="HSlider" parent="HUD/Bottom/Col/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(240, 48)
+size_flags_vertical = 4
+
+[node name="CountLabel" type="Label" parent="HUD/Bottom/Col/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(150, 0)
+text = "SPAWNS"
+vertical_alignment = 1
+
+[node name="Count" type="HSlider" parent="HUD/Bottom/Col/Row"]
+layout_mode = 2
+custom_minimum_size = Vector2(200, 48)
+size_flags_vertical = 4
+
+[node name="Text" type="Label" parent="HUD/Bottom/Col"]
+layout_mode = 2
+text = "Pick a tool, then tap the ground."

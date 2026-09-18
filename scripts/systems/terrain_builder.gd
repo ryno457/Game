@@ -44,6 +44,15 @@ static func build(map: TerrainMap) -> Heightfield:
 	return hf
 
 
+## Apply one op to a live heightfield.
+##
+## PUBLIC, because the map editor stamps ops onto the field as the finger
+## drags. Rebuilding the whole map from the seed for every stroke is about a
+## second on this map, which is not a brush — it is a wait.
+static func apply_op(hf: Heightfield, op: Dictionary) -> void:
+	_apply(hf, op)
+
+
 static func _apply(hf: Heightfield, op: Dictionary) -> void:
 	match String(op.get("op", "")):
 		"crater":
