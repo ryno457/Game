@@ -11,6 +11,7 @@ extends SceneTree
 ## fidelity, and simulating several minutes at 60 Hz just burns wall clock.
 const DT := 1.0 / 20.0
 var _failed := 0
+var _entered := false
 var scene: Node3D
 
 
@@ -25,6 +26,18 @@ func _initialize() -> void:
 ## fire until the tree takes its first iteration, so anything a scene builds in
 ## _ready is still null during _initialize — exactly the trap this hit.
 func _process(_delta: float) -> bool:
+	# ONE PASS, EVER. _process returning true is what quits the tree, so a
+	# script error partway down means this function never returns and the tree
+	# calls it again — the whole suite restarts from the top, forever, against
+	# a half-played scene. It looks exactly like a hang, and it cost an
+	# afternoon before this guard existed.
+	if _entered:
+		push_error("proto_drive re-entered: an assertion above threw. " \
+			+ "Scroll up to the first SCRIPT ERROR.")
+		_failed += 1
+		_report()
+		return true
+	_entered = true
 	print("SENTINEL — prototype loop drive\n")
 
 	var start_mass: float = scene.mass.mass
@@ -34,16 +47,59 @@ func _process(_delta: float) -> bool:
 		"%d pieces (%d large)" % [scene.debris.size(),
 			scene.debris.filter(func(d): return d.large).size()])
 
-	# --- collection: run until the drone has banked at least one piece -------
+	# --- collection is an ORDER now, not something the drone decides ---------
+	# The drone used to fly to the nearest piece whenever it was idle, which
+	# meant the mass economy ran itself. This half of the check is the half
+	# that would silently stop meaning anything if auto-collect came back.
+	for i in int(60.0 / DT):
+		scene.step(DT)
+	_ok("the drone does NOT collect unasked",
+		is_equal_approx(scene.mass.mass, start_mass)
+			and scene.drone_state == "idle",
+		"%.0f mass unchanged after 60s of nobody ordering anything"
+			% scene.mass.mass)
+
+	# Order it at a piece, the way a tap does.
+	var piece := -1
+	for i in scene.debris.size():
+		if not scene.debris[i].taken and not scene.debris[i].large:
+			piece = i
+			break
+	_ok("there is a loose piece to send it at", piece >= 0, "index %d" % piece)
+	scene.drone_target = piece
+	scene.drone_state = "outbound"
+
 	var t := 0.0
 	while t < 90.0 and scene.mass.mass <= start_mass:
 		scene.step(DT)
 		t += DT
-	_ok("drone collects and mass grows", scene.mass.mass > start_mass,
+	_ok("ordered, it collects and mass grows", scene.mass.mass > start_mass,
 		"%.0f -> %.0f after %.0fs" % [start_mass, scene.mass.mass, t])
 
-	for i in 240:
+	# And it goes back to waiting rather than helping itself to the next one.
+	var idle_mass: float = scene.mass.mass
+	for i in int(45.0 / DT):
 		scene.step(DT)
+	_ok("and then it waits for the next order",
+		is_equal_approx(scene.mass.mass, idle_mass),
+		"%.0f mass, unchanged over another 45s" % scene.mass.mass)
+
+	# Feed it enough to grow. Each order is one piece, so this is a few taps'
+	# worth of play compressed into a loop.
+	for _p in 6:
+		var nxt := -1
+		for i in scene.debris.size():
+			if not scene.debris[i].taken and not scene.debris[i].large:
+				nxt = i
+				break
+		if nxt < 0:
+			break
+		scene.drone_target = nxt
+		scene.drone_state = "outbound"
+		var guard_c := 0.0
+		while guard_c < 60.0 and scene.drone_state != "idle":
+			scene.step(DT)
+			guard_c += DT
 	_ok("module grows with mass", scene.mass.display_scale() > start_scale,
 		"scale %.2f -> %.2f" % [start_scale, scene.mass.display_scale()])
 	_ok("fog opens up as it moves", scene.fog.explored_fraction() > 0.0,
@@ -257,6 +313,175 @@ func _process(_delta: float) -> bool:
 	_ok("the module survives the fight it started", scene.mass.mass > 0.0,
 		"%.0f mass left (was %.0f when the piece came free)" % [scene.mass.mass, banked])
 
+	# --- shots TRAVEL, they do not teleport ----------------------------------
+	# A firefight used to be two groups of models standing still while one of
+	# them quietly lost. These assertions are about the gap between firing and
+	# landing existing at all, and about who pays for it.
+	scene.aliens.clear()
+	scene.shots.clear()
+	scene.built.clear()
+	scene.selected.clear()
+	var gunner: BuildOption = null
+	for cand in scene.options:
+		var sp: MachineSpec = scene.spec_for(cand)
+		for w in sp.weapons:
+			if int(w.family) == MachinePart.Family.RANGED and float(w.range_m) > 6.0:
+				gunner = cand
+				break
+		if gunner != null:
+			break
+	_ok("there is a ranged machine to test with", gunner != null,
+		gunner.display_name if gunner != null else "none in the catalogue")
+	if gunner != null:
+		var gspec: MachineSpec = scene.spec_for(gunner)
+		var reach := 0.0
+		for w in gspec.weapons:
+			reach = maxf(reach, float(w.range_m))
+		var gun_at: Vector2 = scene.module_pos
+		scene._field(gunner, gspec, gun_at)
+		# Well inside range, and far enough that a 34 m/s bolt needs real
+		# frames to cross the gap.
+		var mark: Vector2 = gun_at + Vector2(reach * 0.85, 0.0)
+		var victim: int = scene._add_alien(mark, 400.0, &"small", 0.0)
+		var vi: int = scene._alien_index(victim)
+		var vhp: float = scene.aliens[vi].hp
+
+		scene.step(DT)
+		_ok("firing puts something in the air",
+			scene.shots.size() > 0, "%d shot(s)" % scene.shots.size())
+		_ok("and it has NOT hit yet",
+			is_equal_approx(scene.aliens[scene._alien_index(victim)].hp, vhp),
+			"%.0f hp untouched %.0f m away" % [vhp, reach * 0.85])
+
+		# PIN BOTH OF THEM. Left alone the swarmer walks into contact and kills
+		# the Guard inside twenty seconds, and a dead gun fires nothing — which
+		# is what made the second half of this block report "0 shots" as though
+		# projectiles were broken. Holding the alien at range and the machine
+		# at full health makes this a test of the projectile and nothing else.
+		var flight := DT
+		while flight < 12.0 \
+				and is_equal_approx(scene.aliens[scene._alien_index(victim)].hp, vhp):
+			_pin(gspec, victim, gun_at, mark)
+			scene.step(DT)
+			flight += DT
+		_ok("the shot arrives and damage lands",
+			scene.aliens[scene._alien_index(victim)].hp < vhp,
+			"%.0f -> %.0f after %.2fs of flight"
+				% [vhp, scene.aliens[scene._alien_index(victim)].hp, flight])
+		# The whole point: the gap is measurable, not a rounding error.
+		_ok("the flight took real time", flight >= reach * 0.85
+				/ scene.tune.shot_speed_ranged_mps * 0.5,
+			"%.2fs for %.0f m at %.0f m/s"
+				% [flight, reach * 0.85, scene.tune.shot_speed_ranged_mps])
+
+		# A target that dies in flight: the shot must resolve, not linger or
+		# crash trying to find an id that is no longer in the array.
+		# Wait for the NEXT shot to actually be in the air before killing the
+		# target. Clearing and stepping once launched nothing — the gun was
+		# still on cooldown — so this check passed while testing nothing.
+		scene.shots.clear()
+		scene.aliens[scene._alien_index(victim)].hp = 400.0
+		var arm := 0.0
+		while arm < 20.0 and scene.shots.is_empty():
+			_pin(gspec, victim, gun_at, mark)
+			scene.step(DT)
+			arm += DT
+		var launched: int = scene.shots.size()
+		_ok("a second shot goes up", launched > 0,
+			"%d in the air after %.1fs" % [launched, arm])
+		scene.aliens[scene._alien_index(victim)].hp = 0.0
+		scene.step(DT)                      # the death sweep removes it
+		var spin := 0.0
+		while spin < 12.0 and not scene.shots.is_empty():
+			_pin(gspec, victim, gun_at, mark)
+			scene.step(DT)
+			spin += DT
+		_ok("a shot whose target dies still resolves",
+			scene.shots.is_empty() and launched > 0,
+			"%d launched, all resolved in %.2fs" % [launched, spin])
+
+	# --- health bars are information, not decoration -------------------------
+	scene.aliens.clear()
+	scene.shots.clear()
+	scene.fog.begin_frame()
+	scene.fog.reveal(scene.module_pos, 40.0)
+	var spot: Vector2 = scene.module_pos + Vector2(6.0, 0.0)
+	scene._add_alien(spot, 100.0, &"small", 0.0)
+	scene._present(DT)
+	var bars_full: int = scene._mm_bars.multimesh.visible_instance_count
+	scene.aliens[0].hp = 40.0
+	scene._present(DT)
+	var bars_hurt: int = scene._mm_bars.multimesh.visible_instance_count
+	_ok("a healthy swarmer wears no bar", bars_hurt > bars_full,
+		"%d bar instances at full health, %d once it is hurt"
+			% [bars_full, bars_hurt])
+	scene.aliens.clear()
+	scene._add_alien(spot, 260.0, &"roamer", 0.0)
+	scene._present(DT)
+	_ok("but a roamer always does",
+		scene._mm_bars.multimesh.visible_instance_count > bars_full,
+		"%d instances with one untouched roamer on the map"
+			% scene._mm_bars.multimesh.visible_instance_count)
+	# Two instances per bar, back and fill, and never half of one.
+	_ok("bars go in as back-and-fill pairs",
+		scene._mm_bars.multimesh.visible_instance_count % 2 == 0,
+		"%d instances" % scene._mm_bars.multimesh.visible_instance_count)
+
+	# A BAR IS WIDER THAN IT IS TALL. This reads the transform back out of the
+	# MultiMesh, and it is here because the first version used Basis.scaled(),
+	# which scales the basis ROWS — a world-axis scale applied on the left. On
+	# the camera's rotated basis that came out standing on end with width and
+	# height swapped, as thin ticks nobody could read, and every other
+	# assertion about bars passed happily while it did.
+	# A BAR IS WIDER THAN IT IS TALL, read off the basis the draw pass uses.
+	#
+	# Not off the MultiMesh: the headless renderer keeps no instance transforms
+	# and hands back identity for every one of them, so a check that read them
+	# would pass on a bug and fail on a fix. bar_basis() is the real thing the
+	# draw pass calls.
+	var face: Basis = scene.camera.global_transform.basis
+	var bb: Basis = scene.bar_basis(face, scene.tune.bar_width_m,
+		scene.tune.bar_height_m)
+	var bw: float = bb.x.length()
+	var bh: float = bb.y.length()
+	_ok("and a bar is a bar shape, not a tick",
+		bw > bh * 2.0, "%.2f m wide, %.2f m tall" % [bw, bh])
+	_ok("at exactly the width it was configured to be",
+		absf(bw - scene.tune.bar_width_m) < 0.01
+			and absf(bh - scene.tune.bar_height_m) < 0.01,
+		"%.2f x %.2f against a configured %.2f x %.2f"
+			% [bw, bh, scene.tune.bar_width_m, scene.tune.bar_height_m])
+	# And it faces the camera: the card's own normal points back down the
+	# camera's view axis, which is the whole reason the basis comes from there.
+	_ok("and it faces the camera",
+		absf(bb.z.normalized().dot(face.z)) > 0.999,
+		"card normal against the view axis")
+
+	# --- three zoom rungs ----------------------------------------------------
+	_ok("there are three of them", scene.tune.camera_zoom_steps.size() == 3,
+		"%d rungs" % scene.tune.camera_zoom_steps.size())
+	_ok("and the one it starts on is the widest",
+		scene.zoom_step == 0
+			and is_equal_approx(scene.tune.camera_zoom_steps[0],
+				_widest(scene.tune.camera_zoom_steps)),
+		"rung 0 is %.2f" % scene.tune.camera_zoom_steps[0])
+	var heights: Array[float] = []
+	for _z in 3:
+		# _ease_zoom, not _present. Settling the tween needs the easing step and
+		# nothing else, and a full presentation pass costs a terrain upload, a
+		# fog upload and a scenery cull — running 360 of those to watch one
+		# float converge took this check from seconds to minutes.
+		for i in 200:
+			scene._ease_zoom(DT)
+		heights.append(scene.camera.position.length())
+		scene.cycle_zoom()
+	_ok("each rung really moves the camera",
+		heights[0] > heights[1] and heights[1] > heights[2],
+		"%.0f m -> %.0f m -> %.0f m from the rig"
+			% [heights[0], heights[1], heights[2]])
+	_ok("and cycling wraps back to the widest", scene.zoom_step == 0,
+		"three presses returns to rung 0")
+
 	# --- presentation and instrumentation ------------------------------------
 	# Everything above drives step() only. This is the first thing that touches
 	# _present(): the scenery MultiMeshes, the fog cull, the convoy bodies and
@@ -265,10 +490,14 @@ func _process(_delta: float) -> bool:
 	# is not something to discover on the phone.
 	_ok("the biodome grew", scene._scenery_total > 0,
 		"%d props on the map" % scene._scenery_total)
+	# RELATIVE, not absolute. This read probe.frames == 30 and broke the day a
+	# check above it started calling _present for its own reasons. What it
+	# means is "thirty more frames went through without throwing".
+	var frames_before: int = scene.probe.frames
 	for i in 30:
 		scene._present(DT)
-	_ok("presentation runs", scene.probe.frames == 30,
-		"%d frames sampled" % scene.probe.frames)
+	_ok("presentation runs", scene.probe.frames - frames_before == 30,
+		"%d frames sampled" % (scene.probe.frames - frames_before))
 	_ok("scenery is culled to what has been explored",
 		scene._scenery_drawn > 0 and scene._scenery_drawn < scene._scenery_total,
 		"%d of %d drawn" % [scene._scenery_drawn, scene._scenery_total])
@@ -318,12 +547,19 @@ func _process(_delta: float) -> bool:
 
 	var before_units: int = scene.built.size()
 	scene._stress()
+	# COUNTED AT INJECTION. Measuring after ten steps counted what SURVIVED
+	# ten steps, and now that twelve machines put real shots in the air that
+	# is a smaller number every time they get better — a check that fails
+	# because the game improved is a check measuring the wrong thing.
+	var loaded_units: int = scene.built.size()
+	var loaded_hostiles: int = scene.aliens.size()
 	for i in 10:
 		scene.step(DT)
 		scene._present(DT)
 	_ok("the test load actually loads the frame",
-		scene.built.size() > before_units and scene.aliens.size() >= 60,
-		"%d machines, %d hostiles" % [scene.built.size(), scene.aliens.size()])
+		loaded_units > before_units and loaded_hostiles >= 60,
+		"%d machines, %d hostiles injected; %d hostiles left ten steps later"
+			% [loaded_units, loaded_hostiles, scene.aliens.size()])
 	_ok("and it opens the map so the props are drawn",
 		scene._scenery_drawn > 0, "%d props drawn" % scene._scenery_drawn)
 
@@ -336,12 +572,17 @@ func _process(_delta: float) -> bool:
 	_ok("no verdict before there is data", not scene.probe.verdict().ready,
 		"%.0fs of %.0fs" % [scene.probe.elapsed, FrameProbe.MIN_SOAK_S])
 
+	_report()
+	return true    # done — end the main loop
+
+
+func _report() -> void:
 	print("")
 	if _failed == 0:
 		print("LOOP TURNS — collect, grow, build, commit, hold, bank.")
 	else:
 		print("%d CHECK(S) FAILED" % _failed)
-	return true    # done — end the main loop
+	quit(_failed)
 
 
 ## Mass lying on the ground waiting for the drone.
@@ -350,6 +591,32 @@ func _wreck_mass(s: Node3D) -> float:
 	for w in s.wrecks:
 		total += w.mass
 	return total
+
+
+## Hold the gunner and its target exactly where they were put.
+##
+## BOTH POSITIONS, not just the hit points. Left to itself the machine walks to
+## its escort station, which sits at almost exactly the radius this test puts
+## the alien at — so the two ended up on top of each other, every shot launched
+## and landed inside a single step, and `shots` was empty every time the loop
+## looked at it. The projectiles were working perfectly; the test had simply
+## arranged for the gap to be zero.
+func _pin(gspec: MachineSpec, victim: int, gun_at: Vector2, at: Vector2) -> void:
+	if not scene.built.is_empty():
+		scene.built[0].hp = gspec.max_hp
+		scene.built[0].pos = gun_at
+	var i: int = scene._alien_index(victim)
+	if i >= 0:
+		scene.aliens[i].pos = at
+
+
+## PackedFloat32Array has no max(). It is not an Array, and reaching for the
+## Array method compiles fine and dies at runtime.
+func _widest(steps: PackedFloat32Array) -> float:
+	var m := 0.0
+	for z in steps:
+		m = maxf(m, z)
+	return m
 
 
 func _ok(name: String, cond: bool, detail: String) -> void:

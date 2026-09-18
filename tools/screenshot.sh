@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Save a real frame out of Godot, with every effect on.
 #
-#   ./tools/screenshot.sh [name.png] [settle_frames] [WxH]
+#   ./tools/screenshot.sh [name.png] [settle_frames] [WxH] [reveal] [wide=N] [extra]
+#
+# extra: "fight" for a combat frame (tracers and health bars need machines,
+# hostiles and an OPEN REAL FOG, none of which the opening state has), or
+# "zoom=0|1|2" to photograph one of the three zoom rungs.
 #
 # Every other picture of this game is drawn by a DIFFERENT renderer — Blender's
 # Cycles in tools/blender, or a numpy port of the shader's own arithmetic in
@@ -30,6 +34,11 @@ REVEAL="${4:-}"
 # Pass "wide=2.5" as the 5th arg to pull the camera back by that factor, for a
 # shot of the map's surround rather than of the ground under the module.
 WIDE="${5:-}"
+# Anything else goes straight through to the script. "fight" puts twelve
+# machines and sixty hostiles on the field and opens the real fog, which is
+# the only way a still can show a tracer or a health bar. "zoom=N" picks one
+# of the three rungs.
+EXTRA="${6:-}"
 GODOT="${GODOT:-$HOME/.cache/sentinel-godot/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -54,6 +63,6 @@ xvfb-run -a -s "-screen 0 ${RES}x24" "$GODOT" \
 	--rendering-method mobile \
 	--resolution "$RES" \
 	--script tools/screenshot.gd \
-	-- "$OUT" "$FRAMES" "$REVEAL" "$WIDE" 2>&1 | grep -vE "ALSA|alsa|snd_|audio driver|init_output_device" || true
+	-- "$OUT" "$FRAMES" "$REVEAL" "$WIDE" "$EXTRA" 2>&1 | grep -vE "ALSA|alsa|snd_|audio driver|init_output_device" || true
 
 echo "  -> build/shots/$OUT"

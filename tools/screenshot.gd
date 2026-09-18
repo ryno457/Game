@@ -52,6 +52,18 @@ func _initialize() -> void:
 	for a in argv:
 		if String(a).begins_with("wide="):
 			wide = maxf(1.0, float(String(a).substr(5)))
+	# Put a fight on the screen. The opening state has no machines and no
+	# hostiles, so a shot of it cannot show a tracer or a health bar at all —
+	# and those are exactly the things that have to be LOOKED at rather than
+	# asserted. _stress also opens the REAL fog, which the reveal flag does
+	# not: reveal overrides the terrain shader's fog map, while bars and shots
+	# are gated on fog.is_visible() in GDScript.
+	var fight: bool = "fight" in argv
+	# Which zoom rung to photograph, so the three of them can be compared.
+	var zoom := -1
+	for a in argv:
+		if String(a).begins_with("zoom="):
+			zoom = int(String(a).substr(5))
 	var white := _white()
 
 	var ps: PackedScene = load("res://scenes/proto/proto_main.tscn")
@@ -74,6 +86,15 @@ func _initialize() -> void:
 			scene.tune.camera_offset *= wide
 			scene.call("_frame_camera")
 			print("  camera pulled back x%.1f" % wide)
+		if i == 0 and zoom >= 0:
+			scene.set("zoom_step", zoom)
+			print("  zoom rung %d" % zoom)
+		# After the camera settings, and a few frames in so the scene has
+		# finished building before twelve machines and sixty hostiles land on
+		# it. Re-run periodically: the machines kill the hostiles quickly and a
+		# shot of the aftermath shows nothing being shot at.
+		if fight and (i == 10 or i == frames - 12):
+			scene.call("_stress")
 		if reveal:
 			_reveal_all(root, white)
 		if i % 30 == 0:

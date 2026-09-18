@@ -116,11 +116,22 @@ var hive_cfg: HiveConfig
 ## Where the dressing put the alien plants, for the Hive to choose nests from.
 var _plant_spots: Array[Vector2] = []
 var wrecks: Array[Dictionary] = []
+## Shots in the air. A firefight used to be two groups of models standing still
+## while one of them quietly lost, because damage landed the instant a cooldown
+## came up and nothing ever crossed the gap.
+##
+## Each entry: {pos, from, aim, target(uid), damage, splash_m, speed, family,
+## flown, span}. The TARGET IS AN ID, not an index — aliens leave the array
+## from the middle constantly and an index-carrying shot would arrive at
+## whoever had shuffled into that slot.
+var shots: Array[Dictionary] = []
 
 var _mm_debris: MultiMeshInstance3D
 var _mm_built: MultiMeshInstance3D
 var _mm_aliens: MultiMeshInstance3D
 var _mm_marks: MultiMeshInstance3D
+var _mm_shots: MultiMeshInstance3D
+var _mm_bars: MultiMeshInstance3D
 var _module_scale := 1.0
 var _toast_t := 0.0
 var _fog_cd := 0.0
@@ -133,6 +144,12 @@ var _scenery_drawn := 0
 var _scenery_total := 0
 var _forge_sig := ""
 var trenching := false
+## Which of the three zoom rungs is selected, and where the camera actually is
+## between them. Two variables because the second eases toward the first —
+## snapping the camera is disorienting on a map navigated by landmark.
+var zoom_step := 0
+var _zoom := 1.0
+var _zoom_button: Button = null
 var _rng := RandomNumberGenerator.new()
 var lib := ModelLibrary.new()
 var _module_body: Node3D = null
@@ -396,6 +413,14 @@ func _make_instancers() -> void:
 	_mm_aliens = _instancer(_chunk_mesh(Color(1.0, 0.36, 0.45)), 192)
 	_mm_marks = _instancer(_ring_mesh(), 32)
 	_mm_marks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Shots and bars are UNLIT. Both have to read against a dark ground at a
+	# glance on a phone, and both are information rather than objects — a
+	# tracer that the moon fails to catch is a tracer nobody sees.
+	_mm_shots = _instancer(_flat_mesh(true), tune.shot_cap)
+	_mm_shots.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Two instances per bar, back and fill, plus the module's own.
+	_mm_bars = _instancer(_flat_mesh(false), 320)
+	_mm_bars.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## A flat glowing disc under a selected machine. Unlit and emissive so it reads
@@ -412,6 +437,32 @@ func _ring_mesh() -> Mesh:
 	mat.vertex_color_use_as_albedo = true
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.albedo_color = Color(1.0, 0.86, 0.35, 0.55)
+	m.material = mat
+	return m
+
+
+## A unit quad or box, unshaded, coloured per instance.
+##
+## `glow` is the difference between a tracer and a health bar: a tracer wants
+## to bloom, a bar wants to stay a flat readable strip and not smear into the
+## thing it is describing.
+func _flat_mesh(glow: bool) -> Mesh:
+	var m := BoxMesh.new()
+	m.size = Vector3.ONE
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	if glow:
+		mat.emission_enabled = true
+		mat.emission = Color(1.0, 0.86, 0.55)
+		mat.emission_energy_multiplier = 2.4
+	else:
+		# Bars sit ON TOP of whatever they describe. Without this a bar is
+		# swallowed by the model it is floating over at the shallow angle this
+		# camera looks down at.
+		mat.no_depth_test = true
+		mat.render_priority = 1
 	m.material = mat
 	return m
 
@@ -456,6 +507,18 @@ const BUTTON_MIN := Vector2(174.0, 92.0)
 
 
 func _build_menu() -> void:
+	# FIRST, before TRENCH. Zoom is a control the player reaches for constantly
+	# while reading the map, not instrumentation like PERF — it does not belong
+	# at the bottom of a column that scrolls.
+	_zoom_button = Button.new()
+	_zoom_button.custom_minimum_size = BUTTON_MIN
+	_zoom_button.add_theme_font_size_override("font_size", 19)
+	_zoom_button.pressed.connect(func():
+		cycle_zoom()
+		_refresh_zoom_button())
+	build_bar.add_child(_zoom_button)
+	_refresh_zoom_button()
+
 	var dig := Button.new()
 	dig.text = "TRENCH\nfree"
 	dig.toggle_mode = true
@@ -658,6 +721,7 @@ func step(delta: float) -> void:
 	_assembly(delta)
 	_merges(delta)
 	_units(delta)
+	_shots(delta)
 	_hostiles(delta)
 	waves.tick(delta)
 	# The three sources the Hive owns. The debris dig is WaveDirector's, above.
@@ -682,12 +746,17 @@ func step(delta: float) -> void:
 func _drone(delta: float) -> void:
 	match drone_state:
 		"idle":
-			var next := _nearest_job()
-			if next >= 0:
-				drone_target = next
-				drone_state = "outbound"
-			else:
-				_fly_toward(module_pos, delta)
+			# IT WAITS. The drone used to fly to the nearest piece the moment
+			# it had nothing to do, which meant the mass economy ran itself and
+			# the player watched it happen. Collecting is an ORDER now: tap a
+			# piece. What the drone does unasked is keep station on the module.
+			if tune.drone_auto_collect:
+				var next := _nearest_job()
+				if next >= 0:
+					drone_target = next
+					drone_state = "outbound"
+					return
+			_fly_toward(module_pos, delta)
 		"outbound":
 			var t: Variant = _job_pos(drone_target)
 			if t == null:
@@ -732,8 +801,35 @@ func _fly_toward(target: Vector2, delta: float) -> bool:
 	return false
 
 
+## The job nearest a tap, of any kind — wreck, small debris or a stuck piece.
+##
+## Wrecks win a tie. They are worth more than the debris beside them and the
+## player almost certainly meant the thing they just lost, not the scenery it
+## fell on.
+func _job_near(p: Vector2, reach: float) -> int:
+	var best := -1
+	var bd := reach
+	for i in debris.size():
+		if debris[i].taken:
+			continue
+		var d: float = (debris[i].pos as Vector2).distance_to(p)
+		if d < bd:
+			bd = d
+			best = i
+	for i in wrecks.size():
+		var d: float = (wrecks[i].pos as Vector2).distance_to(p)
+		if d <= bd:
+			bd = d
+			best = 1000 + i
+	return best
+
+
 ## Wrecks first — recovering your own losses should never queue behind
 ## exploring, or a bad fight compounds itself.
+##
+## UNUSED while drone_auto_collect is false, which is the shipped setting. Kept
+## rather than deleted so the old hands-off economy can be switched back on and
+## measured against the new one.
 func _nearest_job() -> int:
 	var best := -1
 	var bd := 1e9
@@ -1139,19 +1235,97 @@ func _fire(u: Dictionary, delta: float) -> void:
 		if t < 0:
 			continue
 		cds[w] = gun.cooldown_s
-		aliens[t].hp -= gun.damage
-		if gun.splash_m <= 0.0:
+		_launch(u.pos, t, gun)
+
+
+## Put one shot in the air, or land it immediately if the weapon is a claw.
+##
+## MELEE DOES NOT GET A PROJECTILE. A flight time on a contact weapon means a
+## swing that connects with something that has already walked away, which is
+## not a tradeoff, just a bug with a reason attached.
+func _launch(from: Vector2, target_index: int, gun: Dictionary) -> void:
+	var a: Dictionary = aliens[target_index]
+	var speed := _shot_speed(gun.family)
+	if speed <= 0.0:
+		_land(a.pos, int(a.uid), gun.damage, gun.splash_m)
+		return
+	if shots.size() >= tune.shot_cap:
+		# Over the cap the shot still HITS, it just is not drawn travelling.
+		# Dropping the damage instead would make a big fight quietly weaker
+		# than a small one, which is the sort of thing nobody finds for months.
+		_land(a.pos, int(a.uid), gun.damage, gun.splash_m)
+		return
+	var aim: Vector2 = a.pos
+	shots.append({
+		"pos": from, "from": from, "aim": aim, "target": int(a.uid),
+		"damage": gun.damage, "splash_m": gun.splash_m, "speed": speed,
+		"family": gun.family, "flown": 0.0,
+		"span": maxf(0.01, from.distance_to(aim)),
+	})
+
+
+func _shot_speed(family: int) -> float:
+	match family:
+		MachinePart.Family.RANGED:
+			return tune.shot_speed_ranged_mps
+		MachinePart.Family.ARTILLERY:
+			return tune.shot_speed_artillery_mps
+		_:
+			return 0.0
+
+
+## Fly every shot, and resolve the ones that arrive.
+##
+## A shot re-aims at its target while the target lives, so a bolt tracks a
+## running swarmer instead of landing where it used to be. When the target dies
+## in flight the shot keeps going to the last place it was aimed: a shell still
+## lands and still splashes, and a direct-fire bolt simply misses. That miss is
+## the price of the travel time being real, and it is why artillery is worth
+## its minimum range.
+func _shots(delta: float) -> void:
+	for i in range(shots.size() - 1, -1, -1):
+		var sh: Dictionary = shots[i]
+		var live := _alien_index(int(sh.target))
+		if live >= 0:
+			sh.aim = aliens[live].pos
+		var to: Vector2 = sh.aim - sh.pos
+		var d := to.length()
+		var step: float = sh.speed * delta
+		if d > step and d > 0.001:
+			sh.pos = (sh.pos as Vector2) + to / d * step
+			sh.flown = float(sh.flown) + step
 			continue
-		# Splash is what an artillery shell is FOR. Full damage at the centre,
-		# nothing at the rim, so a tight swarm is punished and a spread one is
-		# not — which is the behaviour that makes spacing matter to the enemy.
-		var centre: Vector2 = aliens[t].pos
-		for j in aliens.size():
-			if j == t:
-				continue
-			var d: float = centre.distance_to(aliens[j].pos)
-			if d < gun.splash_m:
-				aliens[j].hp -= gun.damage * (1.0 - d / gun.splash_m)
+		shots.remove_at(i)
+		_land(sh.aim, int(sh.target) if live >= 0 else -1,
+			sh.damage, sh.splash_m)
+
+
+## Apply a shot where it came down. `direct` is the id it was aimed at, or -1
+## if that thing died on the way — a direct hit needs something to hit, splash
+## does not care.
+func _land(at: Vector2, direct: int, damage: float, splash_m: float) -> void:
+	if direct >= 0:
+		var i := _alien_index(direct)
+		if i >= 0:
+			aliens[i].hp -= damage
+	if splash_m <= 0.0:
+		return
+	# Splash is what an artillery shell is FOR. Full damage at the centre,
+	# nothing at the rim, so a tight swarm is punished and a spread one is not
+	# — which is the behaviour that makes spacing matter to the enemy.
+	for j in aliens.size():
+		if int(aliens[j].uid) == direct:
+			continue
+		var d: float = at.distance_to(aliens[j].pos)
+		if d < splash_m:
+			aliens[j].hp -= damage * (1.0 - d / splash_m)
+
+
+func _alien_index(uid: int) -> int:
+	for i in aliens.size():
+		if int(aliens[i].uid) == uid:
+			return i
+	return -1
 
 
 ## Evenly spaced ring position for one convoy member.
@@ -1206,7 +1380,11 @@ func _add_alien(at: Vector2, hp: float, kind: StringName,
 		"uid": uid,
 		"pos": Vector2(clampf(at.x, 2.0, cfg.cells_x - 2.0),
 			clampf(at.y, 2.0, cfg.cells_z - 2.0)),
-		"hp": hp, "cd": 0.0, "kind": kind,
+		# hp_max is recorded at birth. A health bar needs a denominator, and a
+		# roamer, a nest and a swarmer are all "an alien" with wildly different
+		# ones — reading it back off the config at draw time would need the
+		# kind-to-config mapping in two places.
+		"hp": hp, "hp_max": maxf(1.0, hp), "cd": 0.0, "kind": kind,
 		"emerge": hive_cfg.emerge_s if emerge < 0.0 else emerge,
 	})
 	return uid
@@ -1409,6 +1587,7 @@ func _present(delta: float) -> void:
 	module.scale = Vector3.ONE * _module_scale
 	_set_module_form(_form_for_mass())
 	module.position = Vector3(module_pos.x, terrain.height_at(module_pos), module_pos.y)
+	_ease_zoom(delta)
 	_follow_module(delta)
 	drone.position = Vector3(drone_pos.x, terrain.height_at(drone_pos) + 5.5, drone_pos.y)
 	for r in drone.find_children("rotor_*", "Node3D", true, false):
@@ -1429,6 +1608,8 @@ func _present(delta: float) -> void:
 	_draw(_mm_marks, _markers(),
 		func(m): return Vector3(m.r, 0.12, m.r),
 		func(m): return m.col)
+	_draw_shots()
+	_draw_bars()
 	_refresh_forge_bar()
 
 	terrain.upload()
@@ -1474,6 +1655,128 @@ func _draw(mmi: MultiMeshInstance3D, items: Array, size_fn: Callable, col_fn: Ca
 		mmi.multimesh.set_instance_color(n, col_fn.call(it))
 		n += 1
 	mmi.multimesh.visible_instance_count = n
+
+
+## Tracers. Drawn separately from _draw because a shot is the one thing on the
+## map whose HEIGHT is not the ground under it: a shell arcs, and a bolt flies
+## at the height of the barrel that fired it rather than crawling over bumps.
+func _draw_shots() -> void:
+	var mm := _mm_shots.multimesh
+	var n := 0
+	for sh in shots:
+		if n >= mm.instance_count:
+			break
+		var p: Vector2 = sh.pos
+		if not fog.is_visible(p):
+			continue
+		var artillery: bool = int(sh.family) == MachinePart.Family.ARTILLERY
+		# 0 at the muzzle, 1 at the target. sin() gives an arc that starts and
+		# ends on the ground, which is what makes a shell read as thrown rather
+		# than as a bolt that happens to be slow.
+		var f := clampf(float(sh.flown) / float(sh.span), 0.0, 1.0)
+		var lift := 1.1
+		if artillery:
+			lift += sin(f * PI) * float(sh.span) * tune.shot_arc
+		var sz: float = tune.shot_size_m * (1.5 if artillery else 1.0)
+		var b := Basis.IDENTITY.scaled(Vector3(sz, sz, sz * (1.0 if artillery else 2.2)))
+		# Point a bolt along its flight. A stretched box that is not aligned to
+		# its own direction reads as a tumbling brick.
+		var dir: Vector2 = (sh.aim as Vector2) - p
+		if not artillery and dir.length_squared() > 0.001:
+			b = Basis(Vector3.UP, atan2(dir.x, dir.y)).scaled(
+				Vector3(sz, sz, sz * 2.2))
+		mm.set_instance_transform(n,
+			Transform3D(b, Vector3(p.x, terrain.height_at(p) + lift, p.y)))
+		mm.set_instance_color(n, Color(1.0, 0.72, 0.30) if artillery
+			else Color(0.72, 1.0, 0.92))
+		n += 1
+	mm.visible_instance_count = n
+
+
+## Health bars, two instances each: a dark back and a coloured fill.
+##
+## NOT A BAR OVER EVERYTHING. Seventy swarmers wearing full green bars is a
+## hedge, not information. Things the player makes decisions about — machines,
+## the module, the roamers and the plant nests — always carry one; a small
+## alien earns one by being hurt. See ProtoConfig.bar_always_for.
+func _draw_bars() -> void:
+	var mm := _mm_bars.multimesh
+	var n := 0
+	# One basis for all of them, built from the camera. This camera has a fixed
+	# pitch, so the bars only need turning once a frame, not once each.
+	var face := camera.global_transform.basis
+	for u in built:
+		n = _bar(mm, n, face, u.pos, u.hp / maxf(1.0, u.spec.max_hp),
+			u.spec.radius_m * 2.0 + tune.bar_lift_m, 1.0, true)
+	for a in aliens:
+		var kind: StringName = a.get("kind", &"small")
+		var frac: float = float(a.hp) / maxf(1.0, float(a.get("hp_max", a.hp)))
+		var always: bool = kind in tune.bar_always_for
+		if not always and frac >= 0.999:
+			continue
+		if float(a.get("emerge", 0.0)) > 0.0:
+			continue          # still climbing out; nothing to shoot at yet
+		var sc := 1.0
+		if kind == &"roamer":
+			sc = tune.roamer_scale
+		elif kind == &"nest":
+			sc = tune.nest_scale
+		n = _bar(mm, n, face, a.pos, frac,
+			tune.bar_lift_m * sc + sc, sc, false)
+	# The module last, so it is the one that survives a full bar array.
+	n = _bar(mm, n, face, module_pos, mass.mass / maxf(1.0, mass.cfg.max_mass),
+		tune.bar_lift_m + _module_scale * 2.4, _module_scale * 1.3, true)
+	mm.visible_instance_count = n
+
+
+## One bar: the dark back, then the fill on top of it. Returns the next free
+## instance slot, or the one it was given if there was no room for both — half
+## a bar is worse than none, so they go in as a pair or not at all.
+func _bar(mm: MultiMesh, n: int, face: Basis, at: Vector2, frac: float,
+		lift: float, scale: float, friendly: bool) -> int:
+	if n + 2 > mm.instance_count or not fog.is_visible(at):
+		return n
+	frac = clampf(frac, 0.0, 1.0)
+	var w: float = tune.bar_width_m * scale
+	var h: float = tune.bar_height_m * scale
+	var base := Vector3(at.x, terrain.height_at(at) + lift, at.y)
+	mm.set_instance_transform(n, Transform3D(bar_basis(face, w, h), base))
+	mm.set_instance_color(n, Color(0.03, 0.05, 0.06, 0.82))
+	# Inset, and anchored LEFT rather than centred, or a bar would drain from
+	# both ends at once and read as shrinking instead of emptying.
+	var inner: float = w - h * 0.3
+	var fw: float = maxf(0.0001, inner * frac)
+	var shift: float = (fw - inner) * 0.5
+	mm.set_instance_transform(n + 1, Transform3D(
+		bar_basis(face, fw, h * 0.55),
+		base + face.x * shift + face.z * 0.03))
+	mm.set_instance_color(n + 1, _bar_colour(frac, friendly))
+	return n + 2
+
+
+## A card `w` wide and `h` tall, lying in the camera's plane.
+##
+## scaled_LOCAL, and its own function so a test can read it back. Basis.scaled()
+## scales the basis ROWS, which is a world-axis scale applied on the LEFT — on
+## the camera's rotated basis that is not "make this card w wide", and the first
+## version of these bars came out standing on end with width and height swapped,
+## as thin ticks nobody could read. Every other assertion about bars passed
+## happily while it did, and the MultiMesh cannot be read back to catch it: the
+## headless renderer keeps no instance transforms, so it hands back identity.
+func bar_basis(face: Basis, w: float, h: float) -> Basis:
+	return face.scaled_local(Vector3(w, h, 0.02))
+
+
+## Green through amber to red for things the player owns; the reverse reading
+## for hostiles, where a nearly-dead thing is GOOD news and should be the
+## colour the eye goes to.
+func _bar_colour(frac: float, friendly: bool) -> Color:
+	if friendly:
+		if frac > 0.5:
+			return Color(0.35, 0.95, 0.62).lerp(Color(1.0, 0.86, 0.35),
+				(1.0 - frac) * 2.0)
+		return Color(1.0, 0.86, 0.35).lerp(Color(1.0, 0.33, 0.36), 1.0 - frac * 2.0)
+	return Color(1.0, 0.36, 0.45).lerp(Color(1.0, 0.86, 0.35), 1.0 - frac)
 
 
 ## Give every convoy member a real body, and point the aiming parts at what
@@ -1618,8 +1921,15 @@ func _hud(delta: float) -> void:
 
 ## The target panel, bottom right: what the drone is on and how long it has.
 func _drone_panel() -> void:
+	# ALWAYS VISIBLE WHEN IDLE, now that idle is the drone's resting state
+	# rather than a half-second between jobs it found for itself. A panel that
+	# hides when there is nothing to do reads as "the drone is broken" when the
+	# truth is "the drone is waiting for you".
 	if drone_target < 0 and drone_state == "idle":
-		target_panel.visible = false
+		target_panel.visible = true
+		var loose := _loose_debris()
+		target_label.text = "DRONE  idle\ntap a piece to collect it" if loose > 0 \
+			else "DRONE  idle\nnothing left in sight"
 		return
 	target_panel.visible = true
 	var what := "wreck"
@@ -1722,9 +2032,65 @@ func _say(text: String) -> void:
 ## Landscape, so the useful axis is width: the camera sits further back and the
 ## side panels take the edges rather than the battlefield.
 func _frame_camera() -> void:
-	camera.position = tune.camera_offset
+	camera.position = tune.camera_offset * _zoom
 	camera.look_at(rig.global_position, Vector3.UP)
 	camera.fov = tune.camera_fov_deg
+
+
+## Where the selected rung says the camera should be.
+func _zoom_target() -> float:
+	if tune.camera_zoom_steps.is_empty():
+		return 1.0
+	return tune.camera_zoom_steps[clampi(zoom_step, 0,
+		tune.camera_zoom_steps.size() - 1)]
+
+
+## Step to the next rung and wrap. This is what the ZOOM button does; the pinch
+## sets `_zoom` directly and then settles onto whichever rung is nearest.
+func cycle_zoom() -> void:
+	if tune.camera_zoom_steps.is_empty():
+		return
+	zoom_step = (zoom_step + 1) % tune.camera_zoom_steps.size()
+	_say("ZOOM  %s" % _zoom_name())
+
+
+## The button says which rung it is ON, not which one it will go to. A control
+## that reports its own state is one fewer thing to remember.
+func _refresh_zoom_button() -> void:
+	if _zoom_button != null:
+		_zoom_button.text = "ZOOM\n%s" % _zoom_name()
+
+
+func _zoom_name() -> String:
+	match zoom_step:
+		0: return "wide"
+		1: return "middle"
+		_: return "close"
+
+
+## After a pinch, land on the rung the player stopped nearest to. The gesture
+## is continuous so it feels live, but the game still has three named levels
+## and the next tap of the button continues from a known one.
+func _settle_zoom() -> void:
+	var best := 0
+	var bd := 1e9
+	for i in tune.camera_zoom_steps.size():
+		var d: float = absf(tune.camera_zoom_steps[i] - _zoom)
+		if d < bd:
+			bd = d
+			best = i
+	zoom_step = best
+	_refresh_zoom_button()
+
+
+## Ease toward the selected rung. Presentation, not simulation: where the
+## camera is has no effect on anything the sim does.
+func _ease_zoom(delta: float) -> void:
+	var want := _zoom_target()
+	if absf(_zoom - want) < 0.001:
+		return
+	_zoom = lerpf(_zoom, want, clampf(tune.camera_zoom_lerp * delta, 0.0, 1.0))
+	_frame_camera()
 
 
 ## Keep the module in view without nailing the view to it.
@@ -1736,7 +2102,11 @@ func _frame_camera() -> void:
 ## is also the signal that the module is about to leave the screen.
 func _follow_module(delta: float) -> void:
 	var off := module_pos - Vector2(rig.position.x, rig.position.z)
-	var slack := off.length() - tune.camera_leash_m
+	# SCALED BY THE ZOOM, because the leash is really "how far off centre may
+	# the module get before it leaves the screen", and the screen covers less
+	# ground the closer the camera is. A fixed leash loses the module the
+	# moment the player zooms in.
+	var slack := off.length() - tune.camera_leash_m * _zoom
 	if slack <= 0.0:
 		return
 	var pull := off.normalized() * slack * clampf(
@@ -1749,31 +2119,131 @@ func _follow_module(delta: float) -> void:
 var _drag := false
 var _panned := false
 var _press := Vector2.ZERO
+## Every finger currently down, by touch index. A pinch needs two of them and
+## the pan needs to know when a second one arrives, because a two-finger drag
+## is a zoom and dragging the map at the same time reads as the map lurching.
+var _touches: Dictionary = {}
+## Finger spread when the pinch started, and the zoom it started from.
+var _pinch_from := 0.0
+var _pinch_zoom := 1.0
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
-		if event.pressed:
+		_touch(event)
+	elif event is InputEventScreenDrag:
+		_touches[event.index] = event.position
+		if _touches.size() >= 2:
+			_pinch()
+		elif _drag:
+			_one_finger_drag(event)
+	elif event is InputEventMagnifyGesture:
+		# Trackpads and some Android builds send this instead of two touches.
+		_zoom = clampf(_zoom / maxf(0.2, event.factor), _zoom_min(), _zoom_max())
+		_settle_zoom()
+		_frame_camera()
+	elif event is InputEventMouseButton and event.pressed:
+		# Desktop only, and only so the three rungs can be tested without a
+		# touchscreen. A phone never sends this.
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_nudge_zoom(-0.08)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_nudge_zoom(0.08)
+
+
+func _touch(event: InputEventScreenTouch) -> void:
+	if event.pressed:
+		_touches[event.index] = event.position
+		if _touches.size() == 2:
+			# A pinch is starting. Whatever the first finger was doing, it was
+			# not this — cancel the pan and the pending tap so lifting off does
+			# not also issue a move order.
+			_drag = false
+			_panned = true
+			_pinch_from = _spread()
+			_pinch_zoom = _zoom
+		elif _touches.size() == 1:
 			_drag = true
 			_panned = false
 			_press = event.position
-		else:
-			_drag = false
-			if not _panned:
-				_tap(event.position)
-	elif event is InputEventScreenDrag and _drag:
-		if _press.distance_to(event.position) > 14.0:
-			_panned = true
-		if trenching:
-			var hit: Variant = terrain.raycast(
-				camera.project_ray_origin(event.position),
-				camera.project_ray_normal(event.position))
-			if hit != null:
-				var h: Vector3 = hit
-				_dig(Vector2(h.x, h.z), get_process_delta_time())
-		elif _panned:
-			rig.position += Vector3(-event.relative.x, 0.0, -event.relative.y) * 0.09
-			_frame_camera()
+		return
+	_touches.erase(event.index)
+	if _touches.is_empty():
+		var was_pinching := _panned and not _drag
+		if _drag and not _panned:
+			_tap(event.position)
+		_drag = false
+		if was_pinching:
+			_settle_zoom()
+	elif _touches.size() == 1:
+		# One finger left after a pinch. Do NOT resume panning with it — the
+		# hand is halfway through a gesture and the map would jump.
+		_drag = false
+		_panned = true
+
+
+func _one_finger_drag(event: InputEventScreenDrag) -> void:
+	if _press.distance_to(event.position) > 14.0:
+		_panned = true
+	if trenching:
+		var hit: Variant = terrain.raycast(
+			camera.project_ray_origin(event.position),
+			camera.project_ray_normal(event.position))
+		if hit != null:
+			var h: Vector3 = hit
+			_dig(Vector2(h.x, h.z), get_process_delta_time())
+	elif _panned:
+		# Scaled by the zoom, so a drag moves the ground under the thumb by the
+		# same distance whatever the camera height. Unscaled, panning zoomed in
+		# flings the map off the screen.
+		rig.position += Vector3(-event.relative.x, 0.0, -event.relative.y) \
+			* 0.09 * _zoom
+		_frame_camera()
+
+
+## Distance between the first two fingers down.
+func _spread() -> float:
+	var pts: Array = _touches.values()
+	if pts.size() < 2:
+		return 0.0
+	return (pts[0] as Vector2).distance_to(pts[1] as Vector2)
+
+
+## FINGERS APART MEANS CLOSER. The zoom is a multiplier on the camera offset,
+## so spreading the fingers has to make that multiplier SMALLER — the ratio
+## goes on the bottom.
+func _pinch() -> void:
+	var now := _spread()
+	if _pinch_from < tune.pinch_deadzone_px or now < tune.pinch_deadzone_px:
+		return
+	var ratio := now / _pinch_from
+	if tune.pinch_gain != 1.0:
+		ratio = pow(ratio, tune.pinch_gain)
+	_zoom = clampf(_pinch_zoom / ratio, _zoom_min(), _zoom_max())
+	_frame_camera()
+
+
+func _nudge_zoom(by: float) -> void:
+	_zoom = clampf(_zoom + by, _zoom_min(), _zoom_max())
+	_settle_zoom()
+	_frame_camera()
+
+
+## The rungs are widest first, so the closest rung is the smallest multiplier.
+## Read from the table rather than assumed, or editing it in the inspector
+## would silently clamp the new range away.
+func _zoom_min() -> float:
+	var m := 1.0
+	for z in tune.camera_zoom_steps:
+		m = minf(m, z)
+	return m
+
+
+func _zoom_max() -> float:
+	var m := 0.0
+	for z in tune.camera_zoom_steps:
+		m = maxf(m, z)
+	return maxf(m, 0.01)
 
 
 ## Tap the ground to drive the module. Tap a large piece to send the drone at
@@ -1808,14 +2278,21 @@ func _tap(screen: Vector2) -> void:
 		selected.clear()
 		return
 
-	for i in debris.size():
-		if debris[i].taken or not debris[i].large:
-			continue
-		if debris[i].pos.distance_to(p) < 4.0:
-			drone_target = i
-			drone_state = "outbound"
+	# ANY piece, not just a large one. With auto-collect gone this tap is the
+	# only way mass ever reaches the module, so it has to reach wrecks and
+	# small debris too, not just the one that starts a fight.
+	var job := _job_near(p, tune.drone_order_reach_m)
+	if job >= 0:
+		drone_target = job
+		drone_state = "outbound"
+		free_progress = 0.0
+		if _is_large_job(job):
 			_say("Freeing that piece will wake them. Build first if you need to.")
-			return
+		elif job >= 1000:
+			_say("Recovering the wreck.")
+		else:
+			_say("Collecting.")
+		return
 	if trenching:
 		_dig(p, 0.35)          # a tap is a short bite; drag digs continuously
 		return

@@ -211,6 +211,129 @@ module walking flat out settles where that pull equals its speed, at
 `leash + speed / follow`. Asserting the leash alone failed by exactly that
 2.6 m, which is the spring working, not the leash breaking.
 
+## Three zoom rungs, a pinch and a button
+
+The framing the game shipped with is now rung 0, the widest of three. Each rung
+is a **multiplier on `camera_offset`**, not its own offset, so the camera keeps
+its seventy-degree pitch and simply comes in: a zoom that also changes the
+angle reads as cutting to a different camera rather than moving closer.
+Measured from the rig: **51 m → 32 m → 19 m**.
+
+Three ways in: the **ZOOM** button (first in the right-hand column, before
+TRENCH — it is a control the player reaches for constantly, not instrumentation
+like PERF, and it reports which rung it is *on* rather than which one it will
+go to), a **two-finger pinch**, and the mouse wheel, which exists only so the
+rungs can be tested without a touchscreen.
+
+The pinch is continuous and **settles on the nearest rung when the fingers
+lift**, so the gesture feels live but the game still has three named levels and
+the next press of the button continues from a known one. Fingers apart means
+closer, so the ratio goes on the *bottom* of the multiplier.
+
+Two things the pinch dragged in with it:
+
+- **A second finger has to cancel the first one's gesture.** Without that, the
+  hand starting a pinch also panned the map and, on lifting, issued a move
+  order to wherever the first finger happened to be. And when a pinch ends with
+  one finger still down, panning does *not* resume with it — the hand is
+  halfway through a gesture and the map would jump.
+- **Both the pan and the leash scale with the zoom.** A drag has to move the
+  ground under the thumb by the same distance whatever the camera height, or
+  panning zoomed in flings the map off the screen; and `camera_leash_m` is
+  really "how far off centre may the module get before it leaves the screen",
+  which is a smaller distance the closer the camera is.
+
+## Shots travel
+
+Damage used to land the instant a cooldown came up, which made a firefight two
+groups of models standing still while one of them quietly lost. Weapons now put
+a **projectile** in the air: a flat bolt for direct fire, a slower arcing shell
+for artillery, drawn unlit through their own MultiMesh so a tracer the moon
+fails to catch is not a tracer nobody sees.
+
+- **Melee gets no projectile.** A flight time on a contact weapon means a swing
+  that connects with something that has already walked away.
+- **A shot carries its target's ID, never its index.** Aliens leave the array
+  from the middle constantly; an index-carrying shot would arrive at whoever
+  had shuffled into that slot.
+- **A shot re-aims while its target lives**, so a bolt tracks a running
+  swarmer. When the target dies in flight the shot keeps going to where it was
+  aimed: a shell still lands and still splashes, a direct-fire bolt simply
+  misses. That miss is the price of the travel time being real.
+- **Over `shot_cap` the shot still hits**, it is just not drawn travelling.
+  Dropping the damage instead would make a big fight quietly weaker than a
+  small one, which is the sort of thing nobody finds for months.
+
+### The test had arranged for the gap to be zero
+
+The projectile checks reported "0 shots in the air" and looked like a broken
+feature. The projectiles were fine. The test placed its target at
+`reach × 0.85` from the module — and the gunner, left to itself, walks to its
+**escort station**, which sits at almost exactly that radius. The two ended up
+on top of each other, every shot launched and landed inside a single `step()`,
+and `shots` was empty every time the loop looked at it. The fix was to pin the
+gunner's position as well as its hit points.
+
+Two neighbouring checks were quietly measuring the wrong thing for the same
+sort of reason. `probe.frames == 30` broke the day a check above it started
+calling `_present` for its own purposes, so it counts thirty *more* frames now.
+And the TEST LOAD check counted hostiles after ten steps — which, now that
+twelve machines put real shots in the air, is a smaller number every time the
+game gets better. It counts them at injection.
+
+**And `tools/proto_drive.gd` no longer runs forever.** A `SceneTree._process`
+that returns true is what quits the tree, so a script error partway down meant
+the function never returned and the tree called it again — the whole suite
+restarting from the top, against a half-played scene, forever. It looks exactly
+like a hang. There is a re-entry guard now that fails loudly and points at the
+first `SCRIPT ERROR`.
+
+## Health bars, and what does not get one
+
+Two MultiMesh instances per bar, a dark back and a coloured fill, unlit, with
+depth testing off — at this camera's shallow angle a bar without that is
+swallowed by the model it floats over. The fill is anchored **left** rather than
+centred, or a bar drains from both ends at once and reads as shrinking instead
+of emptying. They go in as a pair or not at all: half a bar is worse than none.
+
+**Not a bar over everything.** Seventy swarmers wearing full green bars is a
+hedge, not information. Things the player makes decisions about — machines, the
+module, the roamers and the plant nests — always carry one; a small alien earns
+one by being hurt. The list is `ProtoConfig.bar_always_for`, so that judgement
+is a data change.
+
+Friendly bars run green → amber → red. Hostile bars run the other way, because
+a nearly-dead hostile is *good* news and should be the colour the eye goes to.
+
+Aliens record `hp_max` at birth. A bar needs a denominator, and a roamer, a
+nest and a swarmer are all "an alien" with wildly different ones — reading it
+back off the config at draw time would put the kind-to-config mapping in two
+places.
+
+## The drone waits to be told
+
+It used to fly to the nearest piece whenever it was idle, which meant the mass
+economy ran itself and the player watched it happen. **Collecting is an order
+now**: tap a piece — any piece, wreck or small debris or a stuck one, not just
+the one that starts a fight. What the drone does unasked is keep station on the
+module.
+
+The panel that used to hide when the drone was idle is now always visible and
+says *"tap a piece to collect it"*. Idle is the drone's resting state rather
+than a half-second between jobs it found for itself, and a panel that vanishes
+reads as "the drone is broken" when the truth is "the drone is waiting for
+you".
+
+`drone_auto_collect` is off rather than deleted, so the old hands-off economy
+can be switched back on and measured against this one.
+
+## The module is slower
+
+6.5 → **3.6 m/s**. At 6.5 the module crossed the 150 m map in 23 seconds, which
+is fast enough that being caught out of position never actually happened — and
+being catchable is the whole reason it walks instead of teleporting. At 3.6 the
+crossing is 42 seconds and deciding where to stand is a real commitment.
+
 ## Not built
 
 - **Nothing is deformable but the ground.** Props do not react to a trench dug
