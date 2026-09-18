@@ -88,6 +88,7 @@ func _initialize() -> void:
 			print("  camera pulled back x%.1f" % wide)
 		if i == 0 and zoom >= 0:
 			scene.set("zoom_step", zoom)
+			scene.call("_refresh_zoom_button")
 			print("  zoom rung %d" % zoom)
 		# After the camera settings, and a few frames in so the scene has
 		# finished building before twelve machines and sixty hostiles land on
@@ -95,6 +96,19 @@ func _initialize() -> void:
 		# shot of the aftermath shows nothing being shot at.
 		if fight and (i == 10 or i == frames - 12):
 			scene.call("_stress")
+			# AND BRING THEM IN. _stress spawns on a 46-60 m ring, which is
+			# outside every machine's range, so the frame shows two armies
+			# standing still looking at each other and not one tracer. A still
+			# of a fight has to actually contain the fight.
+			var pull := 0
+			for a in scene.aliens:
+				if String(a.get("kind", "small")) != "small":
+					continue
+				var ang: float = TAU * pull / 26.0
+				a.pos = scene.module_pos + Vector2(cos(ang), sin(ang)) \
+					* (11.0 + (pull % 5) * 1.7)
+				a.emerge = 0.0
+				pull += 1
 		if reveal:
 			_reveal_all(root, white)
 		if i % 30 == 0:

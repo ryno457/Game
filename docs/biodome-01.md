@@ -230,6 +230,21 @@ lift**, so the gesture feels live but the game still has three named levels and
 the next press of the button continues from a known one. Fingers apart means
 closer, so the ratio goes on the *bottom* of the multiplier.
 
+### And the closest rung rendered solid black
+
+The camera rig sat at **y = 0** while the biodome floor is around **y = 21**.
+At the shipped camera height of 48 m that is invisible — the camera clears the
+ground by 27 m either way. The closest rung puts it at 18 m, which is three
+metres *underneath the map*, and the frame comes back black with no error
+anywhere. The middle rung survived but pushed the module to the top of the
+screen, because `look_at` was aiming at a point below the terrain.
+
+The rig rides the ground now, re-seated on every `_frame_camera()` including
+after a pan, since panning moves it over terrain of a different height. There
+is a `camera_clearance()` and a check that asserts it is positive at every
+rung: a camera under the map is a black screen, and a black screen is not
+something any assertion about zoom multipliers would ever have caught.
+
 Two things the pinch dragged in with it:
 
 - **A second finger has to cancel the first one's gesture.** Without that, the
@@ -309,6 +324,37 @@ Aliens record `hp_max` at birth. A bar needs a denominator, and a roamer, a
 nest and a swarmer are all "an alien" with wildly different ones — reading it
 back off the config at draw time would put the kind-to-config mapping in two
 places.
+
+### Two things about them that only a rendered frame could say
+
+**They drew nothing at all, and every check passed.** The first version used a
+`TRANSPARENCY_ALPHA` material with `no_depth_test` — the reasoning being that a
+bar sits *on top of* the thing it describes, and at this camera's shallow angle
+it would otherwise be swallowed by the model it floats over. It submitted
+perfectly: right AABB, right transforms, `visible_instance_count` set, no error
+anywhere. It rendered nothing on the Mobile renderer. Every flag in that
+material was one the rest of the project uses nowhere else, and none of them
+were load-bearing. They are plain opaque unshaded now, and clear their owners
+by floating higher instead. This is the third time in this project that a
+feature which passed every assertion turned out to be invisible, and it is why
+`tools/screenshot.sh` exists.
+
+**And then they were all the same pale mint.** Bars are unshaded albedo, so
+they go through the tonemapper and the ink pass untouched by any light, and the
+HUD's own colours came out washed to near-white at every fraction — a ramp that
+cannot be read is not a ramp. The bar palette is roughly half the value of the
+HUD's, which is what survives as a colour.
+
+### The frame had to be made to contain a fight
+
+`tools/screenshot.sh` takes a `fight` argument now. Two reasons the obvious
+version of it was useless: the opening state has no machines and no hostiles at
+all, and `reveal` does not help because it overrides the *terrain shader's* fog
+map while bars and tracers are gated on `fog.is_visible()` in GDScript.
+`_stress` fixes both. But `_stress` spawns hostiles on a 46–60 m ring, which is
+outside every machine's range — so the first "combat" frame was two armies
+standing still looking at each other, with not one tracer in it. The flag pulls
+them in to 11 m.
 
 ## The drone waits to be told
 

@@ -482,6 +482,24 @@ func _process(_delta: float) -> bool:
 	_ok("and cycling wraps back to the widest", scene.zoom_step == 0,
 		"three presses returns to rung 0")
 
+	# AND NONE OF THEM PUT THE CAMERA UNDER THE MAP. The rig sat at y = 0 while
+	# the biodome floor is around y = 21 — invisible at the shipped height of
+	# 48 m, and fatal at the closest rung, which puts the camera at 18 m. The
+	# frame came back solid black with no error anywhere.
+	var worst := 1.0e9
+	var worst_rung := 0
+	for z in 3:
+		scene.zoom_step = z
+		for i in 200:
+			scene._ease_zoom(DT)
+		var clear: float = scene.camera_clearance()
+		if clear < worst:
+			worst = clear
+			worst_rung = z
+	_ok("and none of them put the camera under the map", worst > 4.0,
+		"%.1f m of clearance at the worst rung (%d)" % [worst, worst_rung])
+	scene.zoom_step = 0
+
 	# --- presentation and instrumentation ------------------------------------
 	# Everything above drives step() only. This is the first thing that touches
 	# _present(): the scenery MultiMeshes, the fog cull, the convoy bodies and

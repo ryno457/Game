@@ -145,13 +145,22 @@ WHAT YOU ARE LOOKING AT
   Bottom right what the drone is working on
 
 WHAT TO DO
+  PINCH        two fingers to zoom. Three levels: wide, middle, close. The
+               pinch runs smoothly and settles on the nearest level when you
+               lift off.
+  ZOOM         top of the right-hand column. Steps through the same three
+               levels and says which one you are on.
   Drag         pan the camera. The camera follows the module on a LEASH: your
                pan is left where you put it until the module walks far enough
                out that it would leave the screen.
-  Tap ground   the module WALKS there. It does not appear there. It takes
-               real seconds, it slides along edges it cannot cross, and it
-               can be caught out of position — which is the point of a body
-               that carries your mass.
+  Tap ground   the module WALKS there. It does not appear there. It is SLOW
+               on purpose — about 40 seconds to cross the map — and it can be
+               caught out of position, which is the point of a body that
+               carries your mass.
+  Tap a piece  sends the drone to collect it. ANY piece: loose debris, a
+               wreck, or a big stuck one. THE DRONE NEVER COLLECTS ON ITS
+               OWN — if nothing is happening to your mass, nothing has been
+               ordered. The panel bottom right says so.
   Tap a machine    select it; tap more to add them to the selection
   Tap empty ground clears the selection
   TRENCH       toggle, then drag to dig. Digging costs no mass, only time.
@@ -160,6 +169,19 @@ WHAT TO DO
                that pooled mass could become. Two machines reach things one
                cannot.
   QUALITY      cycles High -> Medium -> Low, and RESTARTS the timings.
+
+WHAT IS NEW TO LOOK AT
+  SHOTS TRAVEL. Machines throw a visible bolt or an arcing shell rather than
+  damaging things instantly. A shot that loses its target keeps going: a
+  shell still lands, a bolt misses. Watch whether a firefight now reads as a
+  firefight.
+
+  HEALTH BARS. Over machines, the module, the roaming creatures and the
+  plant nests always; over a small alien only once it is hurt. Friendly bars
+  run green to red, hostile bars run the other way round, because a nearly
+  dead hostile is good news. Tell me if that reads backwards to you.
+
+  The module's bar is its MASS, which is the same number as the top bar.
 
 THE HIVE — FOUR WAYS TO START A FIGHT, AND FOUR WAYS TO END ONE
   The map starts QUIET. Two large creatures roam it in the open and

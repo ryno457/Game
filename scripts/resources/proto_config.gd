@@ -105,8 +105,8 @@ extends Resource
 @export var shot_cap: int = 192
 
 @export_group("Health bars")
-@export var bar_width_m: float = 2.4
-@export var bar_height_m: float = 0.4
+@export var bar_width_m: float = 1.5
+@export var bar_height_m: float = 0.26
 ## How far above the thing it floats, before that thing's own size is added.
 @export var bar_lift_m: float = 1.2
 ## A bar over every one of seventy swarmers is noise, not information. Things

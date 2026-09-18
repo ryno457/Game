@@ -449,20 +449,21 @@ func _ring_mesh() -> Mesh:
 func _flat_mesh(glow: bool) -> Mesh:
 	var m := BoxMesh.new()
 	m.size = Vector3.ONE
+	# OPAQUE, and no no_depth_test. The first version of this was an alpha
+	# material with depth testing disabled, which submitted perfectly — right
+	# AABB, right transforms, visible_instance_count set — and drew NOTHING on
+	# the Mobile renderer. Every exotic flag here was one the rest of the
+	# project does not use anywhere else, and none of them were load-bearing:
+	# a bar wants to be a flat readable strip, which opaque does better anyway.
+	# Bars clear the models by floating above them instead.
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.vertex_color_use_as_albedo = true
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if glow:
 		mat.emission_enabled = true
 		mat.emission = Color(1.0, 0.86, 0.55)
 		mat.emission_energy_multiplier = 2.4
-	else:
-		# Bars sit ON TOP of whatever they describe. Without this a bar is
-		# swallowed by the model it is floating over at the shallow angle this
-		# camera looks down at.
-		mat.no_depth_test = true
-		mat.render_priority = 1
 	m.material = mat
 	return m
 
@@ -1707,7 +1708,7 @@ func _draw_bars() -> void:
 	var face := camera.global_transform.basis
 	for u in built:
 		n = _bar(mm, n, face, u.pos, u.hp / maxf(1.0, u.spec.max_hp),
-			u.spec.radius_m * 2.0 + tune.bar_lift_m, 1.0, true)
+			u.spec.radius_m * 2.2 + tune.bar_lift_m, 1.0, true)
 	for a in aliens:
 		var kind: StringName = a.get("kind", &"small")
 		var frac: float = float(a.hp) / maxf(1.0, float(a.get("hp_max", a.hp)))
@@ -1722,7 +1723,7 @@ func _draw_bars() -> void:
 		elif kind == &"nest":
 			sc = tune.nest_scale
 		n = _bar(mm, n, face, a.pos, frac,
-			tune.bar_lift_m * sc + sc, sc, false)
+			tune.bar_lift_m * sc + sc * 1.6, sc, false)
 	# The module last, so it is the one that survives a full bar array.
 	n = _bar(mm, n, face, module_pos, mass.mass / maxf(1.0, mass.cfg.max_mass),
 		tune.bar_lift_m + _module_scale * 2.4, _module_scale * 1.3, true)
@@ -1741,7 +1742,7 @@ func _bar(mm: MultiMesh, n: int, face: Basis, at: Vector2, frac: float,
 	var h: float = tune.bar_height_m * scale
 	var base := Vector3(at.x, terrain.height_at(at) + lift, at.y)
 	mm.set_instance_transform(n, Transform3D(bar_basis(face, w, h), base))
-	mm.set_instance_color(n, Color(0.03, 0.05, 0.06, 0.82))
+	mm.set_instance_color(n, Color(0.012, 0.018, 0.022))
 	# Inset, and anchored LEFT rather than centred, or a bar would drain from
 	# both ends at once and read as shrinking instead of emptying.
 	var inner: float = w - h * 0.3
@@ -1749,7 +1750,7 @@ func _bar(mm: MultiMesh, n: int, face: Basis, at: Vector2, frac: float,
 	var shift: float = (fw - inner) * 0.5
 	mm.set_instance_transform(n + 1, Transform3D(
 		bar_basis(face, fw, h * 0.55),
-		base + face.x * shift + face.z * 0.03))
+		base + face.x * shift + face.z * 0.06))
 	mm.set_instance_color(n + 1, _bar_colour(frac, friendly))
 	return n + 2
 
@@ -1771,12 +1772,17 @@ func bar_basis(face: Basis, w: float, h: float) -> Basis:
 ## for hostiles, where a nearly-dead thing is GOOD news and should be the
 ## colour the eye goes to.
 func _bar_colour(frac: float, friendly: bool) -> Color:
+	# DARK. These are unshaded albedo, so they go through the tonemapper and
+	# the ink pass untouched by any light — the first set used the HUD's own
+	# colours and every bar came out the same pale mint whatever fraction it
+	# was showing. Roughly half value is what survives as a colour.
 	if friendly:
 		if frac > 0.5:
-			return Color(0.35, 0.95, 0.62).lerp(Color(1.0, 0.86, 0.35),
+			return Color(0.10, 0.52, 0.28).lerp(Color(0.62, 0.42, 0.04),
 				(1.0 - frac) * 2.0)
-		return Color(1.0, 0.86, 0.35).lerp(Color(1.0, 0.33, 0.36), 1.0 - frac * 2.0)
-	return Color(1.0, 0.36, 0.45).lerp(Color(1.0, 0.86, 0.35), 1.0 - frac)
+		return Color(0.62, 0.42, 0.04).lerp(Color(0.66, 0.07, 0.09),
+			1.0 - frac * 2.0)
+	return Color(0.66, 0.09, 0.16).lerp(Color(0.62, 0.42, 0.04), 1.0 - frac)
 
 
 ## Give every convoy member a real body, and point the aiming parts at what
@@ -2032,9 +2038,25 @@ func _say(text: String) -> void:
 ## Landscape, so the useful axis is width: the camera sits further back and the
 ## side panels take the edges rather than the battlefield.
 func _frame_camera() -> void:
+	# THE RIG RIDES THE GROUND. It used to sit at y = 0 while the biodome floor
+	# is around y = 21, which was invisible at the shipped camera height of 48
+	# and fatal the moment the zoom came in: the closest rung puts the camera
+	# at 18 m, three metres UNDERNEATH the map, and the frame renders black.
+	# Aiming at y = 0 was also why the middle rung pushed the module to the top
+	# of the screen — look_at was pointing at a spot below the terrain.
+	rig.position.y = terrain.height_at(
+		Vector2(rig.position.x, rig.position.z))
 	camera.position = tune.camera_offset * _zoom
 	camera.look_at(rig.global_position, Vector3.UP)
 	camera.fov = tune.camera_fov_deg
+
+
+## How far the camera clears the ground directly beneath it at the current
+## rung. Its own function so a check can assert it is positive at every rung —
+## a camera under the map is a black screen with no error anywhere.
+func camera_clearance() -> float:
+	var at := camera.global_position
+	return at.y - terrain.height_at(Vector2(at.x, at.z))
 
 
 ## Where the selected rung says the camera should be.
@@ -2198,7 +2220,7 @@ func _one_finger_drag(event: InputEventScreenDrag) -> void:
 		# flings the map off the screen.
 		rig.position += Vector3(-event.relative.x, 0.0, -event.relative.y) \
 			* 0.09 * _zoom
-		_frame_camera()
+		_frame_camera()          # re-seats the rig on the ground it just moved over
 
 
 ## Distance between the first two fingers down.
