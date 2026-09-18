@@ -52,8 +52,17 @@ echo "lint: $("$GODOT" --headless --version 2>/dev/null | tail -1)"
 echo "lint: ignoring isolated-check autoload refs: ${AUTOLOADS//|/, }"
 echo
 
+# scenes/ AND tools/ ARE IN THIS LIST, and were not for a long time.
+#
+# The sweep used to cover autoload, scripts and tests only — which is every
+# file except the two that change most: the main scene and the headless
+# drivers. Lint reported "62 ok, 0 failed" while proto_main.gd had a parse
+# error in it, twice, and both times the real failure only turned up when
+# something tried to run the game. A linter that cannot fail on the file you
+# are editing is a linter that says "ok" for a living.
 echo "main project"
-for f in autoload/*.gd scripts/resources/*.gd scripts/systems/*.gd tests/unit/*.gd; do
+for f in autoload/*.gd scripts/resources/*.gd scripts/systems/*.gd \
+         scenes/*/*.gd tools/*.gd tests/unit/*.gd; do
   [ -e "$f" ] || continue
   check "." "$f" "$f"
 done

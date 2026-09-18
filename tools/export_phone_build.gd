@@ -169,6 +169,8 @@ WHAT TO DO
                that pooled mass could become. Two machines reach things one
                cannot.
   QUALITY      cycles High -> Medium -> Low, and RESTARTS the timings.
+  EFFECTS      cycles all -> none -> flash+death -> shake -> wind -> ring,
+               and RESTARTS the timings. See EFFECTS below.
   LIGHTS       cycles base -> canopy cookie -> area fill -> both, and
                RESTARTS the timings. See LIGHTING below — this button is a
                question only a real phone can answer.
@@ -248,6 +250,36 @@ MAP EDITOR
   phone call does not cost you the afternoon.
 
   UNDO takes back the last thing you did, whatever kind it was.
+
+EFFECTS — FOUR OF THEM, AND I CANNOT PRICE ANY OF THEM
+  HIT FLASH        things light up when a shot lands
+  DEATH            a killed thing shrinks, tips over and sinks, over about a
+                   third of a second. It cannot bite, cannot be shot and is
+                   not counted while it does.
+  CAMERA SHAKE     artillery impacts kick the camera. Only splash weapons,
+                   only within 44 m of what you are looking at.
+  VINE WIND        the plants bend. Nothing else does — machines, rocks and
+                   ruins are deliberately rigid.
+  EMERGE RING      a ring of dust pushes outward while an alien climbs out.
+
+  The EFFECTS button walks them ONE AT A TIME with a "none" baseline, and
+  restarts the frame timings each press. That is the whole point: "effects
+  on/off" would tell me the lump costs something and not which part.
+
+  Vine wind is the odd one — it lives in a material set once at spawn, so
+  toggling it takes effect on the NEXT scene load (press MAP EDITOR then
+  PLAY, or restart).
+
+  WHAT I MEASURED HERE: nothing useful, and I measured it carefully enough
+  to be sure of that. This machine renders in SOFTWARE at about 260 ms a
+  frame. Every effect, and all four together, came in under the run's own
+  13 ms noise floor. All it establishes is that none of them is a disaster.
+  Four on adds six draw calls, which is the one number worth anything.
+
+  WHAT I NEED FROM YOU: the PERF card on each EFFECTS rung, two minutes
+  each. And the feel — the amounts are guesses. Is the shake too much? Does
+  the death take too long? Does the wind look like wind or like the camera
+  wobbling?
 
 LIGHTING — THE ONE QUESTION ONLY YOU CAN ANSWER
   This machine has no GPU. It renders with a software Vulkan driver, and on

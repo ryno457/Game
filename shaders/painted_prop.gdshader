@@ -50,7 +50,36 @@ varying vec3 v_col;
 varying vec3 v_normal_w;
 varying vec3 v_view_w;
 
+// WIND, and only on the things that grew.
+//
+// sway_m is 0 on every machine, rock and piece of debris, and the branch below
+// is uniform across a draw call so it costs those meshes a compare rather than
+// the sine. The map is full of vines and every one of them was rigid; this is
+// the largest change in how alive the map looks per instruction in the whole
+// project.
+//
+// ANCHORED AT THE BASE. The offset scales with the vertex's own height, so a
+// plant bends rather than sliding — the first version moved the whole mesh and
+// the vines skated across the ground like decals.
+//
+// PHASE COMES FROM WORLD POSITION, taken from MODEL_MATRIX so it is per-prop
+// and works through a MultiMesh. Without it every plant on the map leans the
+// same way at the same moment, which reads as the camera moving, not wind.
+uniform float sway_m = 0.0;
+uniform float sway_hz = 0.32;
+uniform float sway_ref_h = 3.0;
+
 void vertex() {
+	if (sway_m > 0.0) {
+		vec3 root = MODEL_MATRIX[3].xyz;
+		float lift = max(VERTEX.y, 0.0) / max(sway_ref_h, 0.01);
+		float t = TIME * sway_hz * 6.2831853;
+		// Two axes at different rates, so it circles slightly instead of
+		// wagging along one line.
+		float phase = root.x * 0.21 + root.z * 0.17;
+		VERTEX.x += sin(t + phase) * sway_m * lift;
+		VERTEX.z += sin(t * 0.73 + phase * 1.7) * sway_m * 0.6 * lift;
+	}
 	v_col = use_vertex_colour ? COLOR.rgb : vec3(1.0);
 	v_normal_w = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	v_view_w = normalize(CAMERA_POSITION_WORLD

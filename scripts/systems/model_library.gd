@@ -102,6 +102,25 @@ static func _apply_vertex_colours(packed: PackedScene) -> int:
 ##
 ## Mutates the shared cached mesh resources, like _apply_vertex_colours above,
 ## so every instance after the first gets it — node-spawned or MultiMesh.
+## How far the top of a plant sways, in metres, and how fast. Zero on anything
+## that is not flora, which is how the shader's branch stays cheap for machines
+## and rocks. Set from EffectsConfig before anything spawns.
+static var painted_sway_m := 0.0
+static var painted_sway_hz := 0.32
+static var painted_sway_ref_h := 3.0
+
+
+## Does this model bend in the wind?
+##
+## BY NAME, which is crude and correct here: every growing thing in this
+## project is called flora_something, and the alternative — a flag on each
+## model's import — is a file to forget to tick. A rock spire and an alien ruin
+## are deliberately excluded: they are stone, and stone that sways is worse
+## than stone that does not move.
+static func sways(model_name: String) -> bool:
+	return model_name.begins_with("flora")
+
+
 static func apply_painted(packed: PackedScene, ramp: Texture2D,
 		ink := 0.35, model_name := "", machine_detail := 0.0,
 		scale_detail := 0.0) -> int:
@@ -131,6 +150,10 @@ static func apply_painted(packed: PackedScene, ramp: Texture2D,
 			sm.set_shader_parameter("use_vertex_colour", has_col)
 			sm.set_shader_parameter("tone_ramp", ramp)
 			sm.set_shader_parameter("rim_ink", ink)
+			if sways(model_name):
+				sm.set_shader_parameter("sway_m", painted_sway_m)
+				sm.set_shader_parameter("sway_hz", painted_sway_hz)
+				sm.set_shader_parameter("sway_ref_h", painted_sway_ref_h)
 			# The machines' baked detail, if this model has any. Named by
 			# model, written by tools/blender/bake_machines.py.
 			var n_path := "res://textures/machine_%s_n.png" % model_name

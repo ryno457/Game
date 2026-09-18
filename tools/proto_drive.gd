@@ -535,6 +535,148 @@ func _process(_delta: float) -> bool:
 		"%.1f m of clearance at the worst rung (%d)" % [worst, worst_rung])
 	scene.zoom_step = 0
 
+	# --- the four effects ----------------------------------------------------
+	# Each one fixes something the game could not say. These check that it
+	# actually says it, and — for the two with teeth — that it does not change
+	# anything it was not supposed to.
+	print("")
+	scene.aliens.clear()
+	scene.shots.clear()
+	scene.built.clear()
+	scene.fog.begin_frame()
+	scene.fog.reveal(scene.module_pos, 50.0)
+	var spot2: Vector2 = scene.module_pos + Vector2(8.0, 0.0)
+	var vic: int = scene._add_alien(spot2, 100.0, &"small", 0.0)
+
+	# HIT FLASH
+	var vi2: int = scene._alien_index(vic)
+	var cold: Color = scene._alien_tint(scene.aliens[vi2])
+	scene._land(spot2, vic, 10.0, 0.0)
+	var hot: Color = scene._alien_tint(scene.aliens[scene._alien_index(vic)])
+	# TOWARD WHITE, not brighter. The alien's own colour is already 1.0 in red,
+	# so HSV value cannot rise and the first version of this check compared
+	# 1.00 to 1.00 and failed a working effect. What a flash does is wash the
+	# colour OUT, which is a drop in saturation.
+	_ok("a hit lights the thing that was hit", hot.s < cold.s - 0.1,
+		"saturation %.2f -> %.2f" % [cold.s, hot.s])
+	for i in int(scene.fx.flash_s / DT) + 4:
+		scene.step(DT)
+	_ok("and it goes out again",
+		absf(scene._alien_tint(scene.aliens[scene._alien_index(vic)]).s
+			- cold.s) < 0.01,
+		"back to %.2f after %.2f s"
+			% [scene._alien_tint(scene.aliens[scene._alien_index(vic)]).s,
+				scene.fx.flash_s])
+
+	# DEATH, and the part with teeth: a corpse must not be a target, must not
+	# be damageable, and must not be counted.
+	var live_before: int = scene._live_hostiles()
+	scene.aliens[scene._alien_index(vic)].hp = 0.0
+	scene.step(DT)
+	var idx: int = scene._alien_index(vic)
+	_ok("a dead thing does not vanish instantly", idx >= 0,
+		"still on the map %.2f s in" % DT)
+	_ok("but it is not counted as a hostile any more",
+		scene._live_hostiles() == live_before - 1,
+		"%d live, was %d" % [scene._live_hostiles(), live_before])
+	_ok("and nothing will shoot at it",
+		scene._nearest_alien(spot2, 40.0) < 0
+			and scene._nearest_alien_in_band(spot2, 0.0, 40.0) < 0,
+		"no target found where a corpse is")
+	var corpse_hp: float = scene.aliens[idx].hp
+	scene._land(spot2, vic, 50.0, 6.0)
+	_ok("and it cannot be damaged further",
+		is_equal_approx(scene.aliens[scene._alien_index(vic)].hp, corpse_hp),
+		"%.0f hp, unchanged by a shell on top of it" % corpse_hp)
+	for i in 3:
+		scene.step(DT)
+	_ok("it shrinks as it goes",
+		scene._death_scale(scene.aliens[scene._alien_index(vic)]) < 1.0,
+		"scale %.2f" % scene._death_scale(
+			scene.aliens[scene._alien_index(vic)]))
+	var gone := 0.0
+	while gone < scene.fx.death_s * 3.0 + 1.0 \
+			and scene._alien_index(vic) >= 0:
+		scene.step(DT)
+		gone += DT
+	_ok("and then it is gone", scene._alien_index(vic) < 0,
+		"cleared after %.2f s, death_s is %.2f" % [gone, scene.fx.death_s])
+
+	# CAMERA SHAKE.
+	#
+	# SETTLE EVERYTHING ELSE FIRST. The camera is also being moved by the zoom
+	# tween and by the leash chasing the module, and the first version of this
+	# check measured all three at once: it reported a 0.85 m shake as 14.30 m
+	# and never saw it settle. A test of one thing has to hold the other two
+	# still.
+	scene.zoom_step = 0
+	scene.module_goal = scene.module_pos
+	for i in 400:
+		scene._ease_zoom(DT)
+		scene._present(DT)
+	var rig_was: Vector3 = scene.rig.position
+	var cam_was: Vector3 = scene.camera.position
+	scene._kick(Vector2(scene.rig.position.x, scene.rig.position.z), 60.0)
+	scene._present(DT)
+	_ok("an impact moves the camera",
+		scene.camera.position.distance_to(cam_was) > 0.01,
+		"%.2f m" % scene.camera.position.distance_to(cam_was))
+	# THE ONE THAT MATTERS. The rig is the view centre — the pan, the leash and
+	# the minimap all read it. Shaking THAT would drag the world's idea of
+	# where the player is looking.
+	_ok("but not the view centre",
+		scene.rig.position.distance_to(rig_was) < 0.001,
+		"the rig did not move, so the pan and the leash are untouched")
+	var shake_settle := 0.0
+	while shake_settle < 6.0 and scene.camera.position.distance_to(cam_was) > 0.005:
+		scene._present(DT)
+		shake_settle += DT
+	_ok("and it settles back exactly where it was",
+		scene.camera.position.distance_to(cam_was) < 0.005,
+		"%.4f m off after %.1f s" % [
+			scene.camera.position.distance_to(cam_was), shake_settle])
+	# An explosion on the far side of the map must not shake anything.
+	# Drain the last of the previous shake first: the loop above stops at
+	# 5 mm, and 5 mm of leftover wobble is bigger than the nothing this check
+	# is looking for.
+	for i in 90:
+		scene._present(DT)
+	var far_off: Vector2 = Vector2(scene.rig.position.x, scene.rig.position.z) \
+		+ Vector2(scene.fx.shake_range_m + 30.0, 0.0)
+	var before_far: Vector3 = scene.camera.position
+	scene._kick(far_off, 200.0)
+	scene._present(DT)
+	_ok("something off screen shakes nothing",
+		scene.camera.position.distance_to(before_far) < 0.005,
+		"%.0f m away, range is %.0f"
+			% [scene.fx.shake_range_m + 30.0, scene.fx.shake_range_m])
+
+	# EMERGE RING
+	scene.aliens.clear()
+	var marks_quiet: int = scene._markers().size()
+	scene._add_alien(spot2, 60.0, &"small")     # default emerge, still climbing
+	var marks_emerging: int = scene._markers().size()
+	_ok("something climbing out draws a ring",
+		marks_emerging >= marks_quiet + scene.fx.ring_dots,
+		"%d markers -> %d, ring is %d dots"
+			% [marks_quiet, marks_emerging, scene.fx.ring_dots])
+	while not scene.aliens.is_empty() \
+			and float(scene.aliens[0].get("emerge", 0.0)) > 0.0:
+		scene.step(DT)
+	_ok("and the ring goes when it is up",
+		scene._markers().size() == marks_quiet,
+		"%d markers once it has surfaced" % scene._markers().size())
+
+	# VINE WIND — a material setting, so what is checkable here is that it is
+	# on the things that grew and off everything else.
+	_ok("the wind is on the things that grew",
+		ModelLibrary.sways("flora_tendril") and ModelLibrary.sways("flora_brain"),
+		"flora_* sway")
+	_ok("and not on machines, rocks or ruins",
+		not ModelLibrary.sways("turret") and not ModelLibrary.sways("rock_spire")
+			and not ModelLibrary.sways("alien_ruin"),
+		"stone that sways is worse than stone that does not move")
+
 	# --- presentation and instrumentation ------------------------------------
 	# Everything above drives step() only. This is the first thing that touches
 	# _present(): the scenery MultiMeshes, the fog cull, the convoy bodies and

@@ -37,7 +37,10 @@ const QUALITY := ["res://data/gameplay/quality_high.tres",
 	"res://data/gameplay/quality_medium.tres",
 	"res://data/gameplay/quality_low.tres"]
 const PROTO_CFG := "res://data/gameplay/proto.tres"
+const EFFECTS := "res://data/gameplay/effects.tres"
 const FOG_HZ := 15.0        ## presentation cadence, not a gameplay number
+## `dying` when a thing is not dying. See _add_alien for why it is not zero.
+const ALIVE := -1.0
 ## Scenery is bucketed into squares this big so the frustum can cull it. See
 ## _dress — the number is a draw-calls-versus-wasted-triangles tradeoff, not a
 ## gameplay knob, which is why it lives here and not in a .tres.
@@ -85,6 +88,7 @@ var _quality_slot := 0
 ## it dies with. Everything in the sim reads these, never a part or a chassis.
 var specs: Dictionary = {}
 var tune: ProtoConfig
+var fx: EffectsConfig
 
 var module_pos := Vector2.ZERO
 ## Where the player last tapped. The module drives toward it; see _walk_module.
@@ -153,6 +157,13 @@ var trenching := false
 var zoom_step := 0
 var _zoom := 1.0
 var _zoom_button: Button = null
+## Camera shake: how far it is still allowed to move, and how long it has been
+## going. Decays to nothing and costs not one draw call.
+var _shake := 0.0
+var _shake_t := 0.0
+var _module_flash := 0.0
+var _fx_mode := 0
+var _fx_button: Button = null
 ## The two lighting experiments the phone has to settle, because this machine
 ## cannot: see _cycle_lights.
 var _area_fill: AreaLight3D = null
@@ -173,6 +184,13 @@ var _scenery: Array[Dictionary] = []
 func _ready() -> void:
 	_rng.seed = 20260913
 	tune = load(PROTO_CFG)
+	fx = load(EFFECTS)
+	# BEFORE the library spawns anything. apply_painted mutates the shared
+	# cached mesh resources the first time a model is asked for, so a sway set
+	# afterwards reaches nothing that already exists.
+	ModelLibrary.painted_sway_m = fx.sway_m if fx.vine_wind else 0.0
+	ModelLibrary.painted_sway_hz = fx.sway_hz
+	ModelLibrary.painted_sway_ref_h = fx.sway_ref_h
 	# Final-quality lighting, applied from data. Frame-rate work measured
 	# without shadows and a lit sky measures a game nobody ships.
 	LightingRig.apply(load(LIGHT_CFG), sun, world_env)
@@ -438,7 +456,7 @@ func _make_instancers() -> void:
 	_mm_debris = _instancer(_chunk_mesh(Color(0.85, 0.74, 0.42)), 64)
 	_mm_built = _instancer(_chunk_mesh(Color(0.31, 0.89, 0.76)), 96)
 	_mm_aliens = _instancer(_chunk_mesh(Color(1.0, 0.36, 0.45)), 192)
-	_mm_marks = _instancer(_ring_mesh(), 32)
+	_mm_marks = _instancer(_ring_mesh(), 256)
 	_mm_marks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Shots and bars are UNLIT. Both have to read against a dark ground at a
 	# glance on a phone, and both are information rather than objects — a
@@ -586,6 +604,17 @@ func _build_menu() -> void:
 	qual.pressed.connect(_cycle_quality)
 	build_bar.add_child(qual)
 
+	# EFFECTS, one at a time. The frame budget has never been measured on the
+	# phone, so "effects on/off" is a useless button — it says the lump costs
+	# something and not which part. This walks them singly.
+	var effects := Button.new()
+	effects.custom_minimum_size = Vector2(130.0, BUTTON_MIN.y)
+	effects.add_theme_font_size_override("font_size", 18)
+	effects.pressed.connect(_cycle_effects)
+	build_bar.add_child(effects)
+	_fx_button = effects
+	_refresh_fx_button()
+
 	var lights := Button.new()
 	lights.custom_minimum_size = Vector2(120.0, BUTTON_MIN.y)
 	lights.add_theme_font_size_override("font_size", 18)
@@ -611,6 +640,41 @@ func _build_menu() -> void:
 	stress.add_theme_font_size_override("font_size", 18)
 	stress.pressed.connect(_stress)
 	build_bar.add_child(stress)
+
+
+## Walk the effects one at a time so each can be priced on its own.
+##
+## all -> none -> flash+death -> shake -> wind -> ring -> all. "None" is in
+## there as the baseline every other rung is measured against; without it the
+## numbers are four readings with nothing to subtract from.
+##
+## The wind is the awkward one: it lives in a material the ModelLibrary
+## mutates once, at spawn, so it cannot be toggled per frame like the others.
+## The button sets it and says so, and it takes effect on the next scene load.
+const FX_MODES := ["all", "none", "flash + death", "camera shake",
+	"vine wind*", "emerge ring"]
+
+
+func _cycle_effects() -> void:
+	_fx_mode = (_fx_mode + 1) % FX_MODES.size()
+	var only := func(which: String) -> bool:
+		return _fx_mode == 0 or FX_MODES[_fx_mode] == which
+	fx.hit_flash = only.call("flash + death")
+	fx.death_fade = only.call("flash + death")
+	fx.camera_shake = only.call("camera shake")
+	fx.emerge_ring = only.call("emerge ring")
+	fx.vine_wind = only.call("vine wind*")
+	ModelLibrary.painted_sway_m = fx.sway_m if fx.vine_wind else 0.0
+	probe.reset()
+	_refresh_fx_button()
+	_say("EFFECTS %s — timings restarted%s" % [FX_MODES[_fx_mode],
+		". Wind changes on the next scene load."
+		if FX_MODES[_fx_mode] == "vine wind*" or _fx_mode == 0 else ""])
+
+
+func _refresh_fx_button() -> void:
+	if _fx_button != null:
+		_fx_button.text = "EFFECTS\n%s" % FX_MODES[_fx_mode]
 
 
 ## Cycle the two lighting experiments this machine cannot settle.
@@ -1280,6 +1344,7 @@ func _units(delta: float) -> void:
 	for i in range(built.size() - 1, -1, -1):
 		var u := built[i]
 		u.cd -= delta
+		u.flash = maxf(0.0, float(u.get("flash", 0.0)) - delta)
 		var upos: Vector2 = u.pos
 		# A machine under a merge order leaves formation and walks to the
 		# rendezvous. That hole in the line is half the cost of reforging.
@@ -1393,19 +1458,60 @@ func _shots(delta: float) -> void:
 func _land(at: Vector2, direct: int, damage: float, splash_m: float) -> void:
 	if direct >= 0:
 		var i := _alien_index(direct)
-		if i >= 0:
+		if i >= 0 and float(aliens[i].get("dying", ALIVE)) < 0.0:
 			aliens[i].hp -= damage
+			_hurt(i)
 	if splash_m <= 0.0:
+		if not fx.shake_splash_only:
+			_kick(at, damage)
 		return
+	# Splash lands: this is the one that gets weight. Scaled by the radius as
+	# well as the damage, because a big shell should feel bigger than a hard
+	# one.
+	_kick(at, damage * (1.0 + splash_m * 0.25))
 	# Splash is what an artillery shell is FOR. Full damage at the centre,
 	# nothing at the rim, so a tight swarm is punished and a spread one is not
 	# — which is the behaviour that makes spacing matter to the enemy.
 	for j in aliens.size():
 		if int(aliens[j].uid) == direct:
 			continue
+		if float(aliens[j].get("dying", ALIVE)) >= 0.0:
+			continue
 		var d: float = at.distance_to(aliens[j].pos)
 		if d < splash_m:
 			aliens[j].hp -= damage * (1.0 - d / splash_m)
+			_hurt(j)
+
+
+## Light something up for a moment. The whole of the hit-flash effect: one
+## float on a record that is already being written every frame.
+func _hurt(i: int) -> void:
+	if fx.hit_flash and i >= 0 and i < aliens.size():
+		aliens[i].flash = fx.flash_s
+
+
+## Kick the camera.
+##
+## `at` is where it happened and `damage` is how hard. Falls off with distance
+## from the VIEW CENTRE rather than from the module, because the question is
+## "did the player see this", and a player who has panned away should not be
+## shaken by something off screen.
+##
+## It costs nothing to draw, which is why it is the best value in the effects
+## list — and it is the easiest to overdo, which is why every number in it is
+## in EffectsConfig.
+func _kick(at: Vector2, damage: float) -> void:
+	if not fx.camera_shake:
+		return
+	var centre := Vector2(rig.position.x, rig.position.z)
+	var d := at.distance_to(centre)
+	if d > fx.shake_range_m:
+		return
+	var fall := 1.0 - d / maxf(1.0, fx.shake_range_m)
+	# maxf, not +=. Shakes do not stack: twelve machines firing at once would
+	# otherwise add up to a camera leaving the building.
+	_shake = minf(fx.shake_max_m,
+		maxf(_shake, damage * fx.shake_per_damage * fall))
 
 
 func _alien_index(uid: int) -> int:
@@ -1431,6 +1537,12 @@ func _nearest_alien_in_band(from: Vector2, min_r: float, max_r: float) -> int:
 	var best := -1
 	var bd := max_r
 	for i in aliens.size():
+		# A CORPSE IS NOT A TARGET. Without this the convoy keeps firing at
+		# something that is already falling over, and the third of a second a
+		# death takes becomes a third of a second of everyone's damage thrown
+		# away — an effect that quietly made the game harder.
+		if float(aliens[i].get("dying", ALIVE)) >= 0.0:
+			continue
 		var d: float = aliens[i].pos.distance_to(from)
 		if d < min_r or d >= bd:
 			continue
@@ -1443,6 +1555,8 @@ func _nearest_alien(from: Vector2, rng: float) -> int:
 	var best := -1
 	var bd := rng
 	for i in aliens.size():
+		if float(aliens[i].get("dying", ALIVE)) >= 0.0:
+			continue          # do not aim a turret at a falling corpse
 		var ap: Vector2 = aliens[i].pos
 		var d := ap.distance_to(from)
 		if d < bd:
@@ -1472,6 +1586,13 @@ func _add_alien(at: Vector2, hp: float, kind: StringName,
 		# ones — reading it back off the config at draw time would need the
 		# kind-to-config mapping in two places.
 		"hp": hp, "hp_max": maxf(1.0, hp), "cd": 0.0, "kind": kind,
+		# Seconds of hit flash left, and seconds of dying left. ALIVE is the
+		# sentinel, not zero: a corpse counts DOWN to zero and is removed at
+		# it, so "dying == 0" has to mean "gone this frame", which makes zero
+		# the worst possible value for "has not started". Initialising it to
+		# 0.0 made every living alien test as a corpse, and nothing on the map
+		# could be shot at all.
+		"flash": 0.0, "dying": ALIVE,
 		"emerge": hive_cfg.emerge_s if emerge < 0.0 else emerge,
 	})
 	return uid
@@ -1594,8 +1715,31 @@ func _walk_module(delta: float) -> void:
 func _hostiles(delta: float) -> void:
 	for i in range(aliens.size() - 1, -1, -1):
 		var al := aliens[i]
+		al.flash = maxf(0.0, float(al.get("flash", 0.0)) - delta)
 		if al.hp <= 0.0:
-			aliens.remove_at(i)
+			# DYING IS A STATE, not an instant. Things used to vanish
+			# mid-stride, which reads as a rendering glitch rather than a kill.
+			#
+			# A corpse is NOT a threat and not a target: _nearest_alien_in_band
+			# skips it, _land cannot damage it, it does not bite, the Hive's
+			# `alive` callback already reports it dead the moment hp hits zero,
+			# and the HOSTILES tally leaves it out. A corpse that still soaks
+			# bullets is worse than no effect at all.
+			if not fx.death_fade:
+				aliens.remove_at(i)
+				continue
+			var left := float(al.get("dying", ALIVE))
+			if left < 0.0:
+				al.dying = fx.death_s
+			elif left <= 0.0:
+				aliens.remove_at(i)
+			else:
+				# CLAMPED AT ZERO, and that is not tidiness. `dying < 0` is the
+				# sentinel for "has not started", so a countdown allowed to go
+				# negative reads as "has not started" on the very next frame
+				# and sets itself back to death_s — a corpse that resets its
+				# own timer, forever, and never leaves the map.
+				al.dying = maxf(0.0, left - delta)
 			continue
 		# CLIMBING OUT. Not movable, not yet a threat, and visibly arriving.
 		if float(al.get("emerge", 0.0)) > 0.0:
@@ -1652,6 +1796,7 @@ func _hostiles(delta: float) -> void:
 					# that kills a Skirmisher. Reduction, not hit points, so
 					# armour is worth more the smaller each bite is.
 					u.hp -= u.spec.damage_after_armour(tune.alien_damage, rules)
+					u.flash = fx.flash_s if fx.hit_flash else 0.0
 					hit = true
 					break
 			if not hit:
@@ -1662,6 +1807,7 @@ func _hostiles(delta: float) -> void:
 				var bite := tune.module_drain_per_s * tune.alien_attack_cd_s
 				mass.mass = maxf(0.0, mass.mass - bite)
 				mass.changed.emit(mass.mass, -bite)
+				_module_flash = fx.flash_s if fx.hit_flash else 0.0
 
 
 # --- presentation ------------------------------------------------------------
@@ -1673,8 +1819,20 @@ func _present(delta: float) -> void:
 		clampf(delta / maxf(0.01, mass.cfg.scale_tween_s), 0.0, 1.0))
 	module.scale = Vector3.ONE * _module_scale
 	_set_module_form(_form_for_mass())
+	_module_flash = maxf(0.0, _module_flash - delta)
+	_flash_node(module, _module_flash, fx.flash_friendly)
 	module.position = Vector3(module_pos.x, terrain.height_at(module_pos), module_pos.y)
 	_ease_zoom(delta)
+	# Decay the shake and re-aim, but ONLY while there is one. A quiet frame
+	# does not touch the camera at all, which is what makes this effect free.
+	if _shake > 0.0001:
+		_shake_t += delta
+		_shake = maxf(0.0, _shake - _shake * fx.shake_decay * delta
+			- 0.02 * delta)
+		_frame_camera()
+	elif _shake != 0.0:
+		_shake = 0.0
+		_frame_camera()          # one last call, to put it exactly back
 	_follow_module(delta)
 	drone.position = Vector3(drone_pos.x, terrain.height_at(drone_pos) + 5.5, drone_pos.y)
 	for r in drone.find_children("rotor_*", "Node3D", true, false):
@@ -1686,8 +1844,7 @@ func _present(delta: float) -> void:
 	_sync_convoy()
 	_sync_aliens()
 	_draw(_mm_aliens, aliens.slice(mini(aliens.size(), tune.animated_alien_cap)),
-		func(_a): return Vector3.ONE * tune.alien_radius_m * 2.0,
-		func(_a): return Color(1.0, 0.36, 0.45))
+		_alien_size, _alien_tint)
 	# Scenery is static, so it only needs resubmitting when the fog moved.
 	if _scenery_dirty:
 		_scenery_dirty = false
@@ -1721,6 +1878,27 @@ func _markers() -> Array:
 	for job in merging:
 		out.append({"pos": job.at, "r": forge.gather_radius_m,
 			"col": Color(0.35, 0.95, 0.88, 0.30 * pulse)})
+	# THE CLIMB-OUT, made visible. The alien sinks below the ground for its
+	# first second and a half and cannot move — a deliberate design beat, and
+	# one nobody could see, which meant the beat did not exist. A ring of dust
+	# pushing outward is the cheapest thing that says "something is coming up
+	# HERE" from a camera this far away.
+	if fx.emerge_ring:
+		for a in aliens:
+			var em := float(a.get("emerge", 0.0))
+			if em <= 0.0:
+				continue
+			var k := 1.0 - clampf(em / maxf(0.01, hive_cfg.emerge_s), 0.0, 1.0)
+			var rr: float = lerpf(fx.ring_from_m, fx.ring_to_m, k)
+			var col: Color = fx.ring_colour
+			# Fades as it widens, so it reads as dust settling rather than a
+			# marker somebody forgot to remove.
+			col.a *= 1.0 - k * 0.75
+			var at: Vector2 = a.pos
+			for i in fx.ring_dots:
+				var ang := TAU * float(i) / float(fx.ring_dots)
+				out.append({"pos": at + Vector2(cos(ang), sin(ang)) * rr,
+					"r": 0.42, "col": col})
 	return out
 
 
@@ -1742,6 +1920,62 @@ func _draw(mmi: MultiMeshInstance3D, items: Array, size_fn: Callable, col_fn: Ca
 		mmi.multimesh.set_instance_color(n, col_fn.call(it))
 		n += 1
 	mmi.multimesh.visible_instance_count = n
+
+
+## The box an instanced alien is drawn as, shrinking while it dies.
+##
+## A named function rather than a lambda: a GDScript lambda body cannot wrap
+## across lines, and this one needs to.
+func _alien_size(a: Dictionary) -> Vector3:
+	return Vector3.ONE * tune.alien_radius_m * 2.0 * _death_scale(a)
+
+
+## 0 while alive, running to 1 as a thing finishes dying.
+func _death_progress(a: Dictionary) -> float:
+	var left := float(a.get("dying", ALIVE))
+	if left < 0.0 or fx.death_s <= 0.0:
+		return 0.0
+	return clampf(1.0 - left / fx.death_s, 0.0, 1.0)
+
+
+func _death_scale(a: Dictionary) -> float:
+	return 1.0 - fx.death_shrink * _death_progress(a)
+
+
+## The colour an instanced alien is drawn in: its own, lifted toward white for
+## as long as its flash lasts, and dimmed as it dies.
+func _alien_tint(a: Dictionary) -> Color:
+	var base := Color(1.0, 0.36, 0.45)
+	var f := float(a.get("flash", 0.0))
+	if f > 0.0 and fx.flash_s > 0.0:
+		base = base.lerp(Color.WHITE,
+			fx.flash_strength * clampf(f / fx.flash_s, 0.0, 1.0))
+	var d := _death_progress(a)
+	return base.darkened(d * 0.6) if d > 0.0 else base
+
+
+## Flash a real node, which has materials rather than an instance colour.
+##
+## ONE MATERIAL, SET AND CLEARED. Walking a model's surfaces every frame to
+## tint them would be dozens of parameter writes per alien; a material_override
+## on the node costs one assignment and is removed the moment the flash ends,
+## so a peaceful frame does nothing at all.
+func _flash_node(n: Node3D, flash: float, tint: Color) -> void:
+	var want := flash > 0.0 and fx.hit_flash and fx.flash_s > 0.0
+	var has: bool = n.has_meta(&"flashing")
+	if not want:
+		if has:
+			n.remove_meta(&"flashing")
+			for mi in n.find_children("*", "MeshInstance3D", true, false):
+				(mi as MeshInstance3D).material_override = null
+		return
+	var k := fx.flash_strength * clampf(flash / fx.flash_s, 0.0, 1.0)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = tint.lerp(Color.WHITE, k)
+	n.set_meta(&"flashing", true)
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).material_override = mat
 
 
 ## Tracers. Drawn separately from _draw because a shot is the one thing on the
@@ -1901,6 +2135,7 @@ func _sync_convoy() -> void:
 		if not n.visible:
 			continue
 		n.position = Vector3(p.x, terrain.height_at(p), p.y)
+		_flash_node(n, float(u.get("flash", 0.0)), fx.flash_friendly)
 		var aim := String(u.opt.aim_node)
 		if aim == "":
 			continue
@@ -1958,10 +2193,20 @@ func _sync_aliens() -> void:
 		if em > 0.0:
 			n.position.y -= sc * 0.9 * clampf(em / maxf(0.01, hive_cfg.emerge_s),
 				0.0, 1.0)
-		n.scale = Vector3.ONE * sc
+		# AND SUNK AGAIN WHILE IT DIES, keeling over as it goes. The same trick
+		# at the other end of its life: something that sinks into the ground
+		# reads as a body, and something that blinks out reads as a bug.
+		var fall := _death_progress(a)
+		n.scale = Vector3.ONE * sc * _death_scale(a)
 		var to := module_pos - p
 		if to.length_squared() > 0.01:
 			n.rotation.y = atan2(to.x, to.y)
+		n.rotation.x = 0.0
+		if fall > 0.0:
+			n.position.y -= sc * fx.death_sink_m * fall
+			n.rotation.x = fx.death_tip_rad * fall
+		_flash_node(n, float(a.get("flash", 0.0)),
+			Color(1.0, 0.36, 0.45))
 
 
 func _hud(delta: float) -> void:
@@ -1981,7 +2226,7 @@ func _hud(delta: float) -> void:
 		Color(1.0, 0.78, 0.35) if trenching else Color(0.65, 1.0, 0.92))
 
 	tally_label.text = "BUILT %d%s      HOSTILES %d      WRECKS %d" \
-		% [built.size(), _assembly_note(), aliens.size(), wrecks.size()]
+		% [built.size(), _assembly_note(), _live_hostiles(), wrecks.size()]
 
 	strip_label.text = "MASS POOL  %.0f        RESERVE  %.0f        FORGE  %s" \
 		% [mass.mass, mass.cfg.reserve_mass, _forge_note()]
@@ -1993,7 +2238,7 @@ func _hud(delta: float) -> void:
 		if u.spec.reveal_m > 0.0:
 			reveal += 1
 	radar_label.text = "RADAR\ncontacts %d    debris %d\n%d machines watching" \
-		% [aliens.size(), _loose_debris(), reveal]
+		% [_live_hostiles(), _loose_debris(), reveal]
 
 	_drone_panel()
 	_alert_line()
@@ -2055,6 +2300,17 @@ func _alert_line() -> void:
 	else:
 		alert_label.text = ""
 		job_bar.visible = false
+
+
+## Hostiles that are still a threat. Corpses spend a third of a second on the
+## map after they die and must not be counted: a tally that says 3 when
+## everything is dead is a tally nobody trusts again.
+func _live_hostiles() -> int:
+	var n := 0
+	for a in aliens:
+		if float(a.get("dying", ALIVE)) < 0.0:
+			n += 1
+	return n
 
 
 func _loose_debris() -> int:
@@ -2132,9 +2388,26 @@ func _frame_camera() -> void:
 	# of the screen — look_at was pointing at a spot below the terrain.
 	rig.position.y = terrain.height_at(
 		Vector2(rig.position.x, rig.position.z))
-	camera.position = tune.camera_offset * _zoom
+	camera.position = tune.camera_offset * _zoom + _shake_offset()
 	camera.look_at(rig.global_position, Vector3.UP)
 	camera.fov = tune.camera_fov_deg
+
+
+## Where the shake has pushed the camera this instant.
+##
+## ADDED TO THE OFFSET, not to the rig. The rig is the view centre — the pan,
+## the leash and the minimap all read it — and shaking it would make the camera
+## drag the world's idea of where the player is looking. The camera moves; what
+## it is looking AT does not.
+##
+## Two axes at different rates so it does not read as a single line, and the
+## look_at afterwards means a moved camera still points at the same ground.
+func _shake_offset() -> Vector3:
+	if _shake <= 0.0001:
+		return Vector3.ZERO
+	var t := _shake_t * TAU * fx.shake_hz
+	return Vector3(sin(t) * _shake, sin(t * 1.37 + 1.1) * _shake * 0.6,
+		cos(t * 0.91) * _shake)
 
 
 ## How far the camera clears the ground directly beneath it at the current
