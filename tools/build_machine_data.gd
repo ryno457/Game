@@ -79,6 +79,21 @@ func _part(id: String, name: String, slot: int, size: int, mass: float, desc: St
 	return p
 
 
+## A held beam. `dps` is damage PER SECOND, not per shot, and `ramp` is how long
+## it takes to get there on one target — switching throws it away. Its own
+## helper because a beam has no cooldown and no splash, and passing zeros for
+## those through _weapon would read as an oversight rather than a fact.
+func _beam(p: MachinePart, dps: float, rng: float, ramp: float,
+		floor_frac: float) -> MachinePart:
+	p.family = MachinePart.Family.BEAM
+	p.damage = dps
+	p.range_m = rng
+	p.cooldown_s = 0.0
+	p.beam_ramp_s = ramp
+	p.beam_floor = floor_frac
+	return p
+
+
 func _weapon(p: MachinePart, fam: int, dmg: float, rng: float, cd: float,
 		min_r := 0.0, splash := 0.0) -> MachinePart:
 	p.family = fam
@@ -130,6 +145,20 @@ func _make_parts() -> void:
 		"Reaches further than anything can see unaided. Blind inside twelve metres."),
 		arty, 95.0, 34.0, 4.2, 12.0, 5.0)
 
+	# Beams — the opposite of ranged. Damage is PER SECOND and it ramps while
+	# the beam stays on ONE target, so a laser is strong against a few big
+	# things and weak against a swarm. That opposition is the whole reason the
+	# family exists; another single-target gun with different numbers would not
+	# be a decision.
+	_beam(_part("CUTTER_BEAM", "Cutter Beam", W, LIGHT, 4.0,
+		"Short and quick to bite. Comes up to strength fast enough to be worth "
+		+ "pointing at a swarmer, and never hits like a Lance."),
+		13.0, 8.0, 0.9, 0.45)
+	_beam(_part("LANCE_EMITTER", "Lance Emitter", W, MED, 7.0,
+		"Does very little the instant it touches something and a great deal "
+		+ "four seconds later. It wants one target, not a crowd."),
+		26.0, 15.0, 2.4, 0.25)
+
 	# Armour — hit points and damage reduction, paid for in speed.
 	var pl := _part("PLATE_LIGHT", "Light Plating", A, LIGHT, 3.0,
 		"A little steel. Cheap insurance against chip damage.")
@@ -148,6 +177,22 @@ func _make_parts() -> void:
 	ab.hp_add = 140.0
 	ab.armour_add = 34.0
 	ab.speed_mult = 0.78
+
+	# Shields — a budget that REFILLS, which is a different thing from plate.
+	# Plating is permanent and passive and helps a machine that stands still;
+	# a shield rewards pulling one out of the fight and putting it back. Same
+	# slot, opposite habit.
+	var sr := _part("SHIELD_RING", "Deflector Ring", A, MED, 5.0,
+		"A budget that refills. Worth more to a player who pulls machines out "
+		+ "of a fight than to one who leaves them in it.")
+	sr.shield_add = 90.0
+	sr.speed_mult = 0.96
+
+	var sc := _part("SHIELD_CORE", "Deflector Core", A, HEAVY, 10.0,
+		"Twice the shield and none of the plate. It will shrug off a whole "
+		+ "wave and then be paper until you walk it out.")
+	sc.shield_add = 190.0
+	sc.speed_mult = 0.92
 
 	# Mobility — speed, or the refusal of it.
 	var sl := _part("SPRINT_LEGS", "Sprint Legs", M, LIGHT, 3.0,
@@ -322,6 +367,15 @@ func _make_loadouts() -> void:
 		_loadout("OVERGUN", "Overgun", "BASTION",
 			["RAILGUN", "COIL_RIFLE", "ABLATIVE_SLAB", "BRACE_STRUTS"],
 			"Deliberately overloaded: everything the frame can hold and then some."),
+		_loadout("CUTTER", "Cutter", "WARDEN",
+			["CUTTER_BEAM", "AUTOCANNON", "SHIELD_RING", "STRIDER_LEGS"],
+			"A beam and a gun behind a shield that comes back. Built to be "
+			+ "walked out of a fight and walked back in."),
+		_loadout("LANCE", "Lance", "BASTION",
+			["LANCE_EMITTER", "CUTTER_BEAM", "SHIELD_CORE", "BRACE_STRUTS"],
+			"Two beams and a deflector. Put it on the roaming creature and "
+			+ "leave it there; point it at a swarm and watch it accomplish "
+			+ "nothing."),
 		_loadout("WATCHER", "Watcher", "VANE",
 			["RADAR_MAST", "SPOTTING_LINK", "PLATE_LIGHT"],
 			"Unarmed. Its whole job is making the artillery's range mean something."),

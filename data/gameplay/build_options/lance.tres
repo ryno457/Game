@@ -1,0 +1,120 @@
+[gd_resource type="Resource" script_class="BuildOption" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_7ikg8"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_bgw01"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_ytcbw"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_ah85e"]
+[ext_resource type="Script" path="res://scripts/resources/build_option.gd" id="5_k4py0"]
+
+[sub_resource type="Resource" id="Resource_nkno4"]
+script = ExtResource("1_7ikg8")
+id = &"w0"
+max_size = 2
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_64q3s"]
+script = ExtResource("1_7ikg8")
+id = &"w1"
+socket = "turret_head"
+aims = true
+
+[sub_resource type="Resource" id="Resource_1v1sf"]
+script = ExtResource("1_7ikg8")
+id = &"a0"
+slot = 1
+max_size = 2
+
+[sub_resource type="Resource" id="Resource_5xmao"]
+script = ExtResource("1_7ikg8")
+id = &"u0"
+slot = 4
+
+[sub_resource type="Resource" id="Resource_q7sfi"]
+script = ExtResource("2_bgw01")
+id = &"BASTION"
+display_name = "Bastion"
+description = "A heavy weapon mount that barely moves. Where the big guns go."
+base_mass = 12.0
+base_hp = 140.0
+base_armour = 8.0
+base_speed_mps = 2.8
+radius_m = 0.75
+part_capacity = 30.0
+escort_radius_m = 4.5
+escort_speed_mps = 6.0
+model = "turret"
+colour = Color(0.92, 0.64, 0.33, 1)
+hardpoints = Array[ExtResource("1_7ikg8")]([SubResource("Resource_nkno4"), SubResource("Resource_64q3s"), SubResource("Resource_1v1sf"), SubResource("Resource_5xmao")])
+
+[sub_resource type="Resource" id="Resource_hukl6"]
+script = ExtResource("3_ytcbw")
+id = &"LANCE_EMITTER"
+display_name = "Lance Emitter"
+description = "Does very little the instant it touches something and a great deal four seconds later. It wants one target, not a crowd."
+mass = 7.0
+family = 4
+damage = 26.0
+range_m = 15.0
+cooldown_s = 0.0
+beam_ramp_s = 2.4
+beam_floor = 0.25
+
+[sub_resource type="Resource" id="Resource_jengh"]
+script = ExtResource("3_ytcbw")
+id = &"CUTTER_BEAM"
+display_name = "Cutter Beam"
+description = "Short and quick to bite. Comes up to strength fast enough to be worth pointing at a swarmer, and never hits like a Lance."
+size = 0
+family = 4
+damage = 13.0
+range_m = 8.0
+cooldown_s = 0.0
+beam_ramp_s = 0.9
+beam_floor = 0.45
+
+[sub_resource type="Resource" id="Resource_mdgmd"]
+script = ExtResource("3_ytcbw")
+id = &"SHIELD_CORE"
+display_name = "Deflector Core"
+description = "Twice the shield and none of the plate. It will shrug off a whole wave and then be paper until you walk it out."
+slot = 1
+size = 2
+mass = 10.0
+shield_add = 190.0
+speed_mult = 0.92
+
+[sub_resource type="Resource" id="Resource_vv5ns"]
+script = ExtResource("3_ytcbw")
+id = &"BRACE_STRUTS"
+display_name = "Brace Struts"
+description = "Frame bracing. Hit points without the armour tax on speed."
+slot = 4
+hp_add = 50.0
+speed_mult = 0.95
+
+[sub_resource type="Resource" id="Resource_og5ab"]
+script = ExtResource("4_ah85e")
+id = &"LANCE"
+display_name = "Lance"
+description = "Two beams and a deflector. Put it on the roaming creature and leave it there; point it at a swarm and watch it accomplish nothing."
+chassis = SubResource("Resource_q7sfi")
+fitted = Array[ExtResource("3_ytcbw")]([SubResource("Resource_hukl6"), SubResource("Resource_jengh"), SubResource("Resource_mdgmd"), SubResource("Resource_vv5ns")])
+
+[resource]
+script = ExtResource("5_k4py0")
+id = &"LANCE"
+display_name = "Lance"
+mass_cost = 37.0
+description = "Two beams and a deflector. Put it on the roaming creature and leave it there; point it at a swarm and watch it accomplish nothing."
+escort_radius_m = 4.5
+escort_speed_mps = 5.244
+max_hp = 190.0
+radius_m = 0.75
+speed_mps = 2.4472
+colour = Color(0.92, 0.64, 0.33, 1)
+model = "turret"
+aim_node = "turret_head"
+damage = 39.0
+range_m = 15.0
+loadout = SubResource("Resource_og5ab")

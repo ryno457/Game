@@ -27,6 +27,8 @@ extends Resource
 @export var camera_shake := true
 @export var vine_wind := true
 @export var emerge_ring := true
+@export var beams_visible := true
+@export var shield_bubbles := true
 
 @export_group("Hit flash")
 ## How long a thing stays lit after being hit. Short: this is a confirmation,
@@ -75,6 +77,40 @@ extends Resource
 ## The height at which a plant sways the full amount. Taller parts sway more,
 ## in proportion, so one number works for a 1 m pod and a 9 m vine.
 @export var sway_ref_h: float = 3.0
+
+@export_group("Beams")
+## How wide the beam is drawn, and how much wider it gets at full ramp — so a
+## beam that has been held on one thing LOOKS like it is winning.
+@export var beam_width_m: float = 0.09
+@export var beam_width_full_m: float = 0.22
+@export var beam_colour_cold: Color = Color(0.45, 0.85, 1.0)
+@export var beam_colour_hot: Color = Color(1.0, 0.62, 0.95)
+## Metres above the ground the beam flies at, at each end.
+@export var beam_lift_m: float = 1.2
+
+@export_group("Shields")
+## The bubble is drawn only when the shield is UP, and its opacity follows how
+## much is left — a shield at 10% should look like one, not like a full one.
+@export var shield_alpha: float = 0.34
+## How much bigger than the machine the bubble is.
+@export var shield_scale: float = 2.3
+@export var shield_colour: Color = Color(0.40, 0.78, 1.0)
+## Seconds the bubble flares after taking a hit.
+@export var shield_flash_s: float = 0.18
+
+@export_group("Drone scan")
+## A cone of light from the drone onto whatever it is working. Off while it is
+## flying home with cargo: the scan is what it does to a piece, not a headlamp.
+@export var scan_enabled := true
+@export var scan_colour: Color = Color(0.55, 0.95, 1.0)
+@export var scan_energy: float = 2.6
+@export var scan_angle_deg: float = 22.0
+@export var scan_range_m: float = 16.0
+## Revolutions per second of the sweep. Slow — this is an instrument, not a
+## disco light.
+@export var scan_sweep_hz: float = 0.45
+## How far off straight-down the cone leans as it sweeps.
+@export var scan_tilt_deg: float = 14.0
 
 @export_group("Emerge ring")
 ## The ring starts here and ends here, in metres, over the emerge time.

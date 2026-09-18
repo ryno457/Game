@@ -1,0 +1,94 @@
+[gd_resource type="Resource" script_class="MachineLoadout" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_hardpoint.gd" id="1_oewj4"]
+[ext_resource type="Script" path="res://scripts/resources/machine_chassis.gd" id="2_hpwph"]
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="3_le367"]
+[ext_resource type="Script" path="res://scripts/resources/machine_loadout.gd" id="4_ny5f0"]
+
+[sub_resource type="Resource" id="Resource_sk52c"]
+script = ExtResource("1_oewj4")
+id = &"w0"
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_7746c"]
+script = ExtResource("1_oewj4")
+id = &"w1"
+max_size = 0
+socket = "weapon_arm"
+aims = true
+
+[sub_resource type="Resource" id="Resource_44aov"]
+script = ExtResource("1_oewj4")
+id = &"a0"
+slot = 1
+
+[sub_resource type="Resource" id="Resource_xdchl"]
+script = ExtResource("1_oewj4")
+id = &"m0"
+slot = 2
+
+[sub_resource type="Resource" id="Resource_vwjfl"]
+script = ExtResource("2_hpwph")
+id = &"WARDEN"
+display_name = "Warden"
+description = "Two weapons, plating and legs. The frame most armies are made of."
+base_mass = 7.0
+base_hp = 90.0
+base_armour = 4.0
+base_speed_mps = 4.2
+part_capacity = 20.0
+model = "guard"
+hardpoints = Array[ExtResource("1_oewj4")]([SubResource("Resource_sk52c"), SubResource("Resource_7746c"), SubResource("Resource_44aov"), SubResource("Resource_xdchl")])
+
+[sub_resource type="Resource" id="Resource_jengh"]
+script = ExtResource("3_le367")
+id = &"CUTTER_BEAM"
+display_name = "Cutter Beam"
+description = "Short and quick to bite. Comes up to strength fast enough to be worth pointing at a swarmer, and never hits like a Lance."
+size = 0
+family = 4
+damage = 13.0
+range_m = 8.0
+cooldown_s = 0.0
+beam_ramp_s = 0.9
+beam_floor = 0.45
+
+[sub_resource type="Resource" id="Resource_71dbw"]
+script = ExtResource("3_le367")
+id = &"AUTOCANNON"
+display_name = "Autocannon"
+description = "Fast, short, dependable. The weapon you fit when you have one light slot left."
+size = 0
+family = 2
+damage = 11.0
+range_m = 9.0
+cooldown_s = 0.5
+
+[sub_resource type="Resource" id="Resource_yk6da"]
+script = ExtResource("3_le367")
+id = &"SHIELD_RING"
+display_name = "Deflector Ring"
+description = "A budget that refills. Worth more to a player who pulls machines out of a fight than to one who leaves them in it."
+slot = 1
+mass = 5.0
+shield_add = 90.0
+speed_mult = 0.96
+
+[sub_resource type="Resource" id="Resource_15krd"]
+script = ExtResource("3_le367")
+id = &"STRIDER_LEGS"
+display_name = "Strider Legs"
+description = "Long stride, a little frame reinforcement. The default walker."
+slot = 2
+mass = 5.0
+hp_add = 10.0
+speed_add_mps = 3.4
+
+[resource]
+script = ExtResource("4_ny5f0")
+id = &"CUTTER"
+display_name = "Cutter"
+description = "A beam and a gun behind a shield that comes back. Built to be walked out of a fight and walked back in."
+chassis = SubResource("Resource_vwjfl")
+fitted = Array[ExtResource("3_le367")]([SubResource("Resource_jengh"), SubResource("Resource_71dbw"), SubResource("Resource_yk6da"), SubResource("Resource_15krd")])

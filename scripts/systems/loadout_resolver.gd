@@ -60,6 +60,7 @@ static func resolve(loadout: MachineLoadout, rules: MachineRules) -> MachineSpec
 		spec.part_mass += part.mass
 		spec.max_hp += part.hp_add
 		spec.armour += part.armour_add
+		spec.shield += part.shield_add
 		spec.reveal_m = maxf(spec.reveal_m, part.reveal_m)
 		speed += part.speed_add_mps
 		speed_mult *= part.speed_mult
@@ -75,6 +76,8 @@ static func resolve(loadout: MachineLoadout, rules: MachineRules) -> MachineSpec
 				"min_range_m": part.min_range_m,
 				"cooldown_s": part.cooldown_s,
 				"splash_m": part.splash_m,
+				"beam_ramp_s": part.beam_ramp_s,
+				"beam_floor": part.beam_floor,
 				"source": part.id,
 				"socket": hp.socket,
 				"aims": hp.aims,

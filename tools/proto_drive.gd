@@ -677,6 +677,194 @@ func _process(_delta: float) -> bool:
 			and not ModelLibrary.sways("alien_ruin"),
 		"stone that sways is worse than stone that does not move")
 
+	# --- lasers, shields, and the drone's lamp -------------------------------
+	print("")
+	scene.aliens.clear()
+	scene.shots.clear()
+	scene.built.clear()
+	scene.fog.begin_frame()
+	scene.fog.reveal(scene.module_pos, 50.0)
+
+	var beamer: BuildOption = null
+	var shielded: BuildOption = null
+	for cand in scene.options:
+		var sp2: MachineSpec = scene.spec_for(cand)
+		# EVERY weapon a beam, not just one of them. The first version took the
+		# first machine carrying a beam — which was a Cutter, and a Cutter also
+		# carries an autocannon. The ramp check then measured the autocannon's
+		# steady output mixed into the beam's rising one and reported a ramp of
+		# 1.1x on a weapon that really ramps 2.2x.
+		if not sp2.weapons.is_empty() and beamer == null:
+			var all_beam := true
+			for w in sp2.weapons:
+				if int(w.family) != MachinePart.Family.BEAM:
+					all_beam = false
+			if all_beam:
+				beamer = cand
+		if sp2.shield > 0.0 and shielded == null:
+			shielded = cand
+	_ok("there is a beam-only machine in the catalogue", beamer != null,
+		beamer.display_name if beamer != null else "none")
+	_ok("and one with a shield", shielded != null,
+		shielded.display_name if shielded != null else "none")
+
+	if beamer != null:
+		var bspec: MachineSpec = scene.spec_for(beamer)
+		var breach := 0.0
+		var bramp := 0.0
+		for w in bspec.weapons:
+			if int(w.family) == MachinePart.Family.BEAM:
+				breach = maxf(breach, float(w.range_m))
+				bramp = maxf(bramp, float(w.beam_ramp_s))
+		var gun_at2: Vector2 = scene.module_pos
+		scene._field(beamer, bspec, gun_at2)
+		var at2: Vector2 = gun_at2 + Vector2(breach * 0.7, 0.0)
+		var prey: int = scene._add_alien(at2, 4000.0, &"small", 0.0)
+
+		# A BEAM DOES NOT LAUNCH ANYTHING. If it put a projectile in the air it
+		# would be a gun with a thin model, which is not what the family is for.
+		var hp0: float = scene.aliens[scene._alien_index(prey)].hp
+		for i in 4:
+			scene.built[0].pos = gun_at2
+			scene.aliens[scene._alien_index(prey)].pos = at2
+			scene.step(DT)
+		_ok("a beam puts nothing in the air", scene.shots.is_empty(),
+			"%d shots" % scene.shots.size())
+		_ok("but it is doing damage",
+			scene.aliens[scene._alien_index(prey)].hp < hp0,
+			"%.0f -> %.0f" % [hp0,
+				scene.aliens[scene._alien_index(prey)].hp])
+
+		# THE RAMP IS THE WEAPON. Damage over a second of unbroken fire must be
+		# measurably more than over the first second. Without this the family
+		# is a gun with the cooldown filed off.
+		var early := 0.0
+		var late := 0.0
+		var window := int(0.5 / DT)
+		var h_a: float = scene.aliens[scene._alien_index(prey)].hp
+		for i in window:
+			scene.built[0].pos = gun_at2
+			scene.aliens[scene._alien_index(prey)].pos = at2
+			scene.step(DT)
+		early = h_a - scene.aliens[scene._alien_index(prey)].hp
+		for i in int((bramp + 0.5) / DT):
+			scene.built[0].pos = gun_at2
+			scene.aliens[scene._alien_index(prey)].pos = at2
+			scene.step(DT)
+		var h_b: float = scene.aliens[scene._alien_index(prey)].hp
+		for i in window:
+			scene.built[0].pos = gun_at2
+			scene.aliens[scene._alien_index(prey)].pos = at2
+			scene.step(DT)
+		late = h_b - scene.aliens[scene._alien_index(prey)].hp
+		_ok("and it hurts more the longer it is held", late > early * 1.4,
+			"%.1f damage in the first half second, %.1f after %.1f s of ramp"
+				% [early, late, bramp])
+
+		# And switching targets throws the ramp away.
+		var other: int = scene._add_alien(at2 + Vector2(0.0, 1.5), 4000.0,
+			&"small", 0.0)
+		scene.aliens[scene._alien_index(prey)].hp = 0.0
+		for i in 3:
+			scene.step(DT)
+		var h_c: float = scene.aliens[scene._alien_index(other)].hp
+		for i in window:
+			scene.built[0].pos = gun_at2
+			scene.step(DT)
+		var fresh: float = h_c - scene.aliens[scene._alien_index(other)].hp
+		_ok("and a new target starts the ramp over", fresh < late * 0.9,
+			"%.1f on a fresh target against %.1f on the burnt-in one"
+				% [fresh, late])
+
+	if shielded != null:
+		scene.aliens.clear()
+		scene.built.clear()
+		var sspec: MachineSpec = scene.spec_for(shielded)
+		var su: Dictionary = scene._field(shielded, sspec, scene.module_pos)
+		_ok("a shielded machine arrives with a FULL shield",
+			is_equal_approx(float(su.shield), sspec.shield),
+			"%.0f of %.0f" % [float(su.shield), sspec.shield])
+
+		# THE SHIELD TAKES IT FIRST, and the hull is untouched until it is gone.
+		var hull0: float = su.hp
+		scene._wound(su, sspec.shield * 0.5)
+		_ok("damage goes into the shield before the hull",
+			is_equal_approx(float(su.hp), hull0)
+				and float(su.shield) < sspec.shield,
+			"hull %.0f unchanged, shield %.0f of %.0f"
+				% [float(su.hp), float(su.shield), sspec.shield])
+
+		# Overflow carries through, or a shield with one point left would eat a
+		# railgun shot whole.
+		scene._wound(su, sspec.shield * 2.0)
+		_ok("and overflow carries into the hull, it is not swallowed",
+			float(su.shield) <= 0.0 and float(su.hp) < hull0,
+			"shield %.0f, hull %.0f of %.0f"
+				% [float(su.shield), float(su.hp), sspec.max_hp])
+
+		# PUT IT BACK ON ITS FEET FIRST. The overflow check above deliberately
+		# drove the hull negative, and _units removes a machine at zero — so
+		# the regen checks were quietly examining a dictionary that had already
+		# been taken off the field and would never be ticked again. It reported
+		# "the shield never comes back", which was true of a corpse and told us
+		# nothing about a shield.
+		su.hp = sspec.max_hp
+		su.shield = 0.0
+		var still_there := false
+		for b in scene.built:
+			if int(b.uid) == int(su.uid):
+				still_there = true
+		_ok("and the machine testing regen is actually still on the field",
+			still_there, "%d machines" % scene.built.size())
+
+		# It comes back — but only after the delay, and ANY hit resets it.
+		var delay: float = scene.rules.shield_delay_s
+		for i in int(delay * 0.4 / DT):
+			scene.step(DT)
+		_ok("it does not start coming back straight away",
+			float(su.shield) <= 0.0,
+			"still %.0f after %.1f s of a %.1f s delay"
+				% [float(su.shield), delay * 0.4, delay])
+		for i in int((delay + 2.0) / DT):
+			scene.step(DT)
+		_ok("but it does come back", float(su.shield) > 0.0,
+			"%.0f of %.0f after %.1f s" % [float(su.shield), sspec.shield,
+				delay + 2.0])
+		# A hit the shield swallows whole must still reset the clock, or a
+		# machine under steady light fire regenerates through it and the shield
+		# is a flat immunity rather than a budget.
+		var held_shield: float = su.shield
+		scene._wound(su, 1.0)
+		for i in int(delay * 0.5 / DT):
+			scene.step(DT)
+		_ok("and a hit it swallowed still stops the regen",
+			float(su.shield) <= held_shield,
+			"%.0f, was %.0f before a 1-point hit"
+				% [float(su.shield), held_shield])
+
+	# THE DRONE'S LAMP IS OFF WHEN IT IS NOT WORKING. A drone that lights the
+	# ground on the way home has a headlamp, and a headlamp says nothing.
+	scene.drone_state = "idle"
+	scene.drone_target = -1
+	scene._present(DT)
+	var lamp_idle: bool = scene._scan_light == null \
+		or not scene._scan_light.visible
+	scene.drone_state = "working"
+	scene._present(DT)
+	var lamp_working: bool = scene._scan_light != null \
+		and scene._scan_light.visible
+	_ok("the drone's scan is off when it is idle", lamp_idle, "")
+	_ok("and on while it is working a piece", lamp_working, "")
+	scene.drone_state = "returning"
+	scene._present(DT)
+	_ok("and off again while it hauls the cargo home",
+		scene._scan_light == null or not scene._scan_light.visible,
+		"the light is what it does to a piece, not a headlamp")
+	_ok("and it casts no shadows", scene._scan_light == null
+			or not scene._scan_light.shadow_enabled,
+		"a second shadow-casting light is the expensive half")
+	scene.drone_state = "idle"
+
 	# --- presentation and instrumentation ------------------------------------
 	# Everything above drives step() only. This is the first thing that touches
 	# _present(): the scenery MultiMeshes, the fog cull, the convoy bodies and
@@ -757,6 +945,28 @@ func _process(_delta: float) -> bool:
 			% [loaded_units, loaded_hostiles, scene.aliens.size()])
 	_ok("and it opens the map so the props are drawn",
 		scene._scenery_drawn > 0, "%d props drawn" % scene._scenery_drawn)
+
+	# THE NEW THINGS ACTUALLY SUBMIT. A beam and a bubble that compute
+	# perfectly and draw zero instances is the exact failure the health bars
+	# already had once, and it is invisible to every check about damage.
+	_ok("beams are submitted to the renderer",
+		scene._mm_beams.multimesh.visible_instance_count > 0,
+		"%d beams drawn" % scene._mm_beams.multimesh.visible_instance_count)
+	var shielded_up := 0
+	for u in scene.built:
+		if float(u.get("shield", 0.0)) > 0.0:
+			shielded_up += 1
+	_ok("and a machine with its shield up wears a bubble",
+		shielded_up == 0
+			or scene._mm_shields.multimesh.visible_instance_count > 0,
+		"%d bubbles for %d machines with a shield up"
+			% [scene._mm_shields.multimesh.visible_instance_count,
+				shielded_up])
+	_ok("and the test load really contains a beam machine and a shielded one",
+		shielded_up > 0
+			and scene._mm_beams.multimesh.visible_instance_count > 0,
+		"%d shields up, %d beams firing" % [shielded_up,
+			scene._mm_beams.multimesh.visible_instance_count])
 
 	scene.perf_panel.visible = true
 	scene._perf_readout()

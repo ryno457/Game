@@ -17,6 +17,15 @@ extends Resource
 ## how far over capacity the machine is.
 @export_range(0.0, 4.0) var overload_bite: float = 1.0
 
+@export_group("Shields")
+## Shield points returned per second, once the delay has passed.
+@export var shield_regen_per_s: float = 6.0
+## Quiet seconds before a shield starts coming back. THIS is the lever that
+## makes shields a manoeuvring tool rather than extra hit points: long enough
+## that a machine has to actually leave the fight, short enough that leaving is
+## worth doing.
+@export var shield_delay_s: float = 4.0
+
 @export_group("Melee")
 ## Contact range is not a per-weapon number — every melee part uses this so a
 ## brawler's reach reads the same whatever it is holding.

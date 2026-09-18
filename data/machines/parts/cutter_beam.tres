@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_3o852"]
+
+[resource]
+script = ExtResource("1_3o852")
+id = &"CUTTER_BEAM"
+display_name = "Cutter Beam"
+description = "Short and quick to bite. Comes up to strength fast enough to be worth pointing at a swarmer, and never hits like a Lance."
+size = 0
+family = 4
+damage = 13.0
+range_m = 8.0
+cooldown_s = 0.0
+beam_ramp_s = 0.9
+beam_floor = 0.45

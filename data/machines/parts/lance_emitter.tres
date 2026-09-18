@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_g4xtf"]
+
+[resource]
+script = ExtResource("1_g4xtf")
+id = &"LANCE_EMITTER"
+display_name = "Lance Emitter"
+description = "Does very little the instant it touches something and a great deal four seconds later. It wants one target, not a crowd."
+mass = 7.0
+family = 4
+damage = 26.0
+range_m = 15.0
+cooldown_s = 0.0
+beam_ramp_s = 2.4
+beam_floor = 0.25

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_mrs2o"]
+
+[resource]
+script = ExtResource("1_mrs2o")
+id = &"SHIELD_CORE"
+display_name = "Deflector Core"
+description = "Twice the shield and none of the plate. It will shrug off a whole wave and then be paper until you walk it out."
+slot = 1
+size = 2
+mass = 10.0
+shield_add = 190.0
+speed_mult = 0.92

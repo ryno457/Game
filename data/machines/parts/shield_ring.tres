@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="MachinePart" format=3]
+
+[ext_resource type="Script" path="res://scripts/resources/machine_part.gd" id="1_bnlv8"]
+
+[resource]
+script = ExtResource("1_bnlv8")
+id = &"SHIELD_RING"
+display_name = "Deflector Ring"
+description = "A budget that refills. Worth more to a player who pulls machines out of a fight than to one who leaves them in it."
+slot = 1
+mass = 5.0
+shield_add = 90.0
+speed_mult = 0.96

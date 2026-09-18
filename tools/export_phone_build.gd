@@ -251,6 +251,40 @@ MAP EDITOR
 
   UNDO takes back the last thing you did, whatever kind it was.
 
+LASERS, SHIELDS AND THE DRONE'S SCAN
+  LASERS are a different weapon family, not a fast bullet. Damage is PER
+  SECOND and it RAMPS the longer the beam stays on ONE target — a quarter
+  strength when it touches something, full strength a couple of seconds
+  later, and switching targets throws the wind-up away. Measured at 2.5x
+  between the first half second and a half second after the ramp.
+
+  So a beam is worth parking on a roaming creature or a plant nest and is
+  nearly useless against a swarm — the exact opposite of a repeater, which
+  is the whole reason to carry one of each. The beam changes colour as it
+  ramps, so a beam that is winning LOOKS like it is.
+
+  Two new machines: CUTTER (light beam, autocannon, shield) and LANCE (two
+  beams and a heavy deflector — park it on the big one).
+
+  SHIELDS are a budget that refills, not more hit points. Damage goes
+  through the shield before the hull, overflow carries through, and ANY hit
+  resets a four-second delay before it starts coming back — including a hit
+  the shield swallowed whole. So a shield rewards pulling a machine OUT of
+  a fight and walking it back in; plate rewards standing still. Same slot,
+  opposite habit.
+
+  A shielded machine wears a bubble that fades as the shield drains, and a
+  SECOND BAR above its health bar. Two bars rather than one split bar,
+  because the two resources have different rules.
+
+  THE DRONE SCANS. A sweeping cone of light onto whatever piece it is
+  working. It is OFF when the drone is idle and off while it hauls cargo
+  home: the light is what the drone does to a piece, not a headlamp.
+
+  WHAT TO TELL ME: does the ramp read? You should be able to SEE a beam
+  getting worse at a swarm and better on a roamer. And is the beam too
+  thick, too bright, too pink?
+
 EFFECTS — FOUR OF THEM, AND I CANNOT PRICE ANY OF THEM
   HIT FLASH        things light up when a shot lands
   DEATH            a killed thing shrinks, tips over and sinks, over about a

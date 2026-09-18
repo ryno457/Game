@@ -139,6 +139,13 @@ var _mm_aliens: MultiMeshInstance3D
 var _mm_marks: MultiMeshInstance3D
 var _mm_shots: MultiMeshInstance3D
 var _mm_bars: MultiMeshInstance3D
+var _mm_beams: MultiMeshInstance3D
+var _mm_shields: MultiMeshInstance3D
+## The drone's scanning light: a real spot, plus a cone of visible haze so it
+## reads on a screen as well as lighting the ground.
+var _scan_light: SpotLight3D = null
+var _scan_cone: MeshInstance3D = null
+var _scan_t := 0.0
 var _module_scale := 1.0
 var _toast_t := 0.0
 var _fog_cd := 0.0
@@ -290,6 +297,7 @@ func _ready() -> void:
 	var d := lib.spawn(tune.drone_model)
 	if d != null:
 		drone.add_child(d)
+	_build_scan()
 
 	_module_scale = mass.display_scale()
 	module.scale = Vector3.ONE * _module_scale
@@ -466,6 +474,17 @@ func _make_instancers() -> void:
 	# Two instances per bar, back and fill, plus the module's own.
 	_mm_bars = _instancer(_flat_mesh(false), 320)
 	_mm_bars.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Beams and shield bubbles. Both unlit and emissive for the same reason the
+	# tracers are: they are light, and light the moon has to catch is light
+	# nobody sees on a phone in a dark biodome.
+	# DIMMER AND COOLER than a tracer. The beams first shipped on the tracer's
+	# own material — warm emission at 2.4x, which is right for a bolt a few
+	# centimetres long and turns a fifteen-metre beam into a solid white tube
+	# with no colour left in it to show the ramp.
+	_mm_beams = _instancer(_flat_mesh(true, 1.1, Color(0.55, 0.80, 1.0)), 48)
+	_mm_beams.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mm_shields = _instancer(_bubble_mesh(), 48)
+	_mm_shields.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## A flat glowing disc under a selected machine. Unlit and emissive so it reads
@@ -491,7 +510,8 @@ func _ring_mesh() -> Mesh:
 ## `glow` is the difference between a tracer and a health bar: a tracer wants
 ## to bloom, a bar wants to stay a flat readable strip and not smear into the
 ## thing it is describing.
-func _flat_mesh(glow: bool) -> Mesh:
+func _flat_mesh(glow: bool, energy := 2.4,
+		tint := Color(1.0, 0.86, 0.55)) -> Mesh:
 	var m := BoxMesh.new()
 	m.size = Vector3.ONE
 	# OPAQUE, and no no_depth_test. The first version of this was an alpha
@@ -507,8 +527,30 @@ func _flat_mesh(glow: bool) -> Mesh:
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if glow:
 		mat.emission_enabled = true
-		mat.emission = Color(1.0, 0.86, 0.55)
-		mat.emission_energy_multiplier = 2.4
+		mat.emission = tint
+		mat.emission_energy_multiplier = energy
+	m.material = mat
+	return m
+
+
+## A shield bubble: a sphere, additive, drawn from the inside as well as the
+## outside so a machine standing inside one is still visible through it.
+func _bubble_mesh() -> Mesh:
+	var m := SphereMesh.new()
+	m.radius = 0.5
+	m.height = 1.0
+	m.radial_segments = 14
+	m.rings = 7
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	# CULL DISABLED and depth-write off: a bubble is a volume of light, and one
+	# that hides its own far side reads as a painted ball.
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.no_depth_test = false
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	m.material = mat
 	return m
 
@@ -837,12 +879,30 @@ func _stress() -> void:
 			heaviest = opt
 	if heaviest == null:
 		return
+	# A MIX, not twelve of one machine. The heaviest is the frame-rate case,
+	# but a load with no beam and no shield in it cannot show whether either
+	# one draws — and "it renders" is the thing a still is for.
+	var beamer: BuildOption = null
+	var shielded: BuildOption = null
+	for opt in options:
+		var sp := spec_for(opt)
+		if beamer == null:
+			for w in sp.weapons:
+				if int(w.family) == MachinePart.Family.BEAM:
+					beamer = opt
+		if shielded == null and sp.shield > 0.0:
+			shielded = opt
 	var want := 12
 	var cost := spec_for(heaviest).mass * want
 	mass.gain(cost)
 	for i in want:
 		var a := TAU * i / float(want)
-		_field(heaviest, spec_for(heaviest),
+		var pick: BuildOption = heaviest
+		if i % 4 == 1 and beamer != null:
+			pick = beamer
+		elif i % 4 == 3 and shielded != null:
+			pick = shielded
+		_field(pick, spec_for(pick),
 			module_pos + Vector2(cos(a), sin(a)) * (7.0 + _module_scale))
 		mass.spend(spec_for(heaviest).mass)
 	_spawn_hostiles(60, 3.0)
@@ -894,6 +954,76 @@ func step(delta: float) -> void:
 
 
 ## The drone is the only thing that moves mass. Everything else spends it.
+## The drone's scanning light.
+##
+## A REAL SPOTLIGHT AND A FAKE CONE, and it needs both. The spot puts a moving
+## pool of light on the piece, which is the part that reads as scanning; the
+## cone is a cheap unlit cylinder that makes the beam itself visible, because a
+## light with nothing in the air to catch it is invisible from above and this
+## camera is almost directly above. Mobile runs 8 spots per mesh and 256 per
+## view, so one is affordable — and it casts no shadows, which is the
+## expensive half of a light.
+func _build_scan() -> void:
+	if not fx.scan_enabled:
+		return
+	_scan_light = SpotLight3D.new()
+	_scan_light.spot_range = fx.scan_range_m
+	_scan_light.spot_angle = fx.scan_angle_deg
+	_scan_light.light_color = fx.scan_colour
+	_scan_light.light_energy = fx.scan_energy
+	_scan_light.shadow_enabled = false
+	_scan_light.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+	drone.add_child(_scan_light)
+
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.10
+	cone.bottom_radius = tan(deg_to_rad(fx.scan_angle_deg)) * fx.scan_range_m
+	cone.height = fx.scan_range_m
+	cone.radial_segments = 14
+	cone.rings = 0
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	mat.albedo_color = Color(fx.scan_colour.r, fx.scan_colour.g,
+		fx.scan_colour.b, 0.055)
+	cone.material = mat
+	_scan_cone = MeshInstance3D.new()
+	_scan_cone.mesh = cone
+	_scan_cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# A CylinderMesh stands on its Y axis, so the cone hangs straight down from
+	# the drone with its wide end on the ground.
+	_scan_cone.position = Vector3(0.0, -fx.scan_range_m * 0.5, 0.0)
+	drone.add_child(_scan_cone)
+
+
+## Point and sweep the scan, and switch it off when there is nothing to scan.
+##
+## OFF WHILE FLYING HOME. The light is what the drone DOES TO A PIECE, not a
+## headlamp — a drone that scans the empty ground on the way back has a lamp,
+## and a lamp says nothing about what is happening.
+func _sync_scan(delta: float) -> void:
+	if _scan_light == null:
+		return
+	var on: bool = fx.scan_enabled \
+		and (drone_state == "working" or drone_state == "outbound")
+	_scan_light.visible = on
+	_scan_cone.visible = on
+	if not on:
+		return
+	# Sweeps while it works, and points dead ahead while it is still flying —
+	# a searching beam and a working one should not look the same.
+	_scan_t += delta
+	var lean: float = fx.scan_tilt_deg * (1.0 if drone_state == "working"
+		else 0.35)
+	var a := _scan_t * TAU * fx.scan_sweep_hz
+	var tilt := Vector3(-90.0 + sin(a) * lean, 0.0, cos(a * 0.8) * lean)
+	_scan_light.rotation_degrees = tilt
+	_scan_cone.rotation_degrees = Vector3(tilt.x + 90.0, 0.0, tilt.z)
+
+
 func _drone(delta: float) -> void:
 	match drone_state:
 		"idle":
@@ -1093,6 +1223,13 @@ func _field(opt: BuildOption, spec: MachineSpec, at: Vector2) -> Dictionary:
 	var u := {
 		"uid": _next_uid, "opt": opt, "spec": spec, "pos": at, "hp": spec.max_hp,
 		"cd": 0.0, "cds": cds, "slot": built.size(), "rally": null,
+		# Shields start FULL. A machine that arrived with an empty one would
+		# spend its first four seconds on the field being worth less than the
+		# mass it cost.
+		"shield": spec.shield, "shield_cd": 0.0,
+		# Weapon slot -> {uid, held}: which alien each beam is burning and for
+		# how long. See _beam.
+		"beams": {},
 	}
 	_next_uid += 1
 	built.append(u)
@@ -1345,6 +1482,7 @@ func _units(delta: float) -> void:
 		var u := built[i]
 		u.cd -= delta
 		u.flash = maxf(0.0, float(u.get("flash", 0.0)) - delta)
+		_regen(u, delta)
 		var upos: Vector2 = u.pos
 		# A machine under a merge order leaves formation and walks to the
 		# rendezvous. That hole in the line is half the cost of reforging.
@@ -1379,15 +1517,64 @@ func _fire(u: Dictionary, delta: float) -> void:
 	var spec: MachineSpec = u.spec
 	var cds: PackedFloat32Array = u.cds
 	for w in spec.weapons.size():
+		var gun: Dictionary = spec.weapons[w]
+		if int(gun.get("family", 0)) == MachinePart.Family.BEAM:
+			_beam(u, w, gun, delta)
+			continue
 		cds[w] = maxf(0.0, cds[w] - delta)
 		if cds[w] > 0.0:
 			continue
-		var gun: Dictionary = spec.weapons[w]
 		var t := _nearest_alien_in_band(u.pos, gun.min_range_m, gun.range_m)
 		if t < 0:
 			continue
 		cds[w] = gun.cooldown_s
 		_launch(u.pos, t, gun)
+
+
+## A held beam: damage every frame, ramping while it stays on ONE target.
+##
+## THE RAMP IS THE WEAPON. Without it a beam is a gun with the cooldown filed
+## off and the family is pointless. With it, a beam is worth pointing at a
+## roamer and worth almost nothing against a swarm, because every target it
+## loses throws the ramp away — which is precisely the opposite of what a
+## repeater wants, and the reason to carry one of each.
+##
+## `u.beams` maps a weapon slot to {uid, held}: which alien it is burning and
+## for how long. The TARGET IS AN ID, like a shot's, because aliens leave the
+## array from the middle and an index would quietly re-aim the beam at whoever
+## shuffled into that slot — which here would hand it a full ramp it never
+## earned.
+func _beam(u: Dictionary, slot: int, gun: Dictionary, delta: float) -> void:
+	var beams: Dictionary = u.beams
+	var held: Dictionary = beams.get(slot, {"uid": -1, "held": 0.0})
+	var idx := _alien_index(int(held.uid))
+	# Keep the current target while it is alive, in range, and not a corpse.
+	var keep: bool = idx >= 0 \
+		and float(aliens[idx].get("dying", ALIVE)) < 0.0 \
+		and (aliens[idx].pos as Vector2).distance_to(u.pos) <= gun.range_m
+	if not keep:
+		var t := _nearest_alien_in_band(u.pos, gun.min_range_m, gun.range_m)
+		if t < 0:
+			# Nothing to burn. The ramp decays rather than snapping to zero, so
+			# a target that dies a moment before the next one walks in does not
+			# cost the whole wind-up.
+			held.uid = -1
+			held.held = maxf(0.0, float(held.held) - delta * 2.0)
+			beams[slot] = held
+			return
+		if int(held.uid) != int(aliens[t].uid):
+			held.held = 0.0
+		held.uid = int(aliens[t].uid)
+		idx = t
+	held.held = float(held.held) + delta
+	beams[slot] = held
+
+	var ramp: float = maxf(0.01, float(gun.get("beam_ramp_s", 1.2)))
+	var floor_frac: float = float(gun.get("beam_floor", 0.3))
+	var k: float = lerpf(floor_frac, 1.0,
+		clampf(float(held.held) / ramp, 0.0, 1.0))
+	aliens[idx].hp -= gun.damage * k * delta
+	_hurt(idx)
 
 
 ## Put one shot in the air, or land it immediately if the weapon is a claw.
@@ -1519,6 +1706,50 @@ func _alien_index(uid: int) -> int:
 		if int(aliens[i].uid) == uid:
 			return i
 	return -1
+
+
+## Shields come back after a few quiet seconds. The delay is what makes them a
+## manoeuvring tool rather than extra hit points: a machine has to actually
+## leave the fight to get the budget back, and leaving has to be worth doing.
+func _regen(u: Dictionary, delta: float) -> void:
+	var maxs := float(u.spec.shield)
+	if maxs <= 0.0:
+		return
+	var cd := float(u.get("shield_cd", 0.0))
+	if cd > 0.0:
+		u.shield_cd = maxf(0.0, cd - delta)
+		return
+	var sh := float(u.get("shield", 0.0))
+	if sh < maxs:
+		u.shield = minf(maxs, sh
+			+ (rules.shield_regen_per_s if rules != null else 6.0) * delta)
+
+
+## Damage a machine: THROUGH THE SHIELD FIRST, then into the hull.
+##
+## ARMOUR IS APPLIED BEFORE THIS, by the caller. The two are different kinds of
+## protection and stacking them the other way round would double-count: plating
+## makes each bite smaller, and a shield absorbs bites whatever size they are.
+##
+## Overflow carries into the hull rather than being lost, or a shield with one
+## point left would eat a ninety-damage railgun shot.
+func _wound(u: Dictionary, damage: float) -> void:
+	if damage <= 0.0:
+		return
+	u.flash = fx.flash_s if fx.hit_flash else 0.0
+	var sh := float(u.get("shield", 0.0))
+	if sh > 0.0:
+		var soaked := minf(sh, damage)
+		u.shield = sh - soaked
+		damage -= soaked
+		if float(u.shield) <= 0.0:
+			_say("%s — shield down" % u.spec.display_name)
+	# ANY hit resets the delay, including one the shield swallowed whole.
+	# Otherwise a machine under steady light fire would regenerate through it
+	# and the shield would be a flat immunity rather than a budget.
+	u.shield_cd = rules.shield_delay_s if rules != null else 4.0
+	if damage > 0.0:
+		u.hp -= damage
 
 
 ## Evenly spaced ring position for one convoy member.
@@ -1795,8 +2026,8 @@ func _hostiles(delta: float) -> void:
 					# Plating is the only reason a Breaker can stand in a swarm
 					# that kills a Skirmisher. Reduction, not hit points, so
 					# armour is worth more the smaller each bite is.
-					u.hp -= u.spec.damage_after_armour(tune.alien_damage, rules)
-					u.flash = fx.flash_s if fx.hit_flash else 0.0
+					_wound(u, u.spec.damage_after_armour(tune.alien_damage,
+						rules))
 					hit = true
 					break
 			if not hit:
@@ -1835,6 +2066,7 @@ func _present(delta: float) -> void:
 		_frame_camera()          # one last call, to put it exactly back
 	_follow_module(delta)
 	drone.position = Vector3(drone_pos.x, terrain.height_at(drone_pos) + 5.5, drone_pos.y)
+	_sync_scan(delta)
 	for r in drone.find_children("rotor_*", "Node3D", true, false):
 		(r as Node3D).rotate_y(delta * 26.0)
 
@@ -1853,6 +2085,8 @@ func _present(delta: float) -> void:
 		func(m): return Vector3(m.r, 0.12, m.r),
 		func(m): return m.col)
 	_draw_shots()
+	_draw_beams()
+	_draw_shields()
 	_draw_bars()
 	_refresh_forge_bar()
 
@@ -2014,6 +2248,95 @@ func _draw_shots() -> void:
 	mm.visible_instance_count = n
 
 
+## One stretched box per live beam, muzzle to target.
+##
+## Drawn from the unit's `beams` record rather than re-running the targeting,
+## so what is on screen is what is doing the damage. A beam drawn from a second
+## opinion about who is being shot would be a lie the first time the two
+## disagreed.
+func _draw_beams() -> void:
+	var mm := _mm_beams.multimesh
+	var n := 0
+	if not fx.beams_visible:
+		mm.visible_instance_count = 0
+		return
+	for u in built:
+		var beams: Dictionary = u.get("beams", {})
+		for slot in beams:
+			if n >= mm.instance_count:
+				break
+			var held: Dictionary = beams[slot]
+			var idx := _alien_index(int(held.uid))
+			if idx < 0:
+				continue
+			var a: Vector2 = u.pos
+			var b: Vector2 = aliens[idx].pos
+			if not fog.is_visible(a):
+				continue
+			var gun: Dictionary = u.spec.weapons[int(slot)]
+			var k: float = clampf(float(held.held)
+				/ maxf(0.01, float(gun.get("beam_ramp_s", 1.2))), 0.0, 1.0)
+			var from := Vector3(a.x, terrain.height_at(a) + fx.beam_lift_m, a.y)
+			var to := Vector3(b.x, terrain.height_at(b) + fx.beam_lift_m * 0.8,
+				b.y)
+			var mid := (from + to) * 0.5
+			var span := from.distance_to(to)
+			if span < 0.05:
+				continue
+			var wide: float = lerpf(fx.beam_width_m, fx.beam_width_full_m, k)
+			# Point the box along the beam: looking_at builds a basis whose -Z
+			# faces the target, and the mesh is a unit cube, so scaling Z by the
+			# span turns it into the line.
+			var basis := Basis.looking_at(to - from, Vector3.UP)
+			mm.set_instance_transform(n,
+				Transform3D(basis.scaled_local(Vector3(wide, wide, span)), mid))
+			# The colour says how far the ramp has got, so a beam that has been
+			# held on one thing LOOKS like it is winning.
+			mm.set_instance_color(n,
+				fx.beam_colour_cold.lerp(fx.beam_colour_hot, k))
+			n += 1
+	mm.visible_instance_count = n
+
+
+## A bubble over every machine whose shield is still up.
+##
+## ONLY WHILE IT IS UP, and fading with what is left. A bubble that looks the
+## same at 10% as at full is worse than none: it says "protected" when the
+## truth is "one more hit".
+func _draw_shields() -> void:
+	var mm := _mm_shields.multimesh
+	var n := 0
+	if not fx.shield_bubbles:
+		mm.visible_instance_count = 0
+		return
+	for u in built:
+		if n >= mm.instance_count:
+			break
+		var maxs := float(u.spec.shield)
+		var sh := float(u.get("shield", 0.0))
+		if maxs <= 0.0 or sh <= 0.0:
+			continue
+		var p: Vector2 = u.pos
+		if not fog.is_visible(p):
+			continue
+		var frac: float = clampf(sh / maxs, 0.0, 1.0)
+		var r: float = u.spec.radius_m * fx.shield_scale * 2.0
+		mm.set_instance_transform(n, Transform3D(
+			Basis.IDENTITY.scaled(Vector3(r, r * 0.8, r)),
+			Vector3(p.x, terrain.height_at(p) + r * 0.35, p.y)))
+		var col: Color = fx.shield_colour
+		# Flares on a hit, using the same flash timer the hull uses — one clock
+		# for "this was just hit" rather than two that can disagree.
+		var flare := 1.0
+		if float(u.get("flash", 0.0)) > 0.0 and fx.shield_flash_s > 0.0:
+			flare = 1.0 + 2.2 * clampf(float(u.flash) / fx.shield_flash_s,
+				0.0, 1.0)
+		col.a = fx.shield_alpha * (0.35 + 0.65 * frac) * flare
+		mm.set_instance_color(n, col)
+		n += 1
+	mm.visible_instance_count = n
+
+
 ## Health bars, two instances each: a dark back and a coloured fill.
 ##
 ## NOT A BAR OVER EVERYTHING. Seventy swarmers wearing full green bars is a
@@ -2029,6 +2352,16 @@ func _draw_bars() -> void:
 	for u in built:
 		n = _bar(mm, n, face, u.pos, u.hp / maxf(1.0, u.spec.max_hp),
 			u.spec.radius_m * 2.2 + tune.bar_lift_m, 1.0, true)
+		# A SECOND BAR ABOVE THE FIRST when the machine carries a shield.
+		# Not a segment inside the hull bar: the two are different resources
+		# with different rules — one comes back and one does not — and drawing
+		# them as one meter would say they are the same thing.
+		if u.spec.shield > 0.0:
+			n = _bar(mm, n, face, u.pos,
+				float(u.get("shield", 0.0)) / maxf(1.0, u.spec.shield),
+				u.spec.radius_m * 2.2 + tune.bar_lift_m
+					+ tune.bar_height_m * 1.5,
+				0.86, true, fx.shield_colour)
 	for a in aliens:
 		var kind: StringName = a.get("kind", &"small")
 		var frac: float = float(a.hp) / maxf(1.0, float(a.get("hp_max", a.hp)))
@@ -2053,8 +2386,10 @@ func _draw_bars() -> void:
 ## One bar: the dark back, then the fill on top of it. Returns the next free
 ## instance slot, or the one it was given if there was no room for both — half
 ## a bar is worse than none, so they go in as a pair or not at all.
+## `tint` overrides the green-amber-red ramp, for a bar that is not hit points.
 func _bar(mm: MultiMesh, n: int, face: Basis, at: Vector2, frac: float,
-		lift: float, scale: float, friendly: bool) -> int:
+		lift: float, scale: float, friendly: bool,
+		tint := Color(0, 0, 0, 0)) -> int:
 	if n + 2 > mm.instance_count or not fog.is_visible(at):
 		return n
 	frac = clampf(frac, 0.0, 1.0)
@@ -2071,7 +2406,8 @@ func _bar(mm: MultiMesh, n: int, face: Basis, at: Vector2, frac: float,
 	mm.set_instance_transform(n + 1, Transform3D(
 		bar_basis(face, fw, h * 0.55),
 		base + face.x * shift + face.z * 0.06))
-	mm.set_instance_color(n + 1, _bar_colour(frac, friendly))
+	mm.set_instance_color(n + 1, tint.darkened(0.35) if tint.a > 0.0
+		else _bar_colour(frac, friendly))
 	return n + 2
 
 

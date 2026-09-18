@@ -112,6 +112,81 @@ Two mistakes getting to that table, both worth keeping:
   rung that failed to repeat. **Measure nothing while anything else is
   running.**
 
+## Built: lasers, shields and the drone's scan
+
+### Lasers are a different weapon family, not a fast bullet
+
+`MachinePart.Family.BEAM`. Damage is **per second, not per shot**, and it
+**ramps** the longer the beam stays on one target — `beam_floor` of its damage
+the instant it touches something, full damage after `beam_ramp_s`, and
+switching targets throws the wind-up away.
+
+**The ramp is the weapon.** Without it a beam is a gun with the cooldown filed
+off and the family is pointless. With it, a beam is worth pointing at a roamer
+or a nest and worth almost nothing against a swarm — which is precisely the
+opposite of what a repeater wants, and therefore a reason to carry one of each.
+Measured: 5.2 damage in the first half second, 13.0 in a half second after the
+ramp. 2.5×.
+
+Two machines use them. The **Cutter** pairs a light beam with an autocannon
+behind a shield; the **Lance** carries two beams and a deflector core and is
+built to be parked on the biggest thing on the map.
+
+A beam carries its target's **id**, like a projectile does, because aliens leave
+the array from the middle — an index would silently re-aim the beam at whoever
+shuffled into that slot and hand them a full ramp they never earned.
+
+`MachineSpec.dps()` had to learn about them too: a beam's damage is already per
+second, and dividing it by a cooldown it does not have reported a laser as
+doing twice its real output, on the one readout players use to compare
+loadouts.
+
+### Shields are a budget, plating is a discount
+
+A regenerating layer in the ARMOUR slot — which the hardpoint enum already
+called "plating and shielding". Damage goes **through the shield first**, with
+overflow carrying into the hull (or a shield with one point left would eat a
+railgun shot whole). Armour is applied *before* this by the caller: the two are
+different kinds of protection and stacking them the other way would
+double-count.
+
+**What makes it not just more hit points** is the delay. Any hit resets it,
+including one the shield swallows completely — otherwise a machine under steady
+light fire regenerates through it and the shield is a flat immunity. So a
+shield rewards pulling a machine *out* of a fight and putting it back, and the
+same machine is worth more to a player who manoeuvres. Plate is the opposite: it
+helps a machine that stands still.
+
+The bubble is drawn only while the shield is up and fades with what is left. A
+bubble that looks the same at 10% as at full says "protected" when the truth is
+"one more hit". The bar is a **second bar above the hull bar**, not a segment
+inside it: two resources with different rules should not read as one meter.
+
+### The drone's scan
+
+A real `SpotLight3D` **and** a fake cone, and it needs both: the spot puts a
+moving pool of light on the piece, and the unlit additive cone makes the beam
+itself visible, because a light with nothing in the air to catch it is
+invisible from a camera that is almost directly overhead. It sweeps while
+working and points ahead while flying out.
+
+**Off while hauling home.** The light is what the drone *does to a piece*, not a
+headlamp — a drone that lights the empty ground on the way back has a lamp, and
+a lamp says nothing about what is happening. One spot, no shadows: Mobile runs
+8 per mesh and shadows are the expensive half of a light.
+
+### Two checks that were testing nothing
+
+- **The beam ramp measured 1.1× on a weapon that really ramps 2.5×.** The check
+  took the first machine carrying a beam, which was a Cutter — and a Cutter also
+  carries an autocannon, whose steady output was mixed into the beam's rising
+  one. It requires a machine whose weapons are *all* beams now.
+- **"The shield never comes back" was true of a corpse.** The overflow check
+  above it deliberately drove the hull negative, and `_units` removes a machine
+  at zero — so the regen checks were examining a dictionary that had been taken
+  off the field and would never be ticked again. It puts the machine back on
+  its feet first, and asserts it is still there before believing anything else.
+
 ## Where we actually are
 
 Before this, there was **no effects system at all** — no particles, no tweens,

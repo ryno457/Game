@@ -11,7 +11,7 @@ extends RefCounted
 ## Shorthand for what this machine is FOR, derived from the weapons fitted to
 ## it. This is the readout that tells a player they are fielding an artillery
 ## army rather than a melee one.
-enum Role { UNARMED, MELEE, RANGED, ARTILLERY, MIXED }
+enum Role { UNARMED, MELEE, RANGED, ARTILLERY, BEAM, MIXED }
 
 var id: StringName = &""
 var display_name: String = ""
@@ -20,6 +20,8 @@ var mass: float = 0.0       ## frame plus every part; what the build costs
 var part_mass: float = 0.0  ## just the parts, for the overload check
 var max_hp: float = 0.0
 var armour: float = 0.0
+## Regenerating layer in front of the hull. See MachinePart.shield_add.
+var shield: float = 0.0
 var speed_mps: float = 0.0
 var radius_m: float = 0.55
 var reveal_m: float = 0.0
@@ -63,12 +65,14 @@ func role() -> Role:
 			return Role.MELEE
 		MachinePart.Family.ARTILLERY:
 			return Role.ARTILLERY
+		MachinePart.Family.BEAM:
+			return Role.BEAM
 		_:
 			return Role.RANGED
 
 
 func role_name() -> String:
-	return ["Unarmed", "Melee", "Ranged", "Artillery", "Mixed"][role()]
+	return ["Unarmed", "Melee", "Ranged", "Artillery", "Beam", "Mixed"][role()]
 
 
 ## Damage per second with every weapon firing at a target all of them can hit.
@@ -76,7 +80,13 @@ func role_name() -> String:
 func dps() -> float:
 	var total := 0.0
 	for w in weapons:
-		total += w.damage / maxf(0.01, w.cooldown_s)
+		# A BEAM's `damage` is ALREADY per second — dividing it by a cooldown
+		# it does not have would have reported a laser as doing twice its real
+		# output, on the one readout players use to compare two loadouts.
+		if int(w.get("family", 0)) == MachinePart.Family.BEAM:
+			total += w.damage
+		else:
+			total += w.damage / maxf(0.01, w.cooldown_s)
 	return total
 
 
