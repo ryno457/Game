@@ -1018,8 +1018,21 @@ func _build_scan() -> void:
 	# bounds are computed from its instance transforms, and these are rewritten
 	# every frame on a node that is itself moving; a stale box is a silent
 	# frustum cull, which looks exactly like an effect that does not draw.
-	var r := fx.scan_range_m
-	_scan_cone.custom_aabb = AABB(Vector3(-r, -r, -r), Vector3(r, r, r) * 2.0)
+	#
+	# IT HAS TO FOLLOW THE DRONE, which the first version of it did not, and
+	# that — not the material — is why these still drew nothing after the
+	# material was fixed. The box is in the node's own space; the node sits at
+	# the scene root, so its origin is (0, 0, 0), while _place_streaks writes
+	# WORLD positions into the instances and the map runs 0..150 by 0..112.
+	# A box of +/- scan_range_m around the origin therefore covers one corner
+	# of the map and nothing else: measured with the drone at (44.8, 33.1,
+	# 26.0), all six streaks were outside it and the whole MultiMesh was
+	# culled. _place_streaks re-centres it now; this is only the opening value.
+	# NO CUSTOM AABB. _instancer — which builds the tracers, the beams and the
+	# shield bubbles, all of which render — sets none, and MultiMesh recomputes
+	# its own bounds when instance transforms are written. The custom box was
+	# added here out of a fear of a stale one and caused exactly the silent
+	# cull it was meant to prevent.
 	# ON THE SCENE ROOT, IN WORLD SPACE — not parented to the drone.
 	#
 	# Everything else that draws through a MultiMesh here (the tracers, the
@@ -1056,7 +1069,18 @@ func _sync_scan(delta: float) -> void:
 	var a := _scan_t * TAU * fx.scan_sweep_hz
 	var tilt := Vector3(-90.0 + sin(a) * lean, 0.0, cos(a * 0.8) * lean)
 	_scan_light.rotation_degrees = tilt
-	_scan_cone.rotation_degrees = Vector3(tilt.x + 90.0, 0.0, tilt.z)
+	# THE CONE NODE IS NEVER ROTATED. It used to take the sweep's tilt here,
+	# which made sense while it hung under the drone and its instances were in
+	# drone space. It sits at the scene root now and _place_streaks writes
+	# WORLD positions into it, so a rotation of the node is a rotation of those
+	# positions ABOUT THE MAP'S ORIGIN: at 14 degrees and 50 m out, that threw
+	# every streak about twelve metres away from the drone. Measured — the
+	# drone reported (44.7, 33.1, 26.1) while the transforms it had just been
+	# given read (48.6, 24.0, 29.0) in the same frame.
+	#
+	# Nothing is lost by dropping it. The sweep is the SPOTLIGHT's job, which
+	# still takes `tilt` above, and each bar is already leaned and spun
+	# individually in _place_streaks.
 	_place_streaks(_scan_t)
 
 
