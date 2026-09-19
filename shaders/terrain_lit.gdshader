@@ -324,6 +324,23 @@ uniform float baked_colour = 0.0;
 // at zero.
 uniform sampler2D detail_ao_tex : filter_linear_mipmap, repeat_disable;
 uniform float baked_ao = 0.0;
+// THE SAME OCCLUSION, IN COLOUR AND WITH DIRECTION.
+//
+// detail_ao_tex answers "how much of the sky can this texel see" as one grey
+// number. This answers "what light actually arrives here" — a texel tucked
+// under the west side of a vine is lit by the eastern half of the sky and
+// takes its colour from there. AO is the uncoloured, undirected special case.
+//
+// The two OVERLAP, so turning this on means turning baked_ao off. Both at once
+// counts the same occlusion twice.
+//
+// Split in use because Godot's AO output is a scalar: the map's LUMINANCE
+// drives that, which is what actually attenuates ambient light, and its CHROMA
+// tints the albedo, which is the only slot a spatial shader has for coloured
+// ambient. Cheating slightly, and it reads right in a scene whose light is
+// mostly ambient.
+uniform sampler2D detail_sky_tex : source_color, filter_linear_mipmap, repeat_disable;
+uniform float baked_sky = 0.0;
 // INK ALONG EVERY BAKED FORM, from the normal map already in hand.
 //
 // Both references outline every shape in a dark, saturated version of its own
@@ -804,6 +821,16 @@ void fragment() {
 	// One fetch, three cues. See the uniform block for why they are baked.
 	float ao = 1.0;
 	float curv = 0.0;
+	vec3 sky_tint = vec3(1.0);
+	if (baked_sky > 0.0) {
+		vec3 sky = texture(detail_sky_tex, v_world.xz / field_size_m).rgb;
+		float lum = dot(sky, vec3(0.2126, 0.7152, 0.0722));
+		ao *= mix(1.0, lum, baked_sky);
+		// Chroma only: the magnitude has already gone into `ao`, so dividing it
+		// back out leaves a tint that averages to white and cannot darken the
+		// ground a second time.
+		sky_tint = mix(vec3(1.0), sky / max(lum, 0.001), baked_sky);
+	}
 	if (baked_ao > 0.0) {
 		// Before the heightfield's own AO, and multiplied with it rather than
 		// mixed: two independent occluders of the same point darken it twice,
@@ -863,7 +890,7 @@ void fragment() {
 		base = floor(base * paint_quantise + 0.5) / paint_quantise;
 	}
 
-	ALBEDO = base;
+	ALBEDO = base * sky_tint;
 	// AO darkens AMBIENT; ao_light_affect is folded into v_shade for the direct
 	// term instead, because a custom light() bypasses the engine's own AO path.
 	AO = ao;

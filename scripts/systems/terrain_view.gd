@@ -42,6 +42,9 @@ const DETAIL_D := "res://textures/ground_vines_d.png"
 ## Baked alongside them by tools/blender/bake_ao.py: how much of the sky each
 ## texel of ground can see once the mat is in the way.
 const DETAIL_AO := "res://textures/ground_vines_ao.png"
+## Baked by tools/blender/bake_sky.py: the light a chosen sky throws onto the
+## map, in colour, with the vine mat shading the ground it lies on.
+const DETAIL_SKY := "res://textures/ground_vines_sky.png"
 
 var field: Heightfield
 var fog: FogOfWar
@@ -158,6 +161,11 @@ func apply_palette(p: BiomePalette) -> void:
 		_mat.set_shader_parameter("baked_ao", p.baked_ao)
 	else:
 		_mat.set_shader_parameter("baked_ao", 0.0)
+	if ResourceLoader.exists(DETAIL_SKY):
+		_mat.set_shader_parameter("detail_sky_tex", load(DETAIL_SKY))
+		_mat.set_shader_parameter("baked_sky", p.baked_sky)
+	else:
+		_mat.set_shader_parameter("baked_sky", 0.0)
 	_mat.set_shader_parameter("detail_scale", p.detail_scale)
 	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m)
 	_mat.set_shader_parameter("macro_strength", p.macro_strength)

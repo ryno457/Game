@@ -114,6 +114,11 @@ extends Resource
 ## metre and cannot see a vine. Off by default so its cost and its look can be
 ## turned on and measured separately, like every other term here.
 @export_range(0.0, 1.0) var baked_ao: float = 0.0
+## The same occlusion in COLOUR, baked under a chosen sky by bake_sky.py. Its
+## luminance attenuates ambient the way baked_ao does; its chroma tints the
+## ground with the light actually reaching it. These two OVERLAP — turning this
+## on means turning baked_ao off, or the same occlusion is counted twice.
+@export_range(0.0, 1.0) var baked_sky: float = 0.0
 ## A dark line along every baked form. The depth-based ink pass cannot draw
 ## these: the vines are a normal map on flat ground and change no depth at all.
 @export_range(0.0, 1.0) var baked_ink: float = 0.0
