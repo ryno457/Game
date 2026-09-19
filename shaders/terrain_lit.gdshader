@@ -307,14 +307,21 @@ uniform sampler2D cast_tex_2 : filter_linear_mipmap, repeat_enable;
 uniform vec3 cast_strength = vec3(0.0);   // per layer; 0 skips that fetch
 // HOW MUCH OF THE CANOPY LANDS IN THE ALBEDO rather than only in the light.
 //
-// v_canopy is consumed inside light(), so it rides on DIRECT light alone. That
-// was fine while the moon did most of the lighting. It is not fine now: the
-// albedo carries a baked irradiance map and ambient_energy went 0.27 -> 0.75 to
-// suit it, so the hex lattice is a small modulation of a small term and it
-// vanished. Putting a share of it into the albedo makes the roof's shadow part
-// of the SURFACE, which is defensible for the same reason baking the sky into
-// the albedo was: the biodome roof is a fixed structure over a fixed map, so
-// the shadow it throws is fixed too.
+// NOT BECAUSE AMBIENT DROWNED IT. That was the first guess and it is wrong:
+// simulating the whole path — half-Lambert, HDR ramp whose top stop is 2.83,
+// ACES at white 5.0, sRGB — ambient is 3.3% of a lit fragment at the old
+// settings and 4.4% at the new ones, and the panel-to-rib ratio went 1.67 ->
+// 1.66. The lattice got very slightly STRONGER when the lights changed.
+//
+// It is drowned by the ALBEDO. baked_colour went 0.55 -> 1.0 over a 2048 wide
+// photographic irradiance bake whose own contrast at the hex scale is 33/255,
+// two to three times the canopy's. Light-only modulation cannot compete with
+// the pigment, so a share of the roof goes into the pigment.
+//
+// Honest for the same reason baking the sky into the albedo was: the biodome
+// roof is a fixed structure over a fixed map, so the shadow it throws is fixed
+// too. It does mean the lattice stops responding to sun_rotation_deg — a
+// deliberate lie, recorded here so it is a decision and not a surprise.
 //
 // Separate from cast_strength on purpose. cast_strength says how dark the
 // lattice is; this says how much of that survives the lighting balance. Zero
@@ -406,6 +413,12 @@ varying float v_seen;    // fog of war, so light() can respect it too
 // Written in fragment() and read in light(), which is legal in Godot and is
 // the only way a per-fragment texture fetch can reach the light loop.
 varying float v_canopy;  // how much of the sky reaches this point
+// THE ROOF LAYERS ONLY, split off from v_canopy before the depth march.
+// Not a convenience: v_canopy picks up the vine contact shadow further down,
+// and putting THAT in the pigment would weld a contact shadow to the ground
+// that no longer moves when the moon does. The roof is a fixed structure over
+// a fixed map, so baking its shadow is honest; a vine's is not.
+varying float v_roof;
 varying float v_detail;  // fine surface detail, as a VALUE shift
 varying vec3 v_baked;    // baked detail colour, mixed into the pigment
 varying float v_flank;   // how steeply the baked normal leans: the ink
@@ -718,6 +731,10 @@ void fragment() {
 		v_canopy *= mix(1.0, texture(cast_tex_2, uv).r, cast_strength.z);
 	}
 
+	// Everything overhead, and nothing else, before the ground starts casting
+	// onto itself below. See v_roof.
+	v_roof = v_canopy;
+
 	// AND THE GROUND CASTING ONTO ITSELF. March toward the moon across the
 	// depth map: at each step the ray has climbed by the step times the
 	// tangent of the sun's elevation, and if the mat is taller than the ray is
@@ -915,7 +932,7 @@ void fragment() {
 		base = floor(base * paint_quantise + 0.5) / paint_quantise;
 	}
 
-	ALBEDO = base * sky_tint * mix(1.0, v_canopy, cast_albedo);
+	ALBEDO = base * sky_tint * mix(1.0, v_roof, cast_albedo * v_seen);
 	// AO darkens AMBIENT; ao_light_affect is folded into v_shade for the direct
 	// term instead, because a custom light() bypasses the engine's own AO path.
 	AO = ao;

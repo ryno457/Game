@@ -154,6 +154,16 @@ static func apply_painted(packed: PackedScene, ramp: Texture2D,
 		if m == null:
 			continue
 		var has_col: bool = (m.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR) != 0
+		# DOES THIS MESH HAVE UVs AT ALL. Not a theoretical question: commit
+		# 70e48ae re-exported drone, guard and module_forms from the procedural
+		# builders to add the COLOR_0 sky bake and dropped TEXCOORD_0 and
+		# TANGENT doing it, which commit 52bfe40 had added for the panel-seam
+		# bake. The detail branch below kept running, so every fragment sampled
+		# machine_*_ao.png at UV(0, 0) — the black corner of the atlas — and
+		# multiplied the albedo by 0.30 on the module and 0.47 on the guard.
+		# That is why the machines were dark, and it would have eaten any grey
+		# put in front of it.
+		var has_uv: bool = (m.surface_get_format(0) & Mesh.ARRAY_FORMAT_TEX_UV) != 0
 		for i in m.get_surface_count():
 			var std := m.surface_get_material(i) as StandardMaterial3D
 			if std == null:
@@ -194,7 +204,17 @@ static func apply_painted(packed: PackedScene, ramp: Texture2D,
 			# model, written by tools/blender/bake_machines.py.
 			var n_path := "res://textures/machine_%s_n.png" % model_name
 			var ao_path := "res://textures/machine_%s_ao.png" % model_name
-			if ResourceLoader.exists(n_path) and ResourceLoader.exists(ao_path):
+			if not has_uv:
+				# No UVs, so no detail maps — sampling them would multiply the
+				# albedo by whatever happens to be at the atlas corner. Loud,
+				# because a model silently losing its unwrap on re-export is
+				# exactly how this shipped dark for a week.
+				if ResourceLoader.exists(n_path):
+					push_warning(("%s has a baked detail map but no UVs — "
+						+ "re-export it with TEXCOORD_0 or the map is dead "
+						+ "weight") % model_name)
+				sm.set_shader_parameter("detail_strength", 0.0)
+			elif ResourceLoader.exists(n_path) and ResourceLoader.exists(ao_path):
 				sm.set_shader_parameter("detail_n", load(n_path))
 				sm.set_shader_parameter("detail_ao", load(ao_path))
 				sm.set_shader_parameter("detail_strength", machine_detail)

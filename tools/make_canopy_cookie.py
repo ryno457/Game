@@ -100,7 +100,12 @@ def main() -> int:
 
     # THE RIBS. Where the two nearest centres are within a hair of each other.
     edge = d2 - d1
-    rib = 1.0 - np.clip(edge / (0.55 / RINGS), 0.0, 1.0)
+    # THIN. At 0.55 / RINGS the ribs were 31% of the texture by area and soft
+    # at the edges, so the map read as mottling rather than as a lattice, and
+    # the roof cost 21/255 of frame luma to say nothing. Measured on a re-run
+    # of this generator: 0.18 / RINGS takes deep-rib area from 31% to 4.7% and
+    # rib coverage from 33% to 11.5%.
+    rib = 1.0 - np.clip(edge / (0.18 / RINGS), 0.0, 1.0)
     rib = rib ** 1.8
     # A thinner, brighter line down the middle of each rib: a structural member
     # seen from below is lit on its own underside by everything around it, and
@@ -110,17 +115,23 @@ def main() -> int:
     # THE PANELS. Each one its own transmission, so the canopy reads as a built
     # thing that has weathered rather than as a pattern.
     grime = _hash(ix, iy, 11, RINGS, rows)
-    panel = 0.58 + 0.42 * grime
+    # NEARLY CLEAR. Panels ranged 0.58..1.0, a spread of 0.42 that was as
+    # large as the rib contrast itself — so cell-to-cell noise drowned the
+    # thing the cells were meant to outline. A roof made of glass should vary
+    # a little and let light through; the STRUCTURE is what should be dark.
+    panel = 0.92 + 0.08 * grime
     # One panel in nine is gone. That is where the brightest light on the map
     # falls, and it is worth more than any amount of even illumination: a floor
     # lit evenly has nowhere the eye wants to go.
-    broken = _hash(ix, iy, 29, RINGS, rows) > 0.89
+    # One panel in forty, not one in nine. At 11% the blown panels were a
+    # second competing pattern at the same scale as the lattice.
+    broken = _hash(ix, iy, 29, RINGS, rows) > 0.975
     panel = np.where(broken, 1.0, panel)
     # And a soft gradient across each panel, from the rib inward, so a panel is
     # not a flat chip of light.
-    panel *= 0.82 + 0.18 * np.clip(edge * RINGS * 4.0, 0.0, 1.0)
+    panel *= 0.94 + 0.06 * np.clip(edge * RINGS * 4.0, 0.0, 1.0)
 
-    light = panel * (1.0 - rib * 0.88) + spine * 0.22
+    light = panel * (1.0 - rib * 0.92) + spine * 0.22
     # NO BORDER FADE. The first version faded the edge to the mean, which is
     # right for a projector thrown once through a cone and exactly wrong here:
     # this tiles across the world, so a border treatment IS the seam. The

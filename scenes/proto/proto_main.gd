@@ -426,6 +426,9 @@ func _dress(landing: Vector2) -> void:
 			var mmi := MultiMeshInstance3D.new()
 			mmi.multimesh = MultiMesh.new()
 			mmi.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+			# Per-instance colour, so four hundred props are not one prop drawn
+			# four hundred times. See _seed_tint and _cull_scenery.
+			mmi.multimesh.use_colors = true
 			mmi.multimesh.mesh = mesh
 			mmi.multimesh.instance_count = group.size()
 			mmi.multimesh.visible_instance_count = 0
@@ -455,6 +458,13 @@ func _cull_scenery() -> void:
 			if fog.level_at(Vector2(tr.origin.x, tr.origin.z)) <= 0.0:
 				continue
 			mmi.multimesh.set_instance_transform(n, tr)
+			# Seeded from where it stands, so the same prop is the same colour
+			# every frame, every run, and whichever slot the fog leaves it in.
+			# Keying off `n` instead would make a prop change colour as another
+			# one came into view.
+			mmi.multimesh.set_instance_color(n, _seed_tint(
+				tr.origin.x, tr.origin.z,
+				palette.prop_hue_jitter, palette.prop_value_jitter))
 			n += 1
 		mmi.multimesh.visible_instance_count = n
 		drawn += n
@@ -2284,10 +2294,41 @@ func _death_scale(a: Dictionary) -> float:
 	return 1.0 - fx.death_shrink * _death_progress(a)
 
 
+## A stable colour wobble for one instance, around white.
+##
+## DETERMINISTIC, from two numbers that identify the instance — a prop's
+## position, a hostile's uid. The usual fract(sin(dot)) hash: cheap, no state,
+## and the same answer on every run, which a seeded RNG would only manage if it
+## were drawn in a fixed order. Props are culled by fog, so they are not.
+##
+## Returned as a MULTIPLIER near white, because this rides in the MultiMesh
+## instance colour and the shader multiplies it into the albedo. Hue is rotated
+## by pushing the three channels around a circle 120 degrees apart, which keeps
+## the average at `val` instead of drifting bright the way a naive HSV round
+## trip does.
+static func _seed_tint(a: float, b: float, hue: float, val: float) -> Color:
+	var h := sin(a * 12.9898 + b * 78.233) * 43758.5453
+	h -= floor(h)
+	var v := sin(a * 39.3468 + b * 11.1357) * 24634.6345
+	v -= floor(v)
+	var ang := h * TAU
+	var lum := 1.0 + (v - 0.5) * val
+	return Color(
+		lum * (1.0 + hue * cos(ang)),
+		lum * (1.0 + hue * cos(ang - 2.0944)),
+		lum * (1.0 + hue * cos(ang + 2.0944)))
+
+
 ## The colour an instanced alien is drawn in: its own, lifted toward white for
 ## as long as its flash lasts, and dimmed as it dies.
 func _alien_tint(a: Dictionary) -> Color:
 	var base := Color(1.0, 0.36, 0.45)
+	# Every hostile used to be this exact colour. Seeded off the uid, which is
+	# stable for the life of the creature, so one does not shimmer as the array
+	# is compacted around it.
+	var j := _seed_tint(float(a.get("uid", 0)) * 0.37, 7.31,
+		palette.alien_hue_jitter, palette.alien_value_jitter)
+	base = Color(base.r * j.r, base.g * j.g, base.b * j.b)
 	var f := float(a.get("flash", 0.0))
 	if f > 0.0 and fx.flash_s > 0.0:
 		base = base.lerp(Color.WHITE,

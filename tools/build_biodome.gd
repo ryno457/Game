@@ -587,7 +587,14 @@ func _palette() -> BiomePalette:
 	p.scale_detail = 1.0
 	# The canopy cookie. See CanopyLight and tools/make_canopy_cookie.py.
 	p.cast_tex_0 = load("res://textures/canopy_cookie.png")
-	p.cast_strength = Vector3(0.55, 0.0, 0.0)
+	# 0.9, not 0.55. The cookie is a thin lattice now rather than 33% soft rib
+	# (see tools/make_canopy_cookie.py), so the same strength that used to cost
+	# 21/255 of frame luma for a mottle now buys a readable structure for
+	# about half that. Kept in step with data/biomes/biodome_01_palette.tres,
+	# which writes it explicitly for the first time — before this the palette
+	# left the key out and inherited the GDScript default, so a hand edit there
+	# would have been silently overwritten the next time this generator ran.
+	p.cast_strength = Vector3(0.9, 0.0, 0.0)
 	p.cast_scale_m = Vector3(46.0, 120.0, 17.0)
 	p.cast_drift_01 = Vector4(11.0, 7.0, 0.0, 0.0)
 	p.cast_scroll_mps = Vector3(0.0, 0.0, 0.0)

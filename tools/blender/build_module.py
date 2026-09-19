@@ -58,7 +58,7 @@ GLB = os.path.join(OUT, "module_forms.glb")
 # two files each carry their own copy; last pass only build_machines.py was
 # changed and the player's own MODULE stayed dark teal while its drone and
 # guard went grey — the one object on screen that most needs to be findable.
-HULL_HEX, PLATE_HEX, ACCENT_HEX = "b9bdc2", "8e949b", "4fe3c1"
+from _palette import HULL_HEX, PLATE_HEX, ACCENT_HEX  # noqa: E402,F401
 
 
 def srgb_to_linear(c):

@@ -84,8 +84,7 @@ def hexcol(h):
 # #707b6d at 1.2% of the image and nothing in it is lighter. So grey reads as
 # MANUFACTURED without competing with the bioluminescence for attention.
 # tools/build_biodome.gd keeps every ground material teal-tinted to protect it.
-HULL_HEX, PLATE_HEX, ACCENT_HEX = "b9bdc2", "8e949b", "4fe3c1"
-HULL, PLATE, ACCENT = 0, 1, 2            # material slot indices
+from _palette import HULL_HEX, PLATE_HEX, ACCENT_HEX, HULL, PLATE, ACCENT  # noqa: E402,F401
 
 
 def set_in(bsdf, name, value):

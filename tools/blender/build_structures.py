@@ -63,8 +63,7 @@ def hexcol(h):
     return tuple(f(int(h[i:i + 2], 16)) for i in (0, 2, 4)) + (1.0,)
 
 
-HULL_HEX, PLATE_HEX, ACCENT_HEX = "12303a", "16222c", "4fe3c1"
-HULL, PLATE, ACCENT = 0, 1, 2            # material slot indices
+from _palette import HULL_HEX, PLATE_HEX, ACCENT_HEX, HULL, PLATE, ACCENT  # noqa: E402,F401
 
 
 def set_in(bsdf, name, value):
