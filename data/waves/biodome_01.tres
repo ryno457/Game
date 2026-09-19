@@ -4,13 +4,13 @@
 
 [resource]
 script = ExtResource("1_waves")
-interval_s = 45.0
+interval_s = 20.0
 fragments_required = 5
 teleporter_charge_s = 35.0
-count_base = 2.0
-count_per_wave = 1.4
-hp_base = 60.0
-hp_per_wave = 10.0
+count_base = 6.0
+count_per_wave = 6.0
+hp_base = 16.0
+hp_per_wave = 2.5
 speed_base_mps = 2.625
 damage_base = 9.0
 damage_per_wave = 1.6
