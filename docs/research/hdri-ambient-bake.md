@@ -140,3 +140,37 @@ Until then: **irradiance is the better-defined quantity** — it is literally th
 light arriving, in colour, with direction — and where the two disagree it is
 the one to trust. The AO map committed in `69c4387` is a greyscale proxy for
 it, and if the sky bake ships, AO should come out rather than multiply on top.
+
+## The four candidates, and a prediction that did not survive
+
+640x477, 40 samples, measured inside the footprint:
+
+| sky | mean | tint (R/G/B) | clipped | reads as |
+|---|---|---|---|---|
+| game | 0.47 | 0.60 / 0.91 / 1.48 | 3.0% | flat blue, heavy firefly speckle |
+| night | 0.28 | 1.13 / 1.00 / 0.86 | 0.6% | warm brown, soft clear form |
+| forest | 0.44 | 0.88 / 0.97 / 1.15 | 0.1% | neutral grey, crisp form |
+| sunset | 0.43 | 0.75 / 0.89 / 1.36 | 0.4% | blue with a warm rim on the ravine |
+
+**The generated `game` sky is the worst of the four, and the reasoning that
+recommended it was wrong.** The argument above — that every downloaded HDRI is
+a photograph of somewhere on Earth and this biodome's own sky is the only
+honest light for it — is true about *colour* and beside the point about
+*form*. What a bake like this is for is directional shading: a bright region
+somewhere in the sky is what makes a vine cast a soft shadow and a nodule read
+as round. `ProceduralSkyMaterial` is a smooth four-stop gradient dome with no
+bright source anywhere in it, so it lights every exposed texel from every
+direction almost equally and the map comes out nearly flat. Its dimness makes
+it worse: an open-ground irradiance of 0.039 against forest's 2.31 means the
+same 40 samples carry far less signal, and the fireflies that survive are
+scaled up by the small divisor into the white speckle visible across it.
+
+So the tint argument and the form argument point at different candidates, and
+form is the one that cannot be fixed afterwards. A tint can: the map is
+per-channel, and scaling its three channels is a multiply. A flat map has no
+shading in it to recover.
+
+That makes the real choice "which sky has usable directionality", with colour
+as a correction applied after — not "which sky is the most honest about this
+biodome". Recorded because the prediction was made confidently in this same
+document two sections earlier, and the render disagreed with it.
