@@ -174,3 +174,59 @@ That makes the real choice "which sky has usable directionality", with colour
 as a correction applied after — not "which sky is the most honest about this
 biodome". Recorded because the prediction was made confidently in this same
 document two sections earlier, and the render disagreed with it.
+
+## Chosen: night, re-tinted, and combined with the painted look
+
+`night` (Poly Haven `moonless_golf`, CC0) for its shading, re-tinted to the
+game's own sky colour. The two arguments pull apart and only one is fixable
+afterwards — the map is per-channel, so a tint is a multiply, while a flat map
+has no shading to recover.
+
+### The re-tint is anchored on the floor average, not on open ground
+
+Open ground is the more principled reference and it overshoots. Under a sky
+with a warm moon, shaded texels see proportionally less of the moon and are
+already bluer than open ground is, so correcting the open-ground ratio pushes
+the shaded majority — which is almost the whole map — past the target:
+
+| anchor | resulting floor tint | target |
+|---|---|---|
+| open ground | 0.50 / 0.82 / 1.68 | 0.59 / 0.90 / 1.51 |
+| floor average | **0.589 / 0.904 / 1.507** | 0.59 / 0.90 / 1.51 |
+
+Two bugs surfaced on the way, both of the kind that look like success. The
+printed tint was taken off the *raw* bake, so a run that had just swapped warm
+for cold printed the warm number and the retint appeared to do nothing. And
+`foreach_set` takes float32 while the retint multiply promotes to float64,
+raising `incorrect sequence item type: d` — an error that names the dtype and
+not the cause.
+
+### How a coloured map enters a shader whose AO slot is scalar
+
+Godot's `AO` output is one float, so a coloured irradiance map cannot go
+straight into it. It is split:
+
+- **luminance → `AO`**, which is what actually attenuates ambient light;
+- **chroma → `ALBEDO`**, divided by that luminance so it averages to white and
+  cannot darken the ground a second time.
+
+That is a cheat, and it reads right in a scene whose light is mostly ambient.
+
+`baked_sky` and `baked_ao` are the same occlusion measured two ways, so turning
+one on means turning the other off. Nothing enforces it; it is written in the
+uniform block and in the palette.
+
+### The painted pass on top
+
+The whole-map bakes and the Kuwahara filter compose, and the chain is three
+commands with no new tool:
+
+    bake_sky.py night 2048 64 --retint
+    painterly.py build/hdri/sky_night_retint.png textures/ground_vines_sky.png \
+        --size 4 --type anisotropic
+    painterly.py <albedo> <painted albedo> --size 4 --type anisotropic
+
+Painting the *ambient* map is the more interesting half. Flattening shading
+into patches is most of what makes a render read as painted, and until now the
+Kuwahara had only ever been run on albedo, where it measured a mild 17.3% of
+the frame against a 3.9% noise floor.
