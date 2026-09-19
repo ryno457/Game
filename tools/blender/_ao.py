@@ -277,3 +277,127 @@ def bake_vertex_ao(obj, rays=12, reach=1.6, strength=0.6, floor=0.35,
         attr.data[i].color = (shade, shade, shade, 1.0)
 
     return sum(occ) / max(1, len(occ))
+
+
+def colour_mean(objs):
+    """Mean of the active COLOR_0 across these objects, by vertex."""
+    if not isinstance(objs, (list, tuple)):
+        objs = [objs]
+    got = []
+    for o in objs:
+        attr = o.data.color_attributes.active_color
+        if attr is None and len(o.data.color_attributes):
+            attr = o.data.color_attributes[0]
+        if attr is None:
+            continue
+        n = len(o.data.vertices) if attr.domain == 'POINT' else len(o.data.loops)
+        buf = np.empty(n * 4, dtype=np.float32)
+        attr.data.foreach_get("color", buf)
+        got.append(buf.reshape(-1, 4)[:, :3])
+    return float(np.concatenate(got).mean()) if got else 1.0
+
+
+def remap_mean(objs, want):
+    """Slide COLOR_0 toward white until its mean is `want`. Returns the mean.
+
+    `1 - (1 - x) * k`, the ordinary AO strength control. A plain multiply is
+    the obvious alternative and undershoots badly: the gain needed here is
+    always above 1, so the brightest vertices clip and drag the mean back
+    down — one model asked for 0.921 and produced 0.711. This maps [0,1] onto
+    [1-k,1], cannot clip, and keeps every relative difference.
+
+    Used to make a sky bake a DROP-IN for the AO it replaces. Raw irradiance is
+    much darker, and the rest of the game's lighting was authored against the
+    old brightness; the direction and the colour are the new information and
+    they survive this untouched.
+    """
+    if not isinstance(objs, (list, tuple)):
+        objs = [objs]
+    got = colour_mean(objs)
+    k = (1.0 - want) / max(1e-6, 1.0 - got)
+    if abs(k - 1.0) > 0.001:
+        for o in objs:
+            attr = o.data.color_attributes.active_color
+            if attr is None:
+                continue
+            n = (len(o.data.vertices) if attr.domain == 'POINT'
+                 else len(o.data.loops))
+            buf = np.empty(n * 4, dtype=np.float32)
+            attr.data.foreach_get("color", buf)
+            q = buf.reshape(-1, 4)
+            q[:, :3] = np.clip(1.0 - (1.0 - q[:, :3]) * k, 0.0, 1.0)
+            attr.data.foreach_set("color", q.ravel())
+    return colour_mean(objs)
+
+
+def default_sky():
+    """The sky the terrain bake uses, so props and ground agree."""
+    import bpy
+    return os.path.join(bpy.utils.resource_path('LOCAL'), "datafiles",
+                        "studiolights", "world", "night.exr")
+
+
+def colour_stats(objs):
+    """Mean and standard deviation of COLOR_0 across these objects."""
+    if not isinstance(objs, (list, tuple)):
+        objs = [objs]
+    got = []
+    for o in objs:
+        attr = o.data.color_attributes.active_color
+        if attr is None and len(o.data.color_attributes):
+            attr = o.data.color_attributes[0]
+        if attr is None:
+            continue
+        n = len(o.data.vertices) if attr.domain == 'POINT' else len(o.data.loops)
+        buf = np.empty(n * 4, dtype=np.float32)
+        attr.data.foreach_get("color", buf)
+        got.append(buf.reshape(-1, 4)[:, :3])
+    if not got:
+        return 1.0, 0.0
+    a = np.concatenate(got)
+    return float(a.mean()), float(a.std())
+
+
+def remap_mean_spread(objs, want_mean, want_spread):
+    """Land COLOR_0 on both a mean and a spread: x' = a*x + b.
+
+    remap_mean alone keeps the brightness and costs almost everything else.
+    It slides toward white by a factor k, and k comes out around 0.2 when a
+    raw irradiance bake is being matched to the AO it replaces — so every
+    deviation from white shrinks to a fifth. Measured on the flora that meant
+    the shading contrast fell from 0.26 to 0.14 and the sky's warm tint arrived
+    at 1.01/1.00/0.99, which is to say invisible. Brightness was preserved by
+    throwing away the two things the bake was for.
+
+    Matching the spread as well fixes it. `a` comes out around 0.46 rather than
+    0.2, so more than twice as much of the colour survives, the shading has the
+    same contrast the AO had, and the mean is still where the rest of the
+    lighting expects it. It can clip at the top, which is why the achieved
+    figures are returned for the caller to assert on.
+    """
+    if not isinstance(objs, (list, tuple)):
+        objs = [objs]
+    # REFIT A FEW TIMES, because the clamp moves the answer. The raw bake has a
+    # wider range than the AO it is matching — 0.39 against 0.18 on rock_spire
+    # — so the fitted line pushes the brightest vertices past 1.0, they clip,
+    # and both figures land short: one pass asked for 0.792/0.260 and produced
+    # 0.742/0.198. Re-fitting against what actually came out closes most of
+    # that. It cannot close all of it, and the caller is told what it got.
+    for _ in range(4):
+        mean, spread = colour_stats(objs)
+        if abs(mean - want_mean) < 0.002 and abs(spread - want_spread) < 0.004:
+            break
+        a = (want_spread / spread) if spread > 1e-6 else 1.0
+        b = want_mean - a * mean
+        for o in objs:
+            attr = o.data.color_attributes.active_color
+            if attr is None:
+                continue
+            n = (len(o.data.vertices) if attr.domain == 'POINT'
+                 else len(o.data.loops))
+            buf = np.empty(n * 4, dtype=np.float32)
+            attr.data.foreach_get("color", buf)
+            q = buf.reshape(-1, 4)
+            q[:, :3] = np.clip(q[:, :3] * a + b, 0.0, 1.0)
+            attr.data.foreach_set("color", q.ravel())
+    return colour_stats(objs)

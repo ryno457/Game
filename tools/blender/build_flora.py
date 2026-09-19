@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mathutils import Matrix, Vector
 from _bl import script_args
 import _organic as og
-from _ao import bake_vertex_ao
+from _ao import (bake_vertex_ao, bake_vertex_sky, colour_stats,
+                 default_sky, load_sky, remap_mean_spread)
 
 argv = script_args()
 OUT = os.path.abspath(argv[0] if argv else "models")
@@ -477,6 +478,8 @@ def build_ruin(mats):
 # Rock is FLAT shaded. Everything else grew, and grown things are smooth; a
 # stone splinter with smoothed normals reads as a melted candle, which is what
 # the first pass shipped.
+SKY = load_sky(default_sky())
+
 PROPS = [
     ("flora_arch", build_arch, 1400, True, 2.2),
     ("flora_tendril", build_tendril, 620, True, 1.2),
@@ -638,8 +641,20 @@ def main():
         mb = fn(mats).ground()
         obj = make_object(name, mb, mats, smooth)
         unwrap(obj)
+        # AO FIRST, ONLY FOR ITS BRIGHTNESS. The sky bake replaces it, but the
+        # rest of the game's lighting was balanced against the level AO used to
+        # sit at, so that level is the target rather than a number typed here.
         mean_occ = bake_vertex_ao(obj, rays=12, reach=reach,
                                   unoccluded_materials=GLOWING)
+        want_mean, want_spread = colour_stats(obj)
+        # Then the light the sky actually delivers: same hemisphere, but each
+        # escaping ray is worth the radiance in the direction it left, so a
+        # face turned to the moon is brighter AND warmer than one turned away.
+        bake_vertex_sky([obj], SKY, rays=28, reach=max(reach, 2.0),
+                        unoccluded_materials=GLOWING)
+        # Both figures, not just the brightness: matching the mean alone
+        # slides everything toward white and costs the contrast and the colour.
+        got_mean, got_spread = remap_mean_spread([obj], want_mean, want_spread)
         path = os.path.join(OUT, name + ".glb")
         export_glb(path)
         a = audit(path, budget)
