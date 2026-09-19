@@ -149,7 +149,13 @@ def _open_reference(low, mat, node, res_x, res_y):
     bpy.data.images.remove(img)
     bpy.data.objects.remove(ref, do_unlink=True)
     bpy.context.scene.render.bake.use_selected_to_active = True
-    return float(np.median(lit)) if lit.size else 0.0
+    # PER CHANNEL. One scalar for all three destroys the one thing an HDRI is
+    # here to provide. The first version returned the median across channels,
+    # which is fine for a white sky and ruinous for a coloured one: this
+    # biodome's own sky is strongly blue, so its blue irradiance sat well above
+    # that median and 74% of the map came back clipped at 1.0 in blue while red
+    # sat low — a tint measured and then flattened by the clamp.
+    return np.median(lit, axis=0) if lit.size else np.zeros(3, np.float32)
 
 
 def main():
@@ -238,9 +244,13 @@ def main():
     # So the divisor is a real measurement: the same target, lifted a kilometre
     # clear of every occluder, baked under the same world. Nothing above it,
     # nothing beside it, so what it receives IS open sky.
-    open_ground = _open_reference(low, mat, node, res_x, res_y)
+    open_rgb = _open_reference(low, mat, node, res_x, res_y)
+    # Divided by the BRIGHTEST channel of open ground, so the brightest channel
+    # of fully lit floor lands at exactly 1.0 and nothing clips. The other two
+    # land below it by however much the sky is tinted, which is the tint.
+    open_ground = float(open_rgb.max())
     assert open_ground > 1e-6, \
-        "open ground received %.2e — the HDRI lit nothing" % open_ground
+        "open ground received %s — the HDRI lit nothing" % open_rgb.round(5)
     norm = np.clip(a / open_ground, 0.0, 1.0)
     tint = m.reshape(-1, 3).mean(axis=0)
     tint = tint / max(1e-9, tint.mean())
@@ -255,13 +265,20 @@ def main():
     save.save()
 
     inm = norm[inside]
-    print("PY: open ground irradiance %.4f (the divisor)" % open_ground)
+    clipped = 100.0 * (inm.max(axis=1) >= 0.999).mean()
+    print("PY: open ground irradiance %s, divisor %.4f (brightest channel)"
+          % (open_rgb.round(5), open_ground))
     print("PY: inside the map — mean %.3f  5th %.3f  below 0.9 %.1f%%  tint %s"
           % (inm.mean(), float(np.percentile(inm, 5)),
              100.0 * (inm.mean(axis=1) < 0.9).mean(), tint.round(3)))
+    print("PY:   clipped at 1.0: %.1f%%" % clipped)
     assert inm.mean() < 0.99, \
         "mean %.3f — nothing shaded anything, so the bake missed the sources" \
         % inm.mean()
+    # A map that is mostly clipped has thrown away the tint it was baked for.
+    assert clipped < 5.0, \
+        "%.1f%% of the map is clipped at 1.0 — the divisor is wrong for this " \
+        "sky and the tint has been flattened" % clipped
     print("PY: wrote %s" % os.path.relpath(out, ROOT))
 
 

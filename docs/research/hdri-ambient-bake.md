@@ -77,6 +77,26 @@ and nothing beside it, so what it receives *is* open sky. That divisor came out
 at **0.9914** for a uniform white world — which is to say the old percentile
 guess had been close all along, and the gap is not normalisation.
 
+### ...and then the measured divisor was wrong too, in a way only colour shows
+
+The reference bake returned one scalar: the median across all three channels.
+That is correct for a white sky and ruinous for a coloured one, which is every
+sky worth using. This biodome's own sky measures
+
+    open ground irradiance [0.01499  0.02302  0.03849]
+
+— blue is two and a half times red. Dividing all three by the *median* put blue
+far above 1.0 everywhere, and the clamp to [0,1] then flattened it: **74.1% of
+the map came back clipped**, the tint destroyed by the very step meant to
+preserve it. The map was a blue-white sheet with a few dark spots, and it
+looked plausible enough to ship.
+
+Dividing instead by the **brightest channel** of open ground puts the brightest
+channel of fully lit floor at exactly 1.0, leaves the other two below it by
+however much the sky is tinted, and clips 3.7%. There is now an assertion that
+fails above 5%, because a mostly-clipped map has thrown away the thing it was
+baked for and still looks like a picture.
+
 ### The gap between AO and irradiance is still open
 
 With both normalised properly, on the same scene:
