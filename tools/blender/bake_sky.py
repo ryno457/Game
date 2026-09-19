@@ -175,14 +175,71 @@ def _open_reference(low, mat, node, res_x, res_y):
             else np.zeros(3, np.float32))
 
 
+def _retint(norm, open_rgb, mask, low, mat, node, res_x, res_y):
+    """Keep this sky's SHADING, swap in the game's COLOUR.
+
+    The two arguments for choosing a sky pull in opposite directions. Colour
+    says use the biodome's own, because that is the light the engine renders.
+    Form says use a photograph, because a bright region somewhere in the sky is
+    what makes a vine cast a soft shadow, and ProceduralSkyMaterial is a smooth
+    dome with no bright region anywhere in it.
+
+    Only one of those can be fixed afterwards. This map is per-channel, so a
+    tint is a multiply; a flat map has no shading in it to recover. So the
+    shading comes from the chosen sky and the colour is corrected here.
+
+    Concretely: open ground currently reads `open_rgb / max(open_rgb)`. Under
+    the game's sky it would read the same ratio computed from the game's own
+    open-ground irradiance. Multiplying channel-wise by the quotient moves the
+    colour and leaves every spatial variation exactly where it was.
+    """
+    world = bpy.context.scene.world
+    bg = world.node_tree.nodes["Background"]
+    for link in list(bg.inputs["Color"].links):
+        world.node_tree.links.remove(link)
+    env = world.node_tree.nodes.new("ShaderNodeTexEnvironment")
+    env.image = bpy.data.images.load(sky_hdri())
+    world.node_tree.links.new(env.outputs["Color"], bg.inputs["Color"])
+
+    game_rgb = _open_reference(low, mat, node, res_x, res_y)
+    assert float(game_rgb.max()) > 1e-9, "the game sky lit nothing"
+
+    # ANCHORED ON THE AVERAGE OVER THE FLOOR, not on open ground.
+    #
+    # Anchoring on open ground is the more principled choice and it is the
+    # wrong one here, because it overshoots what anyone looking at the map
+    # would call its colour. Under a sky with a warm moon, shaded texels see
+    # proportionally less of the moon and are already bluer than open ground
+    # is; correcting the open-ground ratio then pushes the shaded majority
+    # past the target. Measured: matching open ground took night's mean tint
+    # to 0.50/0.82/1.68 against a target of 0.59/0.90/1.51.
+    want = game_rgb / game_rgb.mean()
+    have = norm[mask].reshape(-1, 3).mean(axis=0)
+    have = have / have.mean()
+    gain = want / np.maximum(have, 1e-6)
+    out = norm * gain
+    # Blue is scaled up by most of a factor of two, so the top of the range has
+    # to come back down or the clamp eats it.
+    peak = float(np.percentile(out[mask], 99.8))
+    if peak > 1.0:
+        out /= peak
+        gain = gain / peak
+    print("PY: retint — floor tint %s -> %s  (gain %s, peak %.3f)"
+          % (have.round(3), want.round(3), gain.round(3), peak))
+    return np.clip(out, 0.0, 1.0), open_rgb * gain
+
+
 def main():
-    argv = script_args()
+    argv = [a for a in script_args()]
+    retint = "--retint" in argv
+    argv = [a for a in argv if a != "--retint"]
     assert argv, __doc__
     name = argv[0]
     res_x = int(argv[1]) if len(argv) > 1 else 1024
     samples = int(argv[2]) if len(argv) > 2 else 48
     hdri = resolve(name)
-    out = os.path.join(ROOT, "build", "hdri", "sky_%s.png" % name)
+    out = os.path.join(ROOT, "build", "hdri",
+                       "sky_%s%s.png" % (name, "_retint" if retint else ""))
 
     bpy.ops.wm.open_mainfile(filepath=BLEND)
     sc = bpy.context.scene
@@ -269,14 +326,24 @@ def main():
     assert open_ground > 1e-6, \
         "open ground received %s — the HDRI lit nothing" % open_rgb.round(5)
     norm = np.clip(a / open_ground, 0.0, 1.0)
-    tint = m.reshape(-1, 3).mean(axis=0)
+    if retint:
+        norm, open_rgb = _retint(norm, open_rgb, inside, low, mat, node,
+                                 res_x, res_y)
+    # OF THE MAP THAT GETS WRITTEN. Taking this off the raw bake reported the
+    # sky's own tint and silently ignored the retint, so a run that had just
+    # swapped warm for cold printed the warm number.
+    tint = norm[inside].reshape(-1, 3).mean(axis=0)
     tint = tint / max(1e-9, tint.mean())
 
     os.makedirs(os.path.dirname(out), exist_ok=True)
     save = bpy.data.images.new("sky_out", res_x, res_y, alpha=False)
     rgba = np.concatenate(
-        [norm, np.ones((res_y, res_x, 1), dtype=np.float32)], axis=2)
-    save.pixels.foreach_set(rgba.ravel())
+        [norm.astype(np.float32),
+         np.ones((res_y, res_x, 1), dtype=np.float32)], axis=2)
+    # foreach_set takes float32 only. The retint multiply promotes to float64
+    # and the error it raises — "incorrect sequence item type: d" — names the
+    # dtype rather than the cause, so the cast is explicit and stays.
+    save.pixels.foreach_set(np.ascontiguousarray(rgba, dtype=np.float32).ravel())
     save.filepath_raw = out
     save.file_format = 'PNG'
     save.save()
