@@ -50,6 +50,12 @@ GROUND_SUBDIV = int(argv[3]) if len(argv) > 3 else 3
 ## vine's visual weight at the overhead camera is its thickness, and halving
 ## the runs as well would have thinned the mat's coverage to a quarter for a
 ## change that was asked for as 'smaller', not 'sparser'.
+##
+## MAT PROFILE ONLY. These two live in the `else` branch of build(); the whole
+## map ships the `vines` profile, which sizes itself from SPECIES and
+## SPECIES_SCALE below. Changing them here and rebuilding the shipped map is a
+## no-op that looks like a change — the spline counts and the printed radii
+## come back identical, which is how this was caught.
 VINE_SCALE = 0.5
 ## And the count goes UP to pay for it. Halving the radius halves the ground
 ## a vine covers per metre of its length, so at the old count the mat thinned
@@ -57,10 +63,33 @@ VINE_SCALE = 0.5
 ## near-grey to 49% and the rendered frame's saturation fell from 0.35 to
 ## 0.27. Smaller was the ask; sparser was not.
 VINE_COUNT_SCALE = 1.75
+## 30% SMALLER, asked for against the moonlit albedo, where the baked detail is
+## most of what the floor looks like. This is the knob that reaches the shipped
+## map: every SPECIES radius is multiplied by it in grow_species.
+##
+## Lengths are left alone, for the reason VINE_SCALE gives. So a vine's
+## coverage falls LINEARLY, not as the square, and holding it costs 1 / 0.7 of
+## them — applied to `share`, the fraction of seeded cells a species takes,
+## rather than to per_cell, which is a small integer that cannot be scaled by
+## 1.43 without rounding the answer away.
+SPECIES_SCALE = 0.7
+## The clumps need their own pair: they shrink in two dimensions where a vine
+## shrinks in one, so the ground one covers goes as the SQUARE of its radius
+## and holding coverage costs 1 / 0.7^2 of them.
+CLUMP_SCALE = 0.7
+CLUMP_COUNT_SCALE = 2.04
 ## Metres of ground covered by one tile of the scale map. The generator lays
 ## 12 scales across a tile, so this over 12 is how big one scale is: at 5 m
 ## that is 42 cm. At 25 cm it aliased: the bake is 2048 over 150 m, so a texel
 ## is 7 cm and a 25 cm scale had three of them to be drawn with.
+##
+## LEFT AT 5.0 THROUGH THE 30% SHRINK, having been tried at 3.5 and measured.
+## This overlay feeds the Normal socket and nothing else, so it cannot move the
+## albedo at all — ground_vines_c.png came back at the same 2.81-texel
+## correlation length either way — and in the normal map it sits under the
+## vine silhouettes, which are sub-texel: 0.87 texels at 5.0 m against 0.84 at
+## 3.5 m, contrast 0.1000 against 0.0986. Nothing measurable to gain, and 29 cm
+## is four texels where 25 cm is the three this is recorded as aliasing at.
 SCALE_M = 5.0
 SEED = 20260916
 
@@ -516,6 +545,12 @@ def grow_species(mb, h, cx, cz, hs, ground, mats_by_name):
     out = []
     bound = smallest_machine_m()
     for name, seed, hexs, rad, length, share, per_cell in SPECIES:
+        # SPECIES_SCALE, applied here rather than written into the table, so
+        # the table stays the authored set of sizes and the shrink stays one
+        # number. Radius only; see the constant for why length is left and why
+        # the compensation lands on `share`.
+        rad = (rad[0] * SPECIES_SCALE, rad[1] * SPECIES_SCALE)
+        share = min(1.0, share / SPECIES_SCALE)
         srng = random.Random(seed)
         mat = _vine_curve_mat("skin_" + name, hexs, 0.82,
                               tile=(10.0 if name != "large" else 7.0, 1.0))
@@ -911,8 +946,9 @@ def build(rng, cx, cz, h, mat, hs, void):
                 (LIVE, 0.45, 5, 0.9, 0.09),    # teal glowing buttons
                 (POREM, 0.22, 3, 1.0, 0.16)]   # amber ocelli, everywhere in 03
     dressed = 0
-    for i in open_cells[:CLUMP_TARGET * 4]:
-        if dressed >= CLUMP_TARGET:
+    want_clumps = int(CLUMP_TARGET * CLUMP_COUNT_SCALE)
+    for i in open_cells[:want_clumps * 4]:
+        if dressed >= want_clumps:
             break
         slot, r, n, squash, share = dressing[
             min(range(len(dressing)),
@@ -924,7 +960,8 @@ def build(rng, cx, cz, h, mat, hs, void):
         # One value per clump, so a field of them is not a field of clones.
         v = rng.uniform(0.66, 1.30)
         w = rng.uniform(-0.05, 0.09)
-        clump(mb, slot, rng, (x0, y0, z), r * rng.uniform(0.7, 1.5), n, squash,
+        clump(mb, slot, rng, (x0, y0, z),
+              r * CLUMP_SCALE * rng.uniform(0.7, 1.5), n, squash,
               col=(v * (1.0 + w * 1.8), v * (1.0 + w * 0.4), v * (1.0 - w * 1.2), 1.0))
         dressed += 1
 
