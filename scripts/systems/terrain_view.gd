@@ -98,6 +98,34 @@ func setup(p_field: Heightfield, p_fog: FogOfWar, shader: Shader) -> void:
 ## The depth march needs both and neither belongs in the palette: they are
 ## properties of the LIGHT, and the one thing this project has already paid for
 ## twice is two places disagreeing about where the sun is.
+## The shader material every chunk shares. For tools that need to read back
+## what was pushed — tools/scan_check.gd asserts the sweep's uniforms arrived,
+## which is the only thing that can go wrong with an effect that has no node.
+func material() -> ShaderMaterial:
+	return _mat
+
+
+## Where the drone's ground sweep is and how bright. Gain 0 switches it off.
+##
+## One call paints all 24 chunks: they share _mat through material_override, so
+## there is no per-chunk loop and no extra draw call.
+func set_scan(at: Vector2, head_rad: float, r_m: float, gain: float) -> void:
+	if _mat == null:
+		return
+	_mat.set_shader_parameter("scan_at_m", at)
+	_mat.set_shader_parameter("scan_head_rad", head_rad)
+	_mat.set_shader_parameter("scan_r_m", r_m)
+	_mat.set_shader_parameter("scan_gain", gain)
+
+
+func set_scan_style(tint: Color, band_m: float, arc_rad: float) -> void:
+	if _mat == null:
+		return
+	_mat.set_shader_parameter("scan_tint", tint)
+	_mat.set_shader_parameter("scan_band_m", band_m)
+	_mat.set_shader_parameter("scan_arc_rad", arc_rad)
+
+
 func set_sun(cfg: LightingConfig) -> void:
 	if _mat == null:
 		return

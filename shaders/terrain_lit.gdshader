@@ -327,6 +327,30 @@ uniform vec3 cast_strength = vec3(0.0);   // per layer; 0 skips that fetch
 // lattice is; this says how much of that survives the lighting balance. Zero
 // restores the old behaviour exactly.
 uniform float cast_albedo : hint_range(0.0, 1.0) = 0.0;
+
+// THE DRONE'S SCAN, AS A BAND ON THE GROUND. See _sync_scan.
+//
+// Drawn here rather than as geometry, and that is the point. The streaks this
+// replaces were six vertical bars, and at a camera 70.5 degrees above
+// horizontal a vertical 10 cm bar projects to 2.7 px — measured, along with
+// the 0 cyan pixels it changed. A horizontal figure at the same angle is
+// compressed to 94% in screen Y, so the same effect laid flat reads about
+// fifty times wider.
+//
+// A flat MESH laid on the ground would have to re-implement this shader's own
+// vertex displacement or bury itself in every slope, and a Decal or a second
+// spotlight cookie cannot be scored at all on this machine — canopy_light.gd
+// records light_projector contributing exactly zero under lavapipe. Computed
+// per terrain fragment from that fragment's own world XZ, the band follows the
+// heightfield exactly: up a 12 m cliff face included, with no bias, no offset,
+// no depth ordering and nothing to z-fight against.
+uniform vec3 scan_tint : source_color = vec3(0.55, 0.95, 1.0);
+uniform vec2 scan_at_m = vec2(0.0);      // world XZ under the drone
+uniform float scan_gain = 0.0;           // master; 0 skips the whole branch
+uniform float scan_r_m = 2.4;            // ring radius this instant
+uniform float scan_band_m = 0.45;        // ring thickness
+uniform float scan_head_rad = 0.0;       // where the wedge points
+uniform float scan_arc_rad = 0.9;        // half-width of the wedge
 uniform vec3 cast_scale_m = vec3(46.0);   // metres per tile, per layer
 uniform vec4 cast_drift_01 = vec4(0.0);   // xy shifts layer 0, zw layer 1
 uniform vec2 cast_drift_2 = vec2(0.0);
@@ -947,6 +971,17 @@ void fragment() {
 		// * ao so the bounce does not climb out of a crevice it cannot reach.
 		emit += base * bio * ao;
 	}
+	if (scan_gain > 0.0) {
+		vec2 sd = v_world.xz - scan_at_m;
+		float ring = smoothstep(scan_band_m, 0.0, abs(length(sd) - scan_r_m));
+		// The wedge, so it sweeps rather than pulsing as a whole ring. The
+		// mod/PI dance is the shortest angular distance to the head, which a
+		// plain subtraction gets wrong once per revolution.
+		float off = abs(mod(atan(sd.y, sd.x) - scan_head_rad + PI, TAU) - PI);
+		emit += scan_tint * ring * smoothstep(scan_arc_rad, 0.0, off) * scan_gain;
+	}
+	// * seen, so the sweep cannot light ground the player has not explored —
+	// the same rule the bio-glow above follows.
 	EMISSION = emit * seen;
 	// Back to view space, which is what the fragment stage wants written.
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);

@@ -112,29 +112,29 @@ extends Resource
 ## rather than an instrument: a searchlight says "I am illuminating", a few
 ## thin lines say "I am measuring". Few and thin on purpose — the moment there
 ## are enough of them to merge, it is a cone again.
-@export_range(1, 12) var scan_streaks: int = 6
-## Wide enough to SEE FROM ABOVE. At 0.055 m the streaks rendered as nothing:
-## this camera looks almost straight down, a streak hangs almost straight down,
-## and a 5.5 cm stick viewed end-on is about one pixel. The first version was
-## measured as invisible with the spotlight switched off, which is the only way
-## to tell a streak that is too thin from one the light is washing out.
-@export var scan_streak_w_m: float = 0.10
-## How far round the cone the streaks drift as they sweep, in turns per second.
-## Different from scan_sweep_hz so the pattern never looks locked.
-@export var scan_streak_spin_hz: float = 0.21
-## Revolutions per second of the sweep. Slow — this is an instrument, not a
-## disco light.
+## THE GROUND SWEEP. The scan used to be vertical streaks hanging off the
+## drone; at a camera 70.5 degrees above horizontal a 10 cm bar projected to
+## 2.7 px and changed 0 cyan pixels, measured. Laid flat it reads about fifty
+## times wider. Drawn in terrain_lit.gdshader off the fragment's own world XZ,
+## so it follows the heightfield up a cliff face with nothing to z-fight.
+##
+## Master brightness. glow_hdr_threshold is 0.85 at glow_strength 1.1, so much
+## over 1.5 blooms and visually thickens the band.
+## How fast the spotlight — and the ground wedge with it — goes round.
 @export var scan_sweep_hz: float = 0.45
-## How far off straight-down the cone leans as it sweeps.
+## How far the spotlight leans off straight down as it sweeps.
 @export var scan_tilt_deg: float = 14.0
-## How far the STREAKS splay out, as a multiple of the light's cone angle. The
-## light wants to stay tight on the piece; the streaks need to lean over far
-## enough that a top-down camera sees their length rather than their end.
-## 1.25, not 2.6. At 2.6 the streaks stood almost horizontal and read as a
-## starburst pinned to the drone rather than something reaching down to the
-## piece. Enough lean to be seen from above, not so much that they stop
-## pointing at anything.
-@export var scan_streak_splay: float = 1.25
+@export var scan_gain: float = 2.2
+## Thickness of the ring, in metres of ground.
+@export var scan_band_m: float = 0.45
+## The ring breathes between these two radii instead of sitting still.
+@export var scan_ground_min_m: float = 1.0
+@export var scan_ground_max_m: float = 3.2
+## Half-width of the sweeping wedge, in radians. TAU/2 would be a full ring.
+@export var scan_arc_rad: float = 0.9
+## How fast the ring breathes, separate from scan_sweep_hz so the two never
+## lock into one motion.
+@export var scan_pulse_hz: float = 0.37
 
 @export_group("Emerge ring")
 ## The ring starts here and ends here, in metres, over the emerge time.

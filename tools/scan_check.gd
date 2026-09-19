@@ -39,7 +39,7 @@ const REACH := 260          # frames to wait for it to start working
 const GAP := 3              # frames between each of the three captures
 ## Half-width of the box the pixels are counted in, centred on the drone. The
 ## streaks reach about 3 m from it and the camera is close, so this is generous.
-const PAD := 24             # px of margin around the streaks' own bounding box
+const PAD := 90             # px of margin: the band blooms well past its own width
 
 var _box_lo := Vector2.ZERO
 var _box_hi := Vector2.ZERO
@@ -112,73 +112,29 @@ func _initialize() -> void:
 	print("drone state: %s" % reached)
 
 	# --- the scene graph, before the pixels ---------------------------------
-	var cone: MultiMeshInstance3D = scene.get("_scan_cone")
+	#
+	# There is no node to inspect any more. The sweep is a band computed inside
+	# terrain_lit.gdshader from each fragment's own world XZ, so what can go
+	# wrong is not a cull or an AABB or a parenting mistake — it is the
+	# uniforms not arriving. That is what is checked.
 	var ok := true
-	if cone == null:
-		# Nothing downstream means anything without it, and the pixel half of
-		# this check reads cone.multimesh directly.
-		push_error("no _scan_cone in the scene — the scan was never built")
+	var tmat: ShaderMaterial = scene.terrain.material()
+	if tmat == null:
+		push_error("no terrain material — nothing to check")
 		quit(1)
 		return
-	else:
-		if not cone.visible:
-			push_error("_scan_cone is not visible"); ok = false
-		var mm: MultiMesh = cone.multimesh
-		if mm == null or mm.instance_count < 1:
-			push_error("scan cone has no instances"); ok = false
-		else:
-			# Every streak should sit within a couple of metres of the drone.
-			# A NaN or a transform flung to the far side of the map is the
-			# failure mode that culls the whole MultiMesh at once.
-			var d: Node3D = scene.get("drone")
-			var far := 0.0
-			for i in mm.instance_count:
-				var o := mm.get_instance_transform(i).origin
-				if not (is_finite(o.x) and is_finite(o.y) and is_finite(o.z)):
-					push_error("streak %d has a non-finite origin" % i)
-					ok = false
-					break
-				far = maxf(far, o.distance_to(d.position))
-			print("  %d streaks, furthest %.2f m from the drone"
-				% [mm.instance_count, far])
-			# THE CUSTOM AABB HAS TO CONTAIN THE INSTANCES. A MultiMesh is
-			# culled against this box, in the instance's OWN space, and
-			# _build_scan sets it from scan_range_m around the node's origin
-			# while _place_streaks writes WORLD positions into the instances —
-			# the node sits at the scene root, so the origin is (0,0,0) and the
-			# map runs 0..150 by 0..112. A drone anywhere but the map's corner
-			# is outside the box, and a MultiMesh outside its own AABB is
-			# silently not drawn. That is what a picture cannot tell you and
-			# this can.
-			var box := cone.custom_aabb
-			print("  custom AABB %s; drone at %s"
-				% [box, cone.to_local(d.global_position)])
-			var outside := 0
-			var boxed := box.size.length_squared() > 0.0
-			for i in mm.instance_count:
-				if boxed and not box.has_point(
-						mm.get_instance_transform(i).origin):
-					outside += 1
-			if outside > 0:
-				push_error("%d of %d streaks are outside the MultiMesh's own "
-					% [outside, mm.instance_count]
-					+ "custom AABB %s — they are being frustum-culled" % box)
-				ok = false
-			if far > 12.0:
-				push_error("a streak is %.1f m from the drone — that is off "
-					% far + "into the map, not around it")
-				ok = false
-			var mat: Material = mm.mesh.surface_get_material(0) \
-				if mm.mesh != null else null
-			if mat is StandardMaterial3D:
-				var sm := mat as StandardMaterial3D
-				# The bug that cost three rounds. Named, so it cannot come back
-				# quietly.
-				if sm.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED \
-						and not sm.no_depth_test:
-					print("  NOTE: streak material is transparent again")
-				print("  streak material: transparency=%d blend=%d depth_draw=%d"
-					% [sm.transparency, sm.blend_mode, sm.depth_draw_mode])
+	var gain: float = tmat.get_shader_parameter("scan_gain")
+	var at: Vector2 = tmat.get_shader_parameter("scan_at_m")
+	print("  scan_gain %.2f, scan_at_m %s, drone at %s"
+		% [gain, at, scene.drone_pos])
+	if gain <= 0.0:
+		push_error("scan_gain is %.2f with the drone working — the sweep is "
+			% gain + "switched off")
+		ok = false
+	if at.distance_to(scene.drone_pos) > 1.5:
+		push_error("the sweep is at %s and the drone is at %s — over a cell "
+			% [at, scene.drone_pos] + "apart")
+		ok = false
 
 	# --- three frames, with the world held still ----------------------------
 	#
@@ -241,32 +197,30 @@ func _initialize() -> void:
 	# else when the transforms are right there.
 	var cam: Camera3D = scene.get("camera")
 	var dn: Node3D = scene.get("drone")
-	var at := cam.unproject_position(dn.global_position)
+	var dat := cam.unproject_position(dn.global_position)
 	var lo := Vector2(INF, INF)
 	var hi := Vector2(-INF, -INF)
-	# BOTH ENDS OF EACH BAR, not just its origin. A streak is a unit BoxMesh
-	# scaled to `reach` in y and placed at its own MIDPOINT, so the origins
-	# alone bound a 55x41 px patch around the drone while the bars themselves
-	# run 146 px out of it. Boxing the origins scored a clean zero and would
-	# have gone on scoring zero however well the effect drew.
-	for i in cone.multimesh.instance_count:
-		var tr := cone.multimesh.get_instance_transform(i)
-		var half := tr.basis.y * 0.5
-		for e in [tr.origin, tr.origin + half, tr.origin - half]:
-			var sp := cam.unproject_position(cone.global_transform * e)
-			lo = Vector2(minf(lo.x, sp.x), minf(lo.y, sp.y))
-			hi = Vector2(maxf(hi.x, sp.x), maxf(hi.y, sp.y))
+	# EIGHT POINTS ON THE WIDEST RING the sweep reaches, each at its own
+	# terrain height so the box follows the slope the band is drawn on.
+	var rr: float = scene.fx.scan_ground_max_m
+	for i in 8:
+		var ang := TAU * float(i) / 8.0
+		var q: Vector2 = scene.drone_pos + Vector2(cos(ang), sin(ang)) * rr
+		var w := Vector3(q.x, scene.terrain.height_at(q), q.y)
+		var sp := cam.unproject_position(w)
+		lo = Vector2(minf(lo.x, sp.x), minf(lo.y, sp.y))
+		hi = Vector2(maxf(hi.x, sp.x), maxf(hi.y, sp.y))
 	_box_lo = lo - Vector2(PAD, PAD)
 	_box_hi = hi + Vector2(PAD, PAD)
-	print("drone projects to %.0f,%.0f; the streaks span %.0f,%.0f - %.0f,%.0f"
-		% [at.x, at.y, lo.x, lo.y, hi.x, hi.y])
+	print("drone projects to %.0f,%.0f; the sweep spans %.0f,%.0f - %.0f,%.0f"
+		% [dat.x, dat.y, lo.x, lo.y, hi.x, hi.y])
 	# HOW BIG A METRE IS, here, at this rung. Without it "the streaks changed
 	# 1000 pixels" cannot be turned into "the streaks are N pixels wide", which
 	# is the only form of the answer anybody can act on.
 	var one_m := cam.unproject_position(
-		dn.global_position + Vector3(1.0, 0.0, 0.0)).distance_to(at)
-	print("  scale: 1 m = %.1f px, so a %.2f m streak is %.1f px wide"
-		% [one_m, scene.fx.scan_streak_w_m, one_m * scene.fx.scan_streak_w_m])
+		dn.global_position + Vector3(1.0, 0.0, 0.0)).distance_to(dat)
+	print("  scale: 1 m = %.1f px, so the %.2f m band is %.1f px across"
+		% [one_m, scene.fx.scan_band_m, one_m * scene.fx.scan_band_m])
 
 	# FAT MODE: a diagnostic, not a test. Six 10 cm bars are small enough that
 	# "nothing changed" is ambiguous between "culled" and "too thin to see", so
@@ -274,29 +228,39 @@ func _initialize() -> void:
 	# not move a pixel, the MultiMesh is not rendering and no amount of sizing
 	# will help; if it does, the effect draws and the question is only how big
 	# it should be.
+	# THE WHOLE RING, not the wedge that happens to be pointing somewhere at
+	# this instant. The sweep is an arc of half-width scan_arc_rad rotating at
+	# scan_sweep_hz, and a frozen frame catches it wherever it was — which on
+	# this map is often out over the chasm or behind the build menu. Measured
+	# that way the same effect scored 39 cyan pixels at arc 0.9 and 31475 at
+	# arc 3.2, which says nothing about the band and everything about the
+	# phase. What is under test is whether the band REACHES THE SCREEN; where
+	# it is pointing is animation.
+	tmat.set_shader_parameter("scan_arc_rad", PI)
+	print("  uniforms: r %.2f m, band %.2f m, arc %.2f, tint %s"
+		% [float(tmat.get_shader_parameter("scan_r_m")),
+		   float(tmat.get_shader_parameter("scan_band_m")),
+		   float(tmat.get_shader_parameter("scan_arc_rad")),
+		   tmat.get_shader_parameter("scan_tint")])
+
 	if "fat" in argv:
-		# A 3 m CUBE at the drone, in place of every streak. Not a bigger
-		# streak — an object nobody could miss, so that "nothing changed"
-		# stops being ambiguous between "too thin to see" and "this node does
-		# not render".
-		var mmf: MultiMesh = cone.multimesh
-		var o := dn.position
-		for i in mmf.instance_count:
-			mmf.set_instance_transform(i, Transform3D(
-				Basis().scaled(Vector3(30.0, 3.0, 30.0)), o))
+		# A diagnostic, not a test: an enormous band, so that "nothing changed"
+		# stops being ambiguous between "too thin to see" and "not drawn".
+		tmat.set_shader_parameter("scan_gain", 12.0)
+		tmat.set_shader_parameter("scan_band_m", 8.0)
+		tmat.set_shader_parameter("scan_arc_rad", 3.2)
 		_box_lo = Vector2(0.0, 0.0)
 		_box_hi = Vector2(1600.0, 900.0)
-		print("FAT MODE: every streak replaced by a 3 m cube at the drone, "
-			+ "whole frame measured")
+		print("FAT MODE: band widened to 8 m over the whole frame")
 
 	var a := await _grab(white, scene)
 	var b := await _grab(white, scene)
-	# Hidden outright. _sync_scan would put it back, but it does not run in a
-	# frozen scene, and hiding the node is a plainer switch than zeroing
-	# visible_instance_count.
-	cone.visible = false
+	# Gain to zero: the branch in the shader is skipped entirely and every
+	# other thing in the frame is untouched. _sync_scan would push it back, but
+	# it does not run in a frozen scene.
+	scene.terrain.set_scan(scene.drone_pos, 0.0, 1.0, 0.0)
 	var c := await _grab(white, scene)
-	cone.visible = true
+	scene.terrain.set_scan(scene.drone_pos, 0.0, 1.0, gain)
 
 	if not _lit_all:
 		push_error("the scan light went out mid-measurement — this run "
@@ -348,16 +312,16 @@ func _grab(white: Texture2D, scene: Node) -> Image:
 	_keep_working(scene)
 	_reveal_all(root, white)
 	await process_frame
-	var cone: MultiMeshInstance3D = scene.get("_scan_cone")
-	# The SPOTLIGHT, not the cone: the cone is hidden deliberately for the last
-	# grab, and watching that would flag this check's own switch as the fault.
+	# The SPOTLIGHT, not the sweep: the sweep's gain is taken to zero
+	# deliberately for the last grab, and watching that would flag this check's
+	# own switch as the fault.
 	var lamp: SpotLight3D = scene.get("_scan_light")
 	if lamp == null or not lamp.visible:
 		_lit_all = false
-	print("  grab: drone %s, cone visible %s, %d of %d instances shown"
-		% [scene.drone_state, cone.visible,
-		   cone.multimesh.visible_instance_count,
-		   cone.multimesh.instance_count])
+	var tm: ShaderMaterial = scene.terrain.material()
+	print("  grab: drone %s, lamp %s, scan_gain %.2f"
+		% [scene.drone_state, lamp != null and lamp.visible,
+		   float(tm.get_shader_parameter("scan_gain")) if tm != null else -1.0])
 	return root.get_texture().get_image()
 
 

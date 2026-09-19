@@ -144,7 +144,6 @@ var _mm_shields: MultiMeshInstance3D
 ## The drone's scanning light: a real spot, plus a cone of visible haze so it
 ## reads on a screen as well as lighting the ground.
 var _scan_light: SpotLight3D = null
-var _scan_cone: MultiMeshInstance3D = null
 var _scan_t := 0.0
 var _module_scale := 1.0
 var _toast_t := 0.0
@@ -993,69 +992,6 @@ func _build_scan() -> void:
 	# which is not what the drone is doing. A handful of thin lines reaching
 	# down to the piece says "I am measuring it", which is.
 	#
-	# One MultiMesh rather than N nodes, because the count is a tunable and a
-	# knob that adds scene-tree nodes is a knob that gets left alone.
-	var bar := BoxMesh.new()
-	bar.size = Vector3(fx.scan_streak_w_m, 1.0, fx.scan_streak_w_m)
-	# OPAQUE AND EMISSIVE, exactly like _flat_mesh — and for exactly the reason
-	# written there.
-	#
-	# The first version of these streaks was alpha + additive + depth-draw off.
-	# It submitted perfectly: right transforms, right AABB, visible_instance_
-	# count set, spotlight forced off so nothing could wash it out — and drew
-	# NOTHING. Four attempts went into geometry that was already correct.
-	# _flat_mesh carries the same lesson from the health bars, a comment in
-	# this file I had read: those three flags are the ones nothing else in the
-	# project uses, and they do not draw on the Mobile renderer.
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.albedo_color = fx.scan_colour
-	mat.emission_enabled = true
-	mat.emission = fx.scan_colour
-	mat.emission_energy_multiplier = 1.35
-	bar.material = mat
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = bar
-	mm.instance_count = maxi(1, fx.scan_streaks)
-	# EXPLICITLY, not left at the -1 that is supposed to mean "all". This is
-	# what _instancer does for the beams and the shield bubbles, which render.
-	mm.visible_instance_count = mm.instance_count
-	_scan_cone = MultiMeshInstance3D.new()
-	_scan_cone.multimesh = mm
-	_scan_cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# A custom AABB big enough for the longest streak. A MultiMesh's automatic
-	# bounds are computed from its instance transforms, and these are rewritten
-	# every frame on a node that is itself moving; a stale box is a silent
-	# frustum cull, which looks exactly like an effect that does not draw.
-	#
-	# IT HAS TO FOLLOW THE DRONE, which the first version of it did not, and
-	# that — not the material — is why these still drew nothing after the
-	# material was fixed. The box is in the node's own space; the node sits at
-	# the scene root, so its origin is (0, 0, 0), while _place_streaks writes
-	# WORLD positions into the instances and the map runs 0..150 by 0..112.
-	# A box of +/- scan_range_m around the origin therefore covers one corner
-	# of the map and nothing else: measured with the drone at (44.8, 33.1,
-	# 26.0), all six streaks were outside it and the whole MultiMesh was
-	# culled. _place_streaks re-centres it now; this is only the opening value.
-	# NO CUSTOM AABB. _instancer — which builds the tracers, the beams and the
-	# shield bubbles, all of which render — sets none, and MultiMesh recomputes
-	# its own bounds when instance transforms are written. The custom box was
-	# added here out of a fear of a stale one and caused exactly the silent
-	# cull it was meant to prevent.
-	# ON THE SCENE ROOT, IN WORLD SPACE — not parented to the drone.
-	#
-	# Everything else that draws through a MultiMesh here (the tracers, the
-	# beams, the shield bubbles) is built by _instancer, which adds it to the
-	# scene root and writes world-space transforms. Hung under the drone
-	# instead, with correct local transforms, this drew nothing at all: the
-	# streaks were measured at the right length and the right splay, with the
-	# spotlight forced off so nothing could wash them out, and the frame was
-	# empty. Matching the pattern that works beats understanding why the other
-	# one does not.
-	add_child(_scan_cone)
-	_place_streaks(0.0)
 
 
 ## Point and sweep the scan, and switch it off when there is nothing to scan.
@@ -1069,77 +1005,27 @@ func _sync_scan(delta: float) -> void:
 	var on: bool = fx.scan_enabled \
 		and (drone_state == "working" or drone_state == "outbound")
 	_scan_light.visible = on
-	_scan_cone.visible = on
 	if not on:
+		terrain.set_scan(Vector2.ZERO, 0.0, 0.0, 0.0)
 		return
 	# Sweeps while it works, and points dead ahead while it is still flying —
 	# a searching beam and a working one should not look the same.
 	_scan_t += delta
 	var lean: float = fx.scan_tilt_deg * (1.0 if drone_state == "working"
 		else 0.35)
-	var a := _scan_t * TAU * fx.scan_sweep_hz
+	var a: float = _scan_t * TAU * fx.scan_sweep_hz
 	var tilt := Vector3(-90.0 + sin(a) * lean, 0.0, cos(a * 0.8) * lean)
 	_scan_light.rotation_degrees = tilt
-	# THE CONE NODE IS NEVER ROTATED. It used to take the sweep's tilt here,
-	# which made sense while it hung under the drone and its instances were in
-	# drone space. It sits at the scene root now and _place_streaks writes
-	# WORLD positions into it, so a rotation of the node is a rotation of those
-	# positions ABOUT THE MAP'S ORIGIN: at 14 degrees and 50 m out, that threw
-	# every streak about twelve metres away from the drone. Measured — the
-	# drone reported (44.7, 33.1, 26.1) while the transforms it had just been
-	# given read (48.6, 24.0, 29.0) in the same frame.
-	#
-	# Nothing is lost by dropping it. The sweep is the SPOTLIGHT's job, which
-	# still takes `tilt` above, and each bar is already leaned and spun
-	# individually in _place_streaks.
-	_place_streaks(_scan_t)
-
-
-## Lay the streaks out around the cone the spotlight lights.
-##
-## They spin at their own rate rather than the sweep's, so the pattern never
-## settles into something that looks like one rigid object being waved about.
-## Each one is a unit box scaled to the full range, which is why the Y offset is
-## half of it: a BoxMesh is centred on its origin.
-func _place_streaks(t: float) -> void:
-	if _scan_cone == null:
-		return
-	var mm: MultiMesh = _scan_cone.multimesh
-	var n := mm.instance_count
-	var origin := drone.position
-	# AS FAR AS THE GROUND, not as far as the light carries.
-	#
-	# The first version made every streak scan_range_m long — 16 m — while the
-	# drone flies 5.5 m up, so ten metres of every streak was underground and
-	# the visible remainder was hidden by the terrain it was buried in. The
-	# screenshot showed a drone with no scan at all. The light's range and the
-	# distance to the floor are simply different numbers.
-	# Capped well under scan_range_m: over the biodome's edge the "ground" is
-	# the chasm floor, and an unclamped reach threw eight-metre streaks off
-	# into the void.
-	var reach: float = clampf(
-		drone.position.y - terrain.height_at(drone_pos), 0.5, 7.0)
-	# Splayed WIDER than the light's cone: the light wants to stay on the piece,
-	# the streaks need to lean far enough off vertical that a near-top-down
-	# camera sees their length instead of their cross-section.
-	var spread: float = tan(deg_to_rad(
-		minf(72.0, fx.scan_angle_deg * fx.scan_streak_splay))) * reach
-	for i in n:
-		# Not evenly spaced: an even ring of four reads as a fixture. The
-		# golden angle keeps them from ever lining up.
-		var ang := float(i) * 2.39996 + t * TAU * fx.scan_streak_spin_hz
-		# Staggered radii too, so they do not all land on one circle.
-		var r := spread * (0.35 + 0.65 * float((i * 7) % 5) / 4.0)
-		var basis := Basis().scaled(Vector3(1.0, reach, 1.0))
-		var tip := Vector3(cos(ang) * r, -reach, sin(ang) * r)
-		# Lean the bar so it runs from the drone to where it lands, instead of
-		# hanging straight down and missing the lit spot.
-		var dir := tip.normalized()
-		var up := Vector3(0.0, 1.0, 0.0)
-		var axis := up.cross(dir)
-		if axis.length_squared() > 1.0e-6:
-			basis = Basis(axis.normalized(), up.angle_to(dir)) * basis
-		mm.set_instance_transform(i, Transform3D(basis, origin + tip * 0.5))
+	# THE GROUND SWEEP, phase driven from _scan_t and NEVER from TIME. A
+	# TIME-driven sweep keeps moving through tools/scan_check.gd's frozen
+	# scene, which lands the effect in the measurement's noise floor instead of
+	# its signal — the vine wind already does exactly that and contributes
+	# ~46000 changed pixels to a "frozen" frame. A uniform pushed from GDScript
+	# freezes with the sim, so the floor stays at the tonemapper's dither.
+	var pulse: float = sin(_scan_t * TAU * fx.scan_pulse_hz) * 0.5 + 0.5
+	terrain.set_scan(drone_pos, a,
+		lerpf(fx.scan_ground_min_m, fx.scan_ground_max_m, pulse),
+		fx.scan_gain)
 
 
 func _drone(delta: float) -> void:
