@@ -230,3 +230,68 @@ Painting the *ambient* map is the more interesting half. Flattening shading
 into patches is most of what makes a render read as painted, and until now the
 Kuwahara had only ever been run on albedo, where it measured a mild 17.3% of
 the frame against a 3.9% noise floor.
+
+## Combined with the painted look, measured, and blocked on a look decision
+
+Both maps compose in the pipeline exactly as intended. Applied to the real
+engine at any visible strength, they fail — and not for the reason predicted.
+
+1600x900, fog open, forced re-import on both textures, against a 4.2% noise
+floor:
+
+| setting | mean d | >2 levels | detail | median luma | saturation | look_check |
+|---|---|---|---|---|---|---|
+| baseline (ships today) | — | — | 100% | 0.194 | 0.47 | **4/4 pass** |
+| sky 1.0, tint 1.0 | 11.95 | 53.2% | 88% | 0.120 | 1.00 | 2/4 |
+| + painted albedo | 11.85 | 53.1% | 88% | 0.117 | 1.00 | 2/4 |
+| + painted ambient too | 11.92 | 53.1% | 84% | 0.117 | 1.00 | 2/4 |
+| sky 0.30, tint 0.15 | 3.64 | 50.5% | 95% | 0.170 | 0.59 | 2/4 |
+| sky 0.85, tint 0.25, exposure 1.45 | 7.32 | 95.6% | 112% | 0.180 | 0.66 | 2/4 |
+
+### The painted pass is buried, not cancelled
+
+Rows two and three are the same measurement — 53.2% against 53.1%, luma 0.120
+against 0.117. The painted albedo, which on its own moved 17.3% of the frame,
+contributes nothing once an ambient term this heavy is over it. Painting the
+ambient map as well takes frame detail from 88% to 84%, which is real and is a
+rounding error beside the lighting. The guess that the two treatments might
+partly cancel was wrong in kind: the lighting does not fight the painting, it
+buries it.
+
+### Two failures, two different causes
+
+**Luma** is the ambient term. The map's mean is 0.295 — the mat really does
+block 70% of the sky — so a quarter of the frame's luminance is the honest
+physical cost of applying it. `look_check` passes within 0.06 of 0.250, so the
+floor is 0.190 and the build already sits at 0.194.
+
+**Saturation** is the tint, and tracks it almost linearly: 0.47 at tint 0, 0.59
+at 0.15, 0.66 at 0.25, a fully clipped 1.00 at 1.0. An earlier guess that this
+came from ambient being attenuated while bio-luminescence was not is WRONG —
+the shader already multiplies `emit` by `ao`, and the numbers point at the
+tint instead.
+
+### The usable envelope is invisible, and exposure does not rescue it
+
+Solving both constraints at the current scene settings gives roughly
+`baked_sky` 0.05 and `baked_sky_tint` 0.10 — small enough that nothing would
+be visible, which defeats the point of baking it.
+
+Exposure was the obvious compensation and it does not work either. At 1.45 the
+frame still reads 0.180, under the 0.190 floor, because exposure lifts
+everything including what is already bright while the median sits in the
+darkened ground. It also moved 95.6% of the frame, which is the whole game's
+look changing, not the floor's.
+
+### What this is actually waiting on
+
+Not a knob. The biodome's lighting was authored against a floor with **no
+occlusion at all**, and every value in `lighting.tres` — sun energy, ambient
+energy, tonemap exposure — is balanced for that. Adopting real sky occlusion
+means re-authoring those together with the map on, judged against the
+reference paintings, rather than trying to slot it under numbers chosen
+without it.
+
+That is a look decision across the whole game, so it is left here rather than
+guessed at. `baked_sky` and `baked_sky_tint` both ship at 0.0, the maps are
+reproducible from two commands, and nothing in the current build has changed.
