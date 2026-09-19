@@ -97,6 +97,23 @@ however much the sky is tinted, and clips 3.7%. There is now an assertion that
 fails above 5%, because a mostly-clipped map has thrown away the thing it was
 baked for and still looks like a picture.
 
+That assertion immediately earned itself. Per-channel medians still clipped
+**22% of `night.exr`** — and for a reason the flat-sky cases could never show.
+The reference is a copy of the *terrain*, not a flat card, and `night.exr` has
+a moon in it. A slope tilted toward a moon genuinely receives more light than
+level ground does, so "the median open surface" is not a ceiling at all. The
+divisor is now the **99th percentile** of the open reference: the best-lit open
+surface this terrain has, which is what every occluded texel is a fraction of.
+`night` then clips 1.1%.
+
+A third, duller bug sat underneath both: `STUDIO` was built from
+`os.path.dirname(bpy.__file__)`, which lands in `<root>/scripts/modules/bpy`
+while the datafiles are at `<root>/datafiles` — two directories too deep. It
+raised `FileNotFoundError` only on the branch that lists the built-in skies,
+so every `game` run during development passed and all three Poly Haven
+candidates failed the moment they were asked for. `bpy.utils.resource_path`
+now anchors it.
+
 ### The gap between AO and irradiance is still open
 
 With both normalised properly, on the same scene:

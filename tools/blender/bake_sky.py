@@ -50,7 +50,12 @@ CAGE_M = 1.4
 # Haven)." So the free HDRIs are already on disk, which is just as well —
 # polyhaven.com and every other HDRI host is blocked by this environment's
 # egress proxy.
-STUDIO = os.path.join(os.path.dirname(bpy.__file__), "datafiles",
+# bpy.utils.resource_path, NOT os.path.dirname(bpy.__file__). The module lives
+# at <root>/scripts/modules/bpy and the datafiles at <root>/datafiles, so the
+# obvious anchor points two directories too deep — which raised FileNotFound
+# only on the branch that lists the built-in skies, i.e. never during the
+# `game` runs this was developed against.
+STUDIO = os.path.join(bpy.utils.resource_path('LOCAL'), "datafiles",
                       "studiolights", "world")
 
 
@@ -149,13 +154,25 @@ def _open_reference(low, mat, node, res_x, res_y):
     bpy.data.images.remove(img)
     bpy.data.objects.remove(ref, do_unlink=True)
     bpy.context.scene.render.bake.use_selected_to_active = True
-    # PER CHANNEL. One scalar for all three destroys the one thing an HDRI is
-    # here to provide. The first version returned the median across channels,
-    # which is fine for a white sky and ruinous for a coloured one: this
-    # biodome's own sky is strongly blue, so its blue irradiance sat well above
-    # that median and 74% of the map came back clipped at 1.0 in blue while red
-    # sat low — a tint measured and then flattened by the clamp.
-    return np.median(lit, axis=0) if lit.size else np.zeros(3, np.float32)
+    # PER CHANNEL, AND THE BRIGHTEST OPEN SURFACE RATHER THAN THE TYPICAL ONE.
+    #
+    # Two separate mistakes were made here, and the clamp hid both.
+    #
+    # First this returned one scalar, the median across all three channels.
+    # Fine for a white sky, ruinous for a coloured one: this biodome's sky is
+    # strongly blue, so its blue irradiance sat well above that median, 74% of
+    # the map clipped at 1.0 in blue while red sat low, and the tint the bake
+    # exists to carry was flattened by the very step meant to normalise it.
+    #
+    # Per-channel medians then still clipped 22% of `night.exr`, because the
+    # reference is a copy of the TERRAIN, not a flat card, and a sky with a
+    # moon in it is strongly directional: a slope tilted toward the moon really
+    # does receive more light than level ground, so "the median open surface"
+    # is not the ceiling. The 99th percentile is — it is the best-lit open
+    # surface this terrain has, which is what the occluded ones are a fraction
+    # of.
+    return (np.percentile(lit, 99.0, axis=0) if lit.size
+            else np.zeros(3, np.float32))
 
 
 def main():
