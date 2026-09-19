@@ -1,6 +1,7 @@
 [gd_resource type="Resource" script_class="BiomePalette" format=3]
 
 [ext_resource type="Texture2D" path="res://textures/canopy_cookie.png" id="1_4ecwt"]
+[ext_resource type="Texture2D" path="res://textures/ground_sky_c.png" id="4_skyc"]
 [ext_resource type="Script" path="res://scripts/resources/ground_material.gd" id="2_pk5fx"]
 [ext_resource type="Script" path="res://scripts/resources/biome_palette.gd" id="3_o5cs5"]
 
@@ -86,7 +87,8 @@ bio_root_reach_m = 1.6
 detail_strength = 0.5
 detail_albedo = 0.18
 baked_normal = 0.85
-baked_colour = 0.55
+baked_colour = 1.0
+baked_colour_tex = ExtResource("4_skyc")
 baked_ink = 0.55
 baked_ink_power = 2.0
 cast_tex_0 = ExtResource("1_4ecwt")

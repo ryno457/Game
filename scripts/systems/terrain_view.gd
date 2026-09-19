@@ -153,7 +153,11 @@ func apply_palette(p: BiomePalette) -> void:
 		_mat.set_shader_parameter("cast_shadow_reach_m", p.cast_shadow_reach_m)
 	else:
 		_mat.set_shader_parameter("cast_shadow_strength", 0.0)
-	_mat.set_shader_parameter("detail_colour_tex", load(DETAIL_C))
+	# The albedo map. The palette may point this at a bake_sky.py output, in
+	# which case a chosen HDRI's light is already in the pixels; null falls back
+	# to the unlit bake, same guard idiom as cast_tex_0 above.
+	_mat.set_shader_parameter("detail_colour_tex",
+		p.baked_colour_tex if p.baked_colour_tex != null else load(DETAIL_C))
 	# Guarded like the depth map: a checkout without the AO bake gets the old
 	# look rather than a missing-texture black floor.
 	if ResourceLoader.exists(DETAIL_AO):

@@ -108,6 +108,14 @@ extends Resource
 ## is no tile: the terrain is a fixed shape now, so it carries a real unwrap.
 @export_range(0.0, 2.0) var baked_normal: float = 0.0
 @export_range(0.0, 1.0) var baked_colour: float = 0.0
+## WHICH map goes in the albedo slot. Null means the unlit bake at
+## TerrainView.DETAIL_C, which is what this was before the sky bake existed.
+## Pointing it at a bake_sky.py output puts a chosen HDRI's light INTO the
+## albedo instead of asking the engine to light the ground at runtime — the
+## terrain is a fixed shape, so the light that falls on it is fixed too, and
+## baking it is free where computing it is not. Drop sun_energy and
+## ambient_energy when you do, or the sky is paid for twice.
+@export var baked_colour_tex: Texture2D
 ## CONTACT SHADING from the same bake. The mat lies ON the ground and until
 ## this existed it occluded nothing: the only AO the terrain had came from
 ## TerrainBuilder.bake_shade(), which sweeps the heightfield at one value per
