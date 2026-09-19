@@ -16,6 +16,11 @@ var painted_ink := 0.35
 var painted_machine_detail := 0.0
 ## And how hard the shared scale map bites on everything that grew.
 var painted_scale_detail := 0.0
+## ONE COLOUR FOR EVERY MACHINE, overriding what each model was authored with.
+## Alpha 0 means leave them alone, which is what a checkout without the palette
+## field gets. See MACHINES for what counts as one and apply_painted for why the
+## emissive slots are exempt.
+var painted_machine_albedo := Color(0.0, 0.0, 0.0, 0.0)
 ## Loads the Blender-authored glTF assets and hands out ready-to-place nodes.
 ##
 ## Two things it fixes centrally rather than per-caller:
@@ -42,6 +47,19 @@ var painted_scale_detail := 0.0
 
 const DIR := "res://models/"
 
+## WHICH MODELS ARE MACHINES. Listed rather than inferred from a prefix, the way
+## sways() infers flora, because the machines do not share one: bulwark, guard,
+## turret and radar are the buildable ones, drone and module_forms are the
+## player's own. Anything not named here — the aliens, the flora, rock_spire —
+## keeps the colour it was authored with, which is the point: the aliens must
+## NOT go grey with them.
+const MACHINES := ["bulwark", "drone", "guard", "module_forms", "radar",
+	"turret"]
+
+
+static func is_machine(model_name: String) -> bool:
+	return MACHINES.has(model_name)
+
 var _scenes: Dictionary = {}     # name -> PackedScene
 var _ground: Dictionary = {}     # name -> float offset
 
@@ -61,7 +79,8 @@ func load_model(model_name: String) -> PackedScene:
 	# the ground it stood on.
 	if painted_ramp != null:
 		apply_painted(packed, painted_ramp, painted_ink, model_name,
-			painted_machine_detail, painted_scale_detail)
+			painted_machine_detail, painted_scale_detail,
+			painted_machine_albedo)
 	_scenes[model_name] = packed
 	return packed
 
@@ -123,7 +142,8 @@ static func sways(model_name: String) -> bool:
 
 static func apply_painted(packed: PackedScene, ramp: Texture2D,
 		ink := 0.35, model_name := "", machine_detail := 0.0,
-		scale_detail := 0.0) -> int:
+		scale_detail := 0.0,
+		machine_albedo := Color(0.0, 0.0, 0.0, 0.0)) -> int:
 	var shader: Shader = load(PAINTED_SHADER)
 	if shader == null:
 		return 0
@@ -140,7 +160,23 @@ static func apply_painted(packed: PackedScene, ramp: Texture2D,
 				continue
 			var sm := ShaderMaterial.new()
 			sm.shader = shader
-			sm.set_shader_parameter("albedo", std.albedo_color)
+			# ONE GREY FOR THE MACHINES, and only for the parts that are not
+			# lights. Overriding every slot would take the cyan out of the
+			# drone's pods and the turret's sight, which is the only colour
+			# those models have and the only thing that says a machine is
+			# powered. Emissive slots keep what they were authored with.
+			#
+			# This does not touch the baked sky light: that arrives in COLOR_0
+			# and painted_prop multiplies albedo BY it, so the grey is the
+			# pigment and the vertex colour is still the shading. Recolouring
+			# in the Blender builders instead would have meant re-exporting six
+			# models to change one look decision.
+			var lit: bool = std.emission_enabled \
+				and std.emission_energy_multiplier > 0.0
+			if machine_albedo.a > 0.0 and is_machine(model_name) and not lit:
+				sm.set_shader_parameter("albedo", machine_albedo)
+			else:
+				sm.set_shader_parameter("albedo", std.albedo_color)
 			sm.set_shader_parameter("roughness_v", std.roughness)
 			sm.set_shader_parameter("emission_tint", std.emission)
 			# emission_energy_multiplier, not emission_energy: the latter does

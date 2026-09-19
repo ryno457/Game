@@ -142,6 +142,10 @@ extends Resource
 @export_range(0.0, 1.0) var prop_rim_ink: float = 0.35
 ## How hard the machines' baked normal map bites. Panel seams and chamfers,
 ## from tools/blender/bake_machines.py.
+## ONE COLOUR FOR EVERY MACHINE, overriding what each model was authored with,
+## on the non-emissive slots only. Alpha 0 leaves the models alone. See
+## ModelLibrary.MACHINES for what counts — the aliens deliberately do not.
+@export var machine_albedo: Color = Color(0.0, 0.0, 0.0, 0.0)
 @export_range(0.0, 4.0) var machine_detail: float = 1.6
 ## How hard the shared scale map bites on the plants and the structures. The
 ## machines are deliberately excluded: they carry their own baked panel detail,
@@ -163,6 +167,11 @@ extends Resource
 @export var cast_tex_2: Texture2D
 ## Per layer. Zero skips that layer's texture fetch entirely.
 @export var cast_strength := Vector3(0.55, 0.0, 0.0)
+## How much of the canopy lattice lands in the ALBEDO rather than only in the
+## direct light. See the uniform in terrain_lit.gdshader: the light-only path
+## stopped reading once the albedo became a baked irradiance map and ambient
+## went up to suit it. 0 is the old behaviour.
+@export_range(0.0, 1.0) var cast_albedo: float = 0.0
 ## Metres of ground per tile, per layer. The canopy texture is 9 hexes across,
 ## so 46 m makes one panel of the roof about 5 m wide.
 @export var cast_scale_m := Vector3(46.0, 120.0, 17.0)

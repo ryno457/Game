@@ -141,6 +141,7 @@ func apply_palette(p: BiomePalette) -> void:
 	_mat.set_shader_parameter("cast_tex_1", p.cast_tex_1)
 	_mat.set_shader_parameter("cast_tex_2", p.cast_tex_2)
 	_mat.set_shader_parameter("cast_strength", p.cast_strength)
+	_mat.set_shader_parameter("cast_albedo", p.cast_albedo)
 	_mat.set_shader_parameter("cast_scale_m", p.cast_scale_m)
 	_mat.set_shader_parameter("cast_drift_01", p.cast_drift_01)
 	_mat.set_shader_parameter("cast_drift_2", p.cast_drift_2)

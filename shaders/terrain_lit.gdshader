@@ -305,6 +305,21 @@ uniform sampler2D cast_tex_0 : filter_linear_mipmap, repeat_enable;
 uniform sampler2D cast_tex_1 : filter_linear_mipmap, repeat_enable;
 uniform sampler2D cast_tex_2 : filter_linear_mipmap, repeat_enable;
 uniform vec3 cast_strength = vec3(0.0);   // per layer; 0 skips that fetch
+// HOW MUCH OF THE CANOPY LANDS IN THE ALBEDO rather than only in the light.
+//
+// v_canopy is consumed inside light(), so it rides on DIRECT light alone. That
+// was fine while the moon did most of the lighting. It is not fine now: the
+// albedo carries a baked irradiance map and ambient_energy went 0.27 -> 0.75 to
+// suit it, so the hex lattice is a small modulation of a small term and it
+// vanished. Putting a share of it into the albedo makes the roof's shadow part
+// of the SURFACE, which is defensible for the same reason baking the sky into
+// the albedo was: the biodome roof is a fixed structure over a fixed map, so
+// the shadow it throws is fixed too.
+//
+// Separate from cast_strength on purpose. cast_strength says how dark the
+// lattice is; this says how much of that survives the lighting balance. Zero
+// restores the old behaviour exactly.
+uniform float cast_albedo : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 cast_scale_m = vec3(46.0);   // metres per tile, per layer
 uniform vec4 cast_drift_01 = vec4(0.0);   // xy shifts layer 0, zw layer 1
 uniform vec2 cast_drift_2 = vec2(0.0);
@@ -900,7 +915,7 @@ void fragment() {
 		base = floor(base * paint_quantise + 0.5) / paint_quantise;
 	}
 
-	ALBEDO = base * sky_tint;
+	ALBEDO = base * sky_tint * mix(1.0, v_canopy, cast_albedo);
 	// AO darkens AMBIENT; ao_light_affect is folded into v_shade for the direct
 	// term instead, because a custom light() bypasses the engine's own AO path.
 	AO = ao;
