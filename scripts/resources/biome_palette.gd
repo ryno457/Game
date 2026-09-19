@@ -382,3 +382,26 @@ extends Resource
 ## not art: set to 0 for screenshots, back to 0.85 to check a trench actually
 ## severed the ground.
 @export_range(0.0, 1.0) var threshold_line_strength: float = 0.85
+
+@export_group("Instance variety")
+## A DETERMINISTIC per-instance tint, so four hundred props are not one prop
+## repeated four hundred times.
+##
+## The dressing already varies scale and yaw; colour was the one thing every
+## copy shared, and it is the one the eye picks up fastest — a field of
+## identical hue reads as wallpaper however varied the silhouettes are.
+##
+## Seeded from the instance's own position, not from a random generator, for
+## the reason everything else in this project is: CLAUDE.md wants a
+## deterministic sim, and a prop that changes colour when the scene reloads is
+## a prop that cannot be screenshotted twice.
+##
+## Hue is in TURNS, so 0.04 is about 14 degrees either way. Keep both small:
+## this is meant to read as the same species under the same moon, not as a
+## bag of sweets.
+@export_range(0.0, 0.25) var prop_hue_jitter: float = 0.035
+@export_range(0.0, 0.6) var prop_value_jitter: float = 0.22
+## The same, for the hostiles. They are drawn as instanced boxes and every one
+## of them was Color(1.0, 0.36, 0.45) exactly.
+@export_range(0.0, 0.25) var alien_hue_jitter: float = 0.045
+@export_range(0.0, 0.6) var alien_value_jitter: float = 0.26
