@@ -35,7 +35,7 @@ import bpy
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _bl import script_args                                      # noqa: E402
+from _bl import footprint_mask, image_array, script_args         # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BLEND = os.path.join(ROOT, "art", "detail_vines.blend")
@@ -47,22 +47,6 @@ TARGET = "bake_target"
 # The same cage detail_source.py bakes the other three maps through, so the
 # rays that find the vines here are the rays that found them there.
 CAGE_M = 1.4
-
-
-def footprint_mask(shape):
-    """True where the biodome floor is, False in the off-map void."""
-    img = bpy.data.images.load(FOOTPRINT)
-    buf = np.empty(len(img.pixels), dtype=np.float32)
-    img.pixels.foreach_get(buf)
-    c = buf.reshape(img.size[1], img.size[0], img.channels)[..., :3].mean(axis=2)
-    bpy.data.images.remove(img)
-    if c.shape != shape:
-        # Nearest-neighbour, because this is a mask and a filtered edge would
-        # blend void into floor.
-        yi = (np.arange(shape[0]) * c.shape[0] // shape[0]).clip(0, c.shape[0] - 1)
-        xi = (np.arange(shape[1]) * c.shape[1] // shape[1]).clip(0, c.shape[1] - 1)
-        c = c[yi][:, xi]
-    return c > 0.02
 
 
 def main():
@@ -107,9 +91,7 @@ def main():
     bpy.context.view_layer.objects.active = low
     bpy.ops.object.bake(type='AO')
 
-    buf = np.empty(len(img.pixels), dtype=np.float32)
-    img.pixels.foreach_get(buf)
-    a = buf.reshape(res_y, res_x, img.channels)[..., 0]
+    a = image_array(img)[..., 0]
 
     img.filepath_raw = OUT
     img.file_format = 'PNG'
@@ -124,7 +106,7 @@ def main():
     # mostly measuring how much of the texture is empty. An assertion that
     # passes because the margin is black would pass just as happily on a bake
     # that found no geometry at all, which is the exact failure it is for.
-    inside = footprint_mask(a.shape)
+    inside = footprint_mask(a.shape, FOOTPRINT)
     m = a[inside]
     print("PY: inside the map footprint (%d of %d texels, %.0f%% of the image)"
           % (inside.sum(), a.size, 100.0 * inside.mean()))

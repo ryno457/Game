@@ -43,3 +43,34 @@ def cycles_cpu(scene, samples):
     scene.cycles.device = 'CPU'
     scene.cycles.samples = samples
     scene.cycles.use_denoising = True     # render() falls back if unsupported
+
+
+def image_array(img):
+    """An image datablock as a float H x W x channels array."""
+    import numpy as np
+    buf = np.empty(len(img.pixels), dtype=np.float32)
+    img.pixels.foreach_get(buf)
+    return buf.reshape(img.size[1], img.size[0], img.channels)
+
+
+def footprint_mask(shape, colour_bake):
+    """True where the biodome floor is, False in the off-map void.
+
+    Every whole-map bake shares one unwrap, so the colour bake's silhouette is
+    every other bake's silhouette. Worth a shared helper because getting it
+    wrong is not obvious: the void is black, black reads as fully occluded or
+    fully unlit, and a statistic taken over the whole image is then mostly a
+    measure of how much of the texture is empty. That mistake has already been
+    made once here, on the AO bake, where it turned a mean of 0.862 into 0.663.
+    """
+    import numpy as np
+    img = bpy.data.images.load(colour_bake)
+    c = image_array(img)[..., :3].mean(axis=2)
+    bpy.data.images.remove(img)
+    if c.shape != tuple(shape):
+        # Nearest neighbour: this is a mask, and a filtered edge would blend
+        # void into floor.
+        yi = (np.arange(shape[0]) * c.shape[0] // shape[0]).clip(0, c.shape[0] - 1)
+        xi = (np.arange(shape[1]) * c.shape[1] // shape[1]).clip(0, c.shape[1] - 1)
+        c = c[yi][:, xi]
+    return c > 0.02
