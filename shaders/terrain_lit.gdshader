@@ -312,6 +312,18 @@ uniform vec2 cast_drift_2 = vec2(0.0);
 uniform vec3 cast_scroll_mps = vec3(0.0);
 uniform float baked_normal = 0.0;   // 0 skips both fetches entirely
 uniform float baked_colour = 0.0;
+// CONTACT SHADING FROM THE VINE MAT, baked off the same 1.28 M-face source as
+// the normal and the colour.
+//
+// The shade_map below already carries an AO channel, and it is a different
+// occlusion: it sweeps the HEIGHTFIELD, one value per metre, so it knows about
+// plateaus and trenches and nothing else. The mat lying on top of that ground
+// occluded nothing, which is what made it read as a pattern printed on the
+// floor rather than as something resting on it.
+// One fetch, at the same whole-map UV as the other two bakes, skipped entirely
+// at zero.
+uniform sampler2D detail_ao_tex : filter_linear_mipmap, repeat_disable;
+uniform float baked_ao = 0.0;
 // INK ALONG EVERY BAKED FORM, from the normal map already in hand.
 //
 // Both references outline every shape in a dark, saturated version of its own
@@ -792,9 +804,16 @@ void fragment() {
 	// One fetch, three cues. See the uniform block for why they are baked.
 	float ao = 1.0;
 	float curv = 0.0;
+	if (baked_ao > 0.0) {
+		// Before the heightfield's own AO, and multiplied with it rather than
+		// mixed: two independent occluders of the same point darken it twice,
+		// which is what they physically do.
+		ao *= mix(1.0, texture(detail_ao_tex, v_world.xz / field_size_m).r,
+			baked_ao);
+	}
 	if (ao_strength > 0.0 || shadow_strength > 0.0 || curv_gain > 0.0) {
 		vec3 sh = textureLod(shade_map, v_world.xz / field_size_m, 0.0).rgb;
-		ao = mix(1.0, sh.r, ao_strength);
+		ao *= mix(1.0, sh.r, ao_strength);
 		float cast_shadow = mix(1.0, sh.g, shadow_strength);
 
 		// Curvature at two scales. The wide one is baked (it needs a few cells

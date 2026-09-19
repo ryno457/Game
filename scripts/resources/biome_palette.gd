@@ -108,6 +108,12 @@ extends Resource
 ## is no tile: the terrain is a fixed shape now, so it carries a real unwrap.
 @export_range(0.0, 2.0) var baked_normal: float = 0.0
 @export_range(0.0, 1.0) var baked_colour: float = 0.0
+## CONTACT SHADING from the same bake. The mat lies ON the ground and until
+## this existed it occluded nothing: the only AO the terrain had came from
+## TerrainBuilder.bake_shade(), which sweeps the heightfield at one value per
+## metre and cannot see a vine. Off by default so its cost and its look can be
+## turned on and measured separately, like every other term here.
+@export_range(0.0, 1.0) var baked_ao: float = 0.0
 ## A dark line along every baked form. The depth-based ink pass cannot draw
 ## these: the vines are a normal map on flat ground and change no depth at all.
 @export_range(0.0, 1.0) var baked_ink: float = 0.0

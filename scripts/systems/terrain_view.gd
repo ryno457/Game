@@ -39,6 +39,9 @@ const CANOPY := "res://textures/canopy_cookie.png"
 ## Baked beside the normal and the colour: how far the detail stands off the
 ## ground, so the mat can cast onto the floor.
 const DETAIL_D := "res://textures/ground_vines_d.png"
+## Baked alongside them by tools/blender/bake_ao.py: how much of the sky each
+## texel of ground can see once the mat is in the way.
+const DETAIL_AO := "res://textures/ground_vines_ao.png"
 
 var field: Heightfield
 var fog: FogOfWar
@@ -148,6 +151,13 @@ func apply_palette(p: BiomePalette) -> void:
 	else:
 		_mat.set_shader_parameter("cast_shadow_strength", 0.0)
 	_mat.set_shader_parameter("detail_colour_tex", load(DETAIL_C))
+	# Guarded like the depth map: a checkout without the AO bake gets the old
+	# look rather than a missing-texture black floor.
+	if ResourceLoader.exists(DETAIL_AO):
+		_mat.set_shader_parameter("detail_ao_tex", load(DETAIL_AO))
+		_mat.set_shader_parameter("baked_ao", p.baked_ao)
+	else:
+		_mat.set_shader_parameter("baked_ao", 0.0)
 	_mat.set_shader_parameter("detail_scale", p.detail_scale)
 	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m)
 	_mat.set_shader_parameter("macro_strength", p.macro_strength)
