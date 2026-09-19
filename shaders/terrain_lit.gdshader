@@ -341,6 +341,16 @@ uniform float baked_ao = 0.0;
 // mostly ambient.
 uniform sampler2D detail_sky_tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform float baked_sky = 0.0;
+// THE CHROMA NEEDS ITS OWN KNOB, and finding that out cost a render.
+//
+// Driving both halves from `baked_sky` looked reasonable and is not: at 1.0
+// the tint multiplies straight into ALBEDO, and with this map's 0.59/0.90/1.51
+// that is red x0.59 and blue x1.51 on the GROUND ITSELF. The frame did not
+// merely darken, it drowned — a teal floor with visible vine tracery became a
+// flat saturated blue field. Ambient light carrying the sky's colour is the
+// intent; repainting the terrain is not, and one number could not tell them
+// apart.
+uniform float baked_sky_tint = 0.0;
 // INK ALONG EVERY BAKED FORM, from the normal map already in hand.
 //
 // Both references outline every shape in a dark, saturated version of its own
@@ -829,7 +839,7 @@ void fragment() {
 		// Chroma only: the magnitude has already gone into `ao`, so dividing it
 		// back out leaves a tint that averages to white and cannot darken the
 		// ground a second time.
-		sky_tint = mix(vec3(1.0), sky / max(lum, 0.001), baked_sky);
+		sky_tint = mix(vec3(1.0), sky / max(lum, 0.001), baked_sky_tint);
 	}
 	if (baked_ao > 0.0) {
 		// Before the heightfield's own AO, and multiplied with it rather than

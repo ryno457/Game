@@ -164,8 +164,10 @@ func apply_palette(p: BiomePalette) -> void:
 	if ResourceLoader.exists(DETAIL_SKY):
 		_mat.set_shader_parameter("detail_sky_tex", load(DETAIL_SKY))
 		_mat.set_shader_parameter("baked_sky", p.baked_sky)
+		_mat.set_shader_parameter("baked_sky_tint", p.baked_sky_tint)
 	else:
 		_mat.set_shader_parameter("baked_sky", 0.0)
+		_mat.set_shader_parameter("baked_sky_tint", 0.0)
 	_mat.set_shader_parameter("detail_scale", p.detail_scale)
 	_mat.set_shader_parameter("detail_fade_m", p.detail_fade_m)
 	_mat.set_shader_parameter("macro_strength", p.macro_strength)

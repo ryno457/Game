@@ -119,6 +119,11 @@ extends Resource
 ## ground with the light actually reaching it. These two OVERLAP — turning this
 ## on means turning baked_ao off, or the same occlusion is counted twice.
 @export_range(0.0, 1.0) var baked_sky: float = 0.0
+## How much of the sky's COLOUR reaches the ground, separately from how much of
+## its shading does. These are not one knob: the tint multiplies into ALBEDO,
+## so driving it from baked_sky turned the floor into a flat blue field at full
+## strength. Keep it well below baked_sky.
+@export_range(0.0, 1.0) var baked_sky_tint: float = 0.0
 ## A dark line along every baked form. The depth-based ink pass cannot draw
 ## these: the vines are a normal map on flat ground and change no depth at all.
 @export_range(0.0, 1.0) var baked_ink: float = 0.0
