@@ -59,9 +59,10 @@ def main():
     env = world.node_tree.nodes.new("ShaderNodeTexEnvironment")
     env.image = bpy.data.images.load(sky)
     world.node_tree.links.new(env.outputs["Color"], bg.inputs["Color"])
-    # Lift the exposure: night.exr is a tenth of a daylight sky and the point
-    # of the sheet is to see the models, not to reproduce the game's darkness.
-    bg.inputs["Strength"].default_value = 6.0
+    # Lifted, but not to 6.0 — that blew the sky to a flat cream and took the
+    # models' own shading with it. night.exr is a tenth of a daylight sky, so
+    # some lift is needed to see anything; 2.2 is enough.
+    bg.inputs["Strength"].default_value = 2.2
 
     paths = sorted(glob.glob(os.path.join(MODELS, "*.glb")))
     n = len(paths)
@@ -100,12 +101,27 @@ def main():
     sc.collection.objects.link(cam)
     sc.camera = cam
     # The game's own three-quarter view, far enough back to hold the row.
-    cam.location = (0.0, -(width * 0.62 + 6.0), width * 0.30 + 5.0)
-    cam.rotation_euler = (math.radians(66.0), 0.0, 0.0)
-    cam_data.lens = 58.0
+    # AIMED AT THE ROW, not at a fixed angle. The first version set a pitch by
+    # hand and pointed most of the frame at empty sky with the models sliced
+    # off along the bottom edge; a Track To constraint cannot get that wrong.
+    cam_data.lens = 50.0
+    target = bpy.data.objects.new("target", None)
+    sc.collection.objects.link(target)
+    target.location = (0.0, 0.0, TARGET_H * 0.45)
+    # FAR ENOUGH BACK TO HOLD THE WHOLE ROW, computed rather than guessed.
+    # A hand-picked 0.52 * width put seven of the fifteen models outside the
+    # frame. Horizontal half-angle from the lens and Blender's 36 mm sensor,
+    # then the distance that fits half the row inside it, with a margin.
+    half_fov = math.atan(18.0 / cam_data.lens)
+    dist = (width * 0.5 + SPACING) / math.tan(half_fov)
+    cam.location = (0.0, -dist, TARGET_H * 1.6)
+    con = cam.constraints.new('TRACK_TO')
+    con.target = target
+    con.track_axis = 'TRACK_NEGATIVE_Z'
+    con.up_axis = 'UP_Y'
 
     sc.render.resolution_x = 2000
-    sc.render.resolution_y = 420
+    sc.render.resolution_y = 560
     sc.render.filepath = OUT
     sc.render.image_settings.file_format = 'PNG'
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
