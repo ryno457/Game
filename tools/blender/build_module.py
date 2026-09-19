@@ -26,6 +26,7 @@ import bpy, bmesh, os, sys, math, struct, json, random
 from mathutils import Matrix, Vector, Euler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _ao import default_sky, load_sky, sky_light_scene   # noqa: E402
 try:
     from _bl import script_args
 except Exception:                                    # pragma: no cover
@@ -506,9 +507,18 @@ for form in range(3):
     print("PY: built %s  parts=%d  tris(blender)=%d  top_z=%.3f"
           % (ob.name, len(b.parts), ntri, top))
 
-bpy.ops.export_scene.gltf(filepath=GLB, export_format='GLB',
-                          export_apply=False, export_yup=True,
-                          export_materials='EXPORT', use_selection=False)
+# The sky, baked in, just before the file is written. module_forms carried no
+# vertex colour at all until now.
+sky_light_scene(load_sky(default_sky()))
+_kw = dict(filepath=GLB, export_format='GLB',
+           export_apply=False, export_yup=True,
+           export_materials='EXPORT', use_selection=False)
+# Without export_vertex_color the exporter drops COLOR_0, because the default
+# emits only vertex colours a shader graph reads and these materials do not.
+try:
+    bpy.ops.export_scene.gltf(export_vertex_color='ACTIVE', **_kw)
+except TypeError:
+    bpy.ops.export_scene.gltf(**_kw)
 print("PY: exported %s (%d bytes)" % (GLB, os.path.getsize(GLB)))
 
 # =============================================================== VERIFY ======

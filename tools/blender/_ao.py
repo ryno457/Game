@@ -401,3 +401,53 @@ def remap_mean_spread(objs, want_mean, want_spread):
             q[:, :3] = np.clip(q[:, :3] * a + b, 0.0, 1.0)
             attr.data.foreach_set("color", q.ravel())
     return colour_stats(objs)
+
+
+def sky_light_scene(sky, rays=28, reach=2.4, target_mean=0.90,
+                    target_spread=0.14, skip=()):
+    """Bake the sky's light into every mesh in the current scene.
+
+    For the models that carry NOTHING today — the machines, the drone, the
+    module, both aliens — so the default target is a deliberate look decision
+    rather than a match to something that already existed. 0.90 / 0.14 is a
+    light touch, a shade brighter than the least-shaded prop (rock_spire at
+    0.92), because these have never had baked shading and the rest of the
+    lighting was balanced without it. The terrain bake is the cautionary tale:
+    physically honest occlusion dropped a quarter of the frame's luminance and
+    failed the value check outright.
+
+    `skip` names objects to leave alone — a mesh with no material cannot carry
+    vertex colours through glTF at all.
+    """
+    import bpy
+    objs = [o for o in bpy.data.objects
+            if o.type == 'MESH' and o.name not in skip
+            and len(o.material_slots) > 0]
+    if not objs:
+        return 1.0, 0.0
+    bake_vertex_sky(objs, sky, rays=rays, reach=reach,
+                    unoccluded_materials=emissive_slot_indices(objs))
+    return remap_mean_spread(objs, target_mean, target_spread)
+
+
+def emissive_slot_indices(objs):
+    """Material slots that emit, which must stay unshaded.
+
+    COLOR_0 multiplies base colour, and a light source with shading baked into
+    it looks like a dirty bulb.
+    """
+    out = set()
+    for o in objs:
+        for i, sl in enumerate(o.material_slots):
+            m = sl.material
+            if m is None or not m.use_nodes:
+                continue
+            for n in m.node_tree.nodes:
+                if n.type == 'EMISSION':
+                    out.add(i)
+                elif n.type == 'BSDF_PRINCIPLED':
+                    inp = n.inputs.get("Emission Strength")
+                    if inp is not None and (inp.links
+                                            or inp.default_value > 0.0):
+                        out.add(i)
+    return tuple(sorted(out))

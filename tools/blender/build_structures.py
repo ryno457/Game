@@ -28,6 +28,7 @@ Node contract for Godot:
 """
 import bpy, sys, os, math, struct, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _ao import default_sky, load_sky, sky_light_scene   # noqa: E402
 from mathutils import Matrix, Vector
 
 from _bl import script_args  # noqa: F401  (kept so both front ends work)
@@ -415,7 +416,11 @@ def build_bulwark(mats):
 # export + verification
 # =============================================================================
 def export_glb(path):
-    bpy.ops.export_scene.gltf(
+    # THE SKY, BAKED IN, JUST BEFORE THE FILE IS WRITTEN. These models carried
+    # no vertex colour at all until now — they were lit entirely by the runtime
+    # rig while the landscape under them had a whole-map light bake.
+    sky_light_scene(load_sky(default_sky()))
+    kwargs = dict(
         filepath=path,
         export_format='GLB',
         export_apply=True,
@@ -423,6 +428,14 @@ def export_glb(path):
         export_materials='EXPORT',
         use_selection=False,
     )
+    # export_vertex_color='ACTIVE' forces COLOR_0 out even though no material
+    # node reads it. Without it the exporter drops the bake entirely, because
+    # the default only emits vertex colours a shader graph actually uses and
+    # these materials deliberately do not — Godot applies COLOR_0 itself.
+    try:
+        bpy.ops.export_scene.gltf(export_vertex_color='ACTIVE', **kwargs)
+    except TypeError:
+        bpy.ops.export_scene.gltf(**kwargs)
 
 
 def read_glb(path):

@@ -41,6 +41,7 @@ Pose maths
 """
 import bpy, sys, os, math, cmath, struct, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _ao import default_sky, load_sky, sky_light_scene   # noqa: E402
 from mathutils import Matrix, Vector, Quaternion
 
 from _bl import script_args  # noqa: F401  (kept so both front ends work)
@@ -667,7 +668,12 @@ def _ensure_slot(ad, act, want):
 # =============================================================================
 def export_glb(path, **kw):
     """Filter kwargs to what this Blender's exporter actually accepts."""
+    # The sky, baked in first. These carried no vertex colour at all.
+    sky_light_scene(load_sky(default_sky()))
     props = set(bpy.ops.export_scene.gltf.get_rna_type().properties.keys())
+    # COLOR_0 only leaves the exporter if it is asked for by name: the default
+    # emits vertex colours a shader graph reads, and these materials do not.
+    kw.setdefault("export_vertex_color", "ACTIVE")
     kw = {k: v for k, v in kw.items() if k in props}
     bpy.ops.export_scene.gltf(filepath=path, **kw)
     return kw
