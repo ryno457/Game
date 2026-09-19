@@ -106,11 +106,35 @@ extends Resource
 @export var scan_energy: float = 2.6
 @export var scan_angle_deg: float = 22.0
 @export var scan_range_m: float = 16.0
+## HOW MANY STREAKS, and how wide each one is.
+##
+## This was a solid 14-sided cone of additive haze, which reads as a torch
+## rather than an instrument: a searchlight says "I am illuminating", a few
+## thin lines say "I am measuring". Few and thin on purpose — the moment there
+## are enough of them to merge, it is a cone again.
+@export_range(1, 12) var scan_streaks: int = 6
+## Wide enough to SEE FROM ABOVE. At 0.055 m the streaks rendered as nothing:
+## this camera looks almost straight down, a streak hangs almost straight down,
+## and a 5.5 cm stick viewed end-on is about one pixel. The first version was
+## measured as invisible with the spotlight switched off, which is the only way
+## to tell a streak that is too thin from one the light is washing out.
+@export var scan_streak_w_m: float = 0.10
+## How far round the cone the streaks drift as they sweep, in turns per second.
+## Different from scan_sweep_hz so the pattern never looks locked.
+@export var scan_streak_spin_hz: float = 0.21
 ## Revolutions per second of the sweep. Slow — this is an instrument, not a
 ## disco light.
 @export var scan_sweep_hz: float = 0.45
 ## How far off straight-down the cone leans as it sweeps.
 @export var scan_tilt_deg: float = 14.0
+## How far the STREAKS splay out, as a multiple of the light's cone angle. The
+## light wants to stay tight on the piece; the streaks need to lean over far
+## enough that a top-down camera sees their length rather than their end.
+## 1.25, not 2.6. At 2.6 the streaks stood almost horizontal and read as a
+## starburst pinned to the drone rather than something reaching down to the
+## piece. Enough lean to be seen from above, not so much that they stop
+## pointing at anything.
+@export var scan_streak_splay: float = 1.25
 
 @export_group("Emerge ring")
 ## The ring starts here and ends here, in metres, over the emerge time.

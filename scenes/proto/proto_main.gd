@@ -144,7 +144,7 @@ var _mm_shields: MultiMeshInstance3D
 ## The drone's scanning light: a real spot, plus a cone of visible haze so it
 ## reads on a screen as well as lighting the ground.
 var _scan_light: SpotLight3D = null
-var _scan_cone: MeshInstance3D = null
+var _scan_cone: MultiMeshInstance3D = null
 var _scan_t := 0.0
 var _module_scale := 1.0
 var _toast_t := 0.0
@@ -426,7 +426,6 @@ func _dress(landing: Vector2) -> void:
 			mmi.multimesh = MultiMesh.new()
 			mmi.multimesh.transform_format = MultiMesh.TRANSFORM_3D
 			mmi.multimesh.mesh = mesh
-			mmi.multimesh.use_colors = true
 			mmi.multimesh.instance_count = group.size()
 			mmi.multimesh.visible_instance_count = 0
 			# Shadow casting is the expensive half — every instance is drawn
@@ -455,13 +454,6 @@ func _cull_scenery() -> void:
 			if fog.level_at(Vector2(tr.origin.x, tr.origin.z)) <= 0.0:
 				continue
 			mmi.multimesh.set_instance_transform(n, tr)
-			# Seeded from where it stands, so the same prop is the same colour
-			# every frame, every run, and whichever slot the fog leaves it in.
-			# Keying off `n` instead would make a prop change colour as another
-			# one came into view.
-			mmi.multimesh.set_instance_color(n, _seed_tint(
-				tr.origin.x, tr.origin.z,
-				palette.prop_hue_jitter, palette.prop_value_jitter))
 			n += 1
 		mmi.multimesh.visible_instance_count = n
 		drawn += n
@@ -983,28 +975,63 @@ func _build_scan() -> void:
 	_scan_light.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
 	drone.add_child(_scan_light)
 
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.10
-	cone.bottom_radius = tan(deg_to_rad(fx.scan_angle_deg)) * fx.scan_range_m
-	cone.height = fx.scan_range_m
-	cone.radial_segments = 14
-	cone.rings = 0
+	# A FEW STREAKS, NOT A CONE.
+	#
+	# This used to be a 14-sided cylinder of additive haze hanging under the
+	# drone, and it read as a torch: a searchlight says "I am illuminating",
+	# which is not what the drone is doing. A handful of thin lines reaching
+	# down to the piece says "I am measuring it", which is.
+	#
+	# One MultiMesh rather than N nodes, because the count is a tunable and a
+	# knob that adds scene-tree nodes is a knob that gets left alone.
+	var bar := BoxMesh.new()
+	bar.size = Vector3(fx.scan_streak_w_m, 1.0, fx.scan_streak_w_m)
+	# OPAQUE AND EMISSIVE, exactly like _flat_mesh — and for exactly the reason
+	# written there.
+	#
+	# The first version of these streaks was alpha + additive + depth-draw off.
+	# It submitted perfectly: right transforms, right AABB, visible_instance_
+	# count set, spotlight forced off so nothing could wash it out — and drew
+	# NOTHING. Four attempts went into geometry that was already correct.
+	# _flat_mesh carries the same lesson from the health bars, a comment in
+	# this file I had read: those three flags are the ones nothing else in the
+	# project uses, and they do not draw on the Mobile renderer.
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.albedo_color = Color(fx.scan_colour.r, fx.scan_colour.g,
-		fx.scan_colour.b, 0.055)
-	cone.material = mat
-	_scan_cone = MeshInstance3D.new()
-	_scan_cone.mesh = cone
+	mat.albedo_color = fx.scan_colour
+	mat.emission_enabled = true
+	mat.emission = fx.scan_colour
+	mat.emission_energy_multiplier = 1.35
+	bar.material = mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = bar
+	mm.instance_count = maxi(1, fx.scan_streaks)
+	# EXPLICITLY, not left at the -1 that is supposed to mean "all". This is
+	# what _instancer does for the beams and the shield bubbles, which render.
+	mm.visible_instance_count = mm.instance_count
+	_scan_cone = MultiMeshInstance3D.new()
+	_scan_cone.multimesh = mm
 	_scan_cone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# A CylinderMesh stands on its Y axis, so the cone hangs straight down from
-	# the drone with its wide end on the ground.
-	_scan_cone.position = Vector3(0.0, -fx.scan_range_m * 0.5, 0.0)
-	drone.add_child(_scan_cone)
+	# A custom AABB big enough for the longest streak. A MultiMesh's automatic
+	# bounds are computed from its instance transforms, and these are rewritten
+	# every frame on a node that is itself moving; a stale box is a silent
+	# frustum cull, which looks exactly like an effect that does not draw.
+	var r := fx.scan_range_m
+	_scan_cone.custom_aabb = AABB(Vector3(-r, -r, -r), Vector3(r, r, r) * 2.0)
+	# ON THE SCENE ROOT, IN WORLD SPACE — not parented to the drone.
+	#
+	# Everything else that draws through a MultiMesh here (the tracers, the
+	# beams, the shield bubbles) is built by _instancer, which adds it to the
+	# scene root and writes world-space transforms. Hung under the drone
+	# instead, with correct local transforms, this drew nothing at all: the
+	# streaks were measured at the right length and the right splay, with the
+	# spotlight forced off so nothing could wash them out, and the frame was
+	# empty. Matching the pattern that works beats understanding why the other
+	# one does not.
+	add_child(_scan_cone)
+	_place_streaks(0.0)
 
 
 ## Point and sweep the scan, and switch it off when there is nothing to scan.
@@ -1030,6 +1057,54 @@ func _sync_scan(delta: float) -> void:
 	var tilt := Vector3(-90.0 + sin(a) * lean, 0.0, cos(a * 0.8) * lean)
 	_scan_light.rotation_degrees = tilt
 	_scan_cone.rotation_degrees = Vector3(tilt.x + 90.0, 0.0, tilt.z)
+	_place_streaks(_scan_t)
+
+
+## Lay the streaks out around the cone the spotlight lights.
+##
+## They spin at their own rate rather than the sweep's, so the pattern never
+## settles into something that looks like one rigid object being waved about.
+## Each one is a unit box scaled to the full range, which is why the Y offset is
+## half of it: a BoxMesh is centred on its origin.
+func _place_streaks(t: float) -> void:
+	if _scan_cone == null:
+		return
+	var mm: MultiMesh = _scan_cone.multimesh
+	var n := mm.instance_count
+	var origin := drone.position
+	# AS FAR AS THE GROUND, not as far as the light carries.
+	#
+	# The first version made every streak scan_range_m long — 16 m — while the
+	# drone flies 5.5 m up, so ten metres of every streak was underground and
+	# the visible remainder was hidden by the terrain it was buried in. The
+	# screenshot showed a drone with no scan at all. The light's range and the
+	# distance to the floor are simply different numbers.
+	# Capped well under scan_range_m: over the biodome's edge the "ground" is
+	# the chasm floor, and an unclamped reach threw eight-metre streaks off
+	# into the void.
+	var reach: float = clampf(
+		drone.position.y - terrain.height_at(drone_pos), 0.5, 7.0)
+	# Splayed WIDER than the light's cone: the light wants to stay on the piece,
+	# the streaks need to lean far enough off vertical that a near-top-down
+	# camera sees their length instead of their cross-section.
+	var spread: float = tan(deg_to_rad(
+		minf(72.0, fx.scan_angle_deg * fx.scan_streak_splay))) * reach
+	for i in n:
+		# Not evenly spaced: an even ring of four reads as a fixture. The
+		# golden angle keeps them from ever lining up.
+		var ang := float(i) * 2.39996 + t * TAU * fx.scan_streak_spin_hz
+		# Staggered radii too, so they do not all land on one circle.
+		var r := spread * (0.35 + 0.65 * float((i * 7) % 5) / 4.0)
+		var basis := Basis().scaled(Vector3(1.0, reach, 1.0))
+		var tip := Vector3(cos(ang) * r, -reach, sin(ang) * r)
+		# Lean the bar so it runs from the drone to where it lands, instead of
+		# hanging straight down and missing the lit spot.
+		var dir := tip.normalized()
+		var up := Vector3(0.0, 1.0, 0.0)
+		var axis := up.cross(dir)
+		if axis.length_squared() > 1.0e-6:
+			basis = Basis(axis.normalized(), up.angle_to(dir)) * basis
+		mm.set_instance_transform(i, Transform3D(basis, origin + tip * 0.5))
 
 
 func _drone(delta: float) -> void:
@@ -2186,39 +2261,8 @@ func _death_scale(a: Dictionary) -> float:
 
 ## The colour an instanced alien is drawn in: its own, lifted toward white for
 ## as long as its flash lasts, and dimmed as it dies.
-## A stable colour wobble for one instance, around white.
-##
-## DETERMINISTIC, from two numbers that identify the instance — a prop's
-## position, a hostile's uid. The usual fract(sin(dot)) hash: cheap, no state,
-## and the same answer on every run, which a seeded RNG would only manage if it
-## were drawn in a fixed order. Props are culled by fog, so they are not.
-##
-## Returned as a MULTIPLIER near white, because this rides in the MultiMesh
-## instance colour and the shader multiplies it into the albedo. Hue is rotated
-## by pushing the three channels around a circle 120 degrees apart, which keeps
-## the average at `val` instead of drifting bright the way a naive HSV round
-## trip does.
-static func _seed_tint(a: float, b: float, hue: float, val: float) -> Color:
-	var h := sin(a * 12.9898 + b * 78.233) * 43758.5453
-	h -= floor(h)
-	var v := sin(a * 39.3468 + b * 11.1357) * 24634.6345
-	v -= floor(v)
-	var ang := h * TAU
-	var lum := 1.0 + (v - 0.5) * val
-	return Color(
-		lum * (1.0 + hue * cos(ang)),
-		lum * (1.0 + hue * cos(ang - 2.0944)),
-		lum * (1.0 + hue * cos(ang + 2.0944)))
-
-
 func _alien_tint(a: Dictionary) -> Color:
-	# Every hostile used to be this exact colour. Seeded off the uid, which is
-	# stable for the life of the creature, so one does not shimmer as the array
-	# is compacted around it.
 	var base := Color(1.0, 0.36, 0.45)
-	var j := _seed_tint(float(a.get("uid", 0)) * 0.37, 7.31,
-		palette.alien_hue_jitter, palette.alien_value_jitter)
-	base = Color(base.r * j.r, base.g * j.g, base.b * j.b)
 	var f := float(a.get("flash", 0.0))
 	if f > 0.0 and fx.flash_s > 0.0:
 		base = base.lerp(Color.WHITE,
